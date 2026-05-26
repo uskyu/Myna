@@ -1,12 +1,12 @@
 const express = require('express');
-const Docker = require('dockerode');
-const db = require('../db');
+const { getDatabase } = require('../db/index');
 
 const router = express.Router();
 
 // Docker client - connects to local Docker daemon
 let docker;
 try {
+  const Docker = require('dockerode');
   docker = new Docker({ socketPath: '/var/run/docker.sock' });
 } catch (e) {
   console.warn('[Agent Manager] Docker not available:', e.message);
@@ -18,7 +18,8 @@ router.post('/agents/:id/start', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Docker not available' });
   }
 
-  const agent = db.getAgentById(req.params.id);
+  const db = getDatabase();
+  const agent = await db.getAgentById(req.params.id);
   if (!agent) {
     return res.status(404).json({ ok: false, error: 'Agent not found' });
   }
@@ -27,7 +28,6 @@ router.post('/agents/:id/start', async (req, res) => {
   const containerImage = image || 'ghcr.io/nousresearch/hermes-agent:latest';
 
   try {
-    // Build environment variables
     const hubUrl = process.env.HUB_URL || `http://host.docker.internal:${process.env.PORT || 3000}`;
     const containerEnv = [
       `HERMES_HUB_URL=${hubUrl}`,
@@ -51,8 +51,8 @@ router.post('/agents/:id/start', async (req, res) => {
     });
 
     await container.start();
-    db.updateAgentContainer(agent.id, container.id);
-    db.updateAgentStatus(agent.id, 'online');
+    await db.updateAgentContainer(agent.id, container.id);
+    await db.updateAgentStatus(agent.id, 'online');
 
     res.json({ ok: true, result: { container_id: container.id } });
   } catch (e) {
@@ -66,7 +66,8 @@ router.post('/agents/:id/stop', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Docker not available' });
   }
 
-  const agent = db.getAgentById(req.params.id);
+  const db = getDatabase();
+  const agent = await db.getAgentById(req.params.id);
   if (!agent || !agent.container_id) {
     return res.status(404).json({ ok: false, error: 'Agent or container not found' });
   }
@@ -75,8 +76,8 @@ router.post('/agents/:id/stop', async (req, res) => {
     const container = docker.getContainer(agent.container_id);
     await container.stop();
     await container.remove();
-    db.updateAgentContainer(agent.id, null);
-    db.updateAgentStatus(agent.id, 'offline');
+    await db.updateAgentContainer(agent.id, null);
+    await db.updateAgentStatus(agent.id, 'offline');
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -89,7 +90,8 @@ router.get('/agents/:id/logs', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Docker not available' });
   }
 
-  const agent = db.getAgentById(req.params.id);
+  const db = getDatabase();
+  const agent = await db.getAgentById(req.params.id);
   if (!agent || !agent.container_id) {
     return res.status(404).json({ ok: false, error: 'Agent or container not found' });
   }

@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const db = require('../db');
+const { getDatabase } = require('../db/index');
 
 class WSManager {
   constructor() {
@@ -9,7 +9,8 @@ class WSManager {
   init(server) {
     this.wss = new WebSocket.Server({ server, path: '/ws' });
 
-    this.wss.on('connection', (ws, req) => {
+    this.wss.on('connection', async (ws, req) => {
+      const db = getDatabase();
       // Expect ?api_key=xxx in URL
       const url = new URL(req.url, 'http://localhost');
       const apiKey = url.searchParams.get('api_key');
@@ -19,7 +20,7 @@ class WSManager {
         return;
       }
 
-      const agent = db.getAgentByKey(apiKey);
+      const agent = await db.getAgentByKey(apiKey);
       if (!agent) {
         ws.close(4001, 'Invalid api_key');
         return;
@@ -30,7 +31,7 @@ class WSManager {
         this.connections.set(agent.id, new Set());
       }
       this.connections.get(agent.id).add(ws);
-      db.updateAgentStatus(agent.id, 'online');
+      await db.updateAgentStatus(agent.id, 'online');
 
       console.log(`[WS] Agent "${agent.name}" connected`);
 
@@ -44,35 +45,38 @@ class WSManager {
         }
       });
 
-      ws.on('close', () => {
+      ws.on('close', async () => {
         this.connections.get(agent.id)?.delete(ws);
         if (this.connections.get(agent.id)?.size === 0) {
           this.connections.delete(agent.id);
-          db.updateAgentStatus(agent.id, 'offline');
+          await db.updateAgentStatus(agent.id, 'offline');
           console.log(`[WS] Agent "${agent.name}" disconnected`);
         }
       });
 
       // Send welcome
+      const rooms = await db.getAgentRooms(agent.id);
       ws.send(JSON.stringify({
         type: 'connected',
         agent: { id: agent.id, name: agent.name },
-        rooms: db.getAgentRooms(agent.id)
+        rooms
       }));
     });
   }
 
-  handleAgentMessage(agent, msg) {
+  async handleAgentMessage(agent, msg) {
+    const db = getDatabase();
+
     switch (msg.type) {
       case 'sendMessage': {
         const { room_id, text, parse_mode, reply_to_message_id, mentions } = msg;
         if (!room_id || !text) return;
 
         // Verify membership
-        const rooms = db.getAgentRooms(agent.id);
+        const rooms = await db.getAgentRooms(agent.id);
         if (!rooms.find(r => r.id === room_id)) return;
 
-        const message = db.createMessage(
+        const message = await db.createMessage(
           room_id, agent.id, text,
           parse_mode || 'markdown',
           reply_to_message_id || null,
@@ -80,7 +84,7 @@ class WSManager {
         );
 
         // Broadcast to room members
-        const members = db.getRoomMembers(room_id);
+        const members = await db.getRoomMembers(room_id);
         for (const member of members) {
           if (member.id !== agent.id) {
             const payload = {
@@ -94,7 +98,7 @@ class WSManager {
               mentions: mentions || [],
               date: new Date().toISOString()
             };
-            db.pushUpdate(member.id, 'message', payload);
+            await db.pushUpdate(member.id, 'message', payload);
             this.notify(member.id, payload);
           }
         }
@@ -107,7 +111,7 @@ class WSManager {
       case 'typing': {
         const { room_id } = msg;
         if (!room_id) return;
-        const members = db.getRoomMembers(room_id);
+        const members = await db.getRoomMembers(room_id);
         for (const member of members) {
           if (member.id !== agent.id) {
             this.notify(member.id, {
@@ -138,6 +142,7 @@ class WSManager {
   }
 
   broadcastToRoom(roomId, payload, excludeAgentId = null) {
+    const db = getDatabase();
     const members = db.getRoomMembers(roomId);
     const data = JSON.stringify(payload);
     for (const member of members) {

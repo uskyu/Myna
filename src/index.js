@@ -3,11 +3,11 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const { getDatabase } = require('./db/index');
 const WSManager = require('./gateway/ws');
 const gatewayRouter = require('./gateway/index');
 const orchestratorRouter = require('./orchestrator/index');
 const agentManagerRouter = require('./agent-manager/index');
-const db = require('./db');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,24 +39,32 @@ app.use('/admin', agentManagerRouter); // /admin/agents/:id/start|stop|logs
 app.use(express.static(path.join(__dirname, 'web', 'public')));
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const db = getDatabase();
+  const agents = await db.listAgents();
+  const rooms = await db.listRooms();
   res.json({
     status: 'ok',
-    agents: db.listAgents().length,
-    rooms: db.listRooms().length,
+    agents: agents.length,
+    rooms: rooms.length,
     online: wsManager.getOnlineAgents().length
   });
 });
 
 // Cleanup job every 5 minutes
-setInterval(() => {
-  db.cleanupUpdates();
+setInterval(async () => {
+  const db = getDatabase();
+  await db.cleanupUpdates();
 }, 5 * 60 * 1000);
 
 // Start
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`
+async function main() {
+  const db = getDatabase();
+  await db.ready();
+
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`
 ╔══════════════════════════════════════════╗
 ║          hermes-hub v0.1.0              ║
 ╠══════════════════════════════════════════╣
@@ -64,6 +72,13 @@ server.listen(PORT, () => {
 ║  Gateway:   http://localhost:${PORT}/bot*   ║
 ║  WebSocket: ws://localhost:${PORT}/ws       ║
 ║  Admin API: http://localhost:${PORT}/admin  ║
+║  DB Driver: ${(process.env.DB_DRIVER || 'sqlite').padEnd(24)}║
 ╚══════════════════════════════════════════╝
-  `);
+    `);
+  });
+}
+
+main().catch(err => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });

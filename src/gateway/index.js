@@ -1,18 +1,18 @@
 const express = require('express');
 const { marked } = require('marked');
-const db = require('../db');
+const { getDatabase } = require('../db/index');
 
 const router = express.Router();
 
 // Middleware: extract API key and validate agent
-router.use('/bot:api_key', (req, res, next) => {
-  const agent = db.getAgentByKey(req.params.api_key);
+router.use('/bot:api_key', async (req, res, next) => {
+  const db = getDatabase();
+  const agent = await db.getAgentByKey(req.params.api_key);
   if (!agent) {
     return res.status(401).json({ ok: false, error: 'Unauthorized: invalid API key' });
   }
   req.agent = agent;
-  // Update status to online
-  db.updateAgentStatus(agent.id, 'online');
+  await db.updateAgentStatus(agent.id, 'online');
   next();
 });
 
@@ -23,7 +23,8 @@ router.get('/bot:api_key/getMe', (req, res) => {
 });
 
 // POST /bot{key}/sendMessage - Send a message to a room
-router.post('/bot:api_key/sendMessage', (req, res) => {
+router.post('/bot:api_key/sendMessage', async (req, res) => {
+  const db = getDatabase();
   const { room_id, text, parse_mode, reply_to_message_id, mentions } = req.body;
 
   if (!room_id || !text) {
@@ -31,12 +32,12 @@ router.post('/bot:api_key/sendMessage', (req, res) => {
   }
 
   // Check agent is member of room
-  const rooms = db.getAgentRooms(req.agent.id);
+  const rooms = await db.getAgentRooms(req.agent.id);
   if (!rooms.find(r => r.id === room_id)) {
     return res.status(403).json({ ok: false, error: 'Agent is not a member of this room' });
   }
 
-  const message = db.createMessage(
+  const message = await db.createMessage(
     room_id,
     req.agent.id,
     text,
@@ -46,10 +47,10 @@ router.post('/bot:api_key/sendMessage', (req, res) => {
   );
 
   // Push updates to other room members
-  const members = db.getRoomMembers(room_id);
+  const members = await db.getRoomMembers(room_id);
   for (const member of members) {
     if (member.id !== req.agent.id) {
-      db.pushUpdate(member.id, 'message', {
+      await db.pushUpdate(member.id, 'message', {
         message_id: message.id,
         room_id,
         from: { id: req.agent.id, name: req.agent.name },
@@ -82,51 +83,56 @@ router.post('/bot:api_key/sendMessage', (req, res) => {
 });
 
 // POST /bot{key}/getUpdates - Long polling for updates
-router.post('/bot:api_key/getUpdates', (req, res) => {
+router.post('/bot:api_key/getUpdates', async (req, res) => {
+  const db = getDatabase();
   const { offset, limit } = req.body;
-  const updates = db.getUpdates(req.agent.id, offset || 0, limit || 100);
+  const updates = await db.getUpdates(req.agent.id, offset || 0, limit || 100);
   res.json({ ok: true, result: updates });
 });
 
 // GET /bot{key}/getUpdates - Also support GET
-router.get('/bot:api_key/getUpdates', (req, res) => {
+router.get('/bot:api_key/getUpdates', async (req, res) => {
+  const db = getDatabase();
   const offset = parseInt(req.query.offset) || 0;
   const limit = parseInt(req.query.limit) || 100;
-  const updates = db.getUpdates(req.agent.id, offset, limit);
+  const updates = await db.getUpdates(req.agent.id, offset, limit);
   res.json({ ok: true, result: updates });
 });
 
 // GET /bot{key}/getRooms - List rooms the agent is in
-router.get('/bot:api_key/getRooms', (req, res) => {
-  const rooms = db.getAgentRooms(req.agent.id);
+router.get('/bot:api_key/getRooms', async (req, res) => {
+  const db = getDatabase();
+  const rooms = await db.getAgentRooms(req.agent.id);
   res.json({ ok: true, result: rooms });
 });
 
 // GET /bot{key}/getRoomMembers - List members of a room
-router.get('/bot:api_key/getRoomMembers', (req, res) => {
+router.get('/bot:api_key/getRoomMembers', async (req, res) => {
+  const db = getDatabase();
   const { room_id } = req.query;
   if (!room_id) {
     return res.status(400).json({ ok: false, error: 'room_id is required' });
   }
-  const members = db.getRoomMembers(room_id);
+  const members = await db.getRoomMembers(room_id);
   res.json({ ok: true, result: members });
 });
 
 // GET /bot{key}/getMessages - Get room message history
-router.get('/bot:api_key/getMessages', (req, res) => {
+router.get('/bot:api_key/getMessages', async (req, res) => {
+  const db = getDatabase();
   const { room_id, limit, before_id } = req.query;
   if (!room_id) {
     return res.status(400).json({ ok: false, error: 'room_id is required' });
   }
-  const messages = db.getRoomMessages(room_id, parseInt(limit) || 50, before_id ? parseInt(before_id) : null);
-  
+  const messages = await db.getRoomMessages(room_id, parseInt(limit) || 50, before_id ? parseInt(before_id) : null);
+
   // Render markdown for each message
   const rendered = messages.map(m => ({
     ...m,
     html: m.parse_mode === 'markdown' ? marked(m.text) : m.text,
-    mentions: JSON.parse(m.mentions || '[]')
+    mentions: typeof m.mentions === 'string' ? JSON.parse(m.mentions) : (m.mentions || [])
   }));
-  
+
   res.json({ ok: true, result: rendered });
 });
 
