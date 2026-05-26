@@ -1,0 +1,24 @@
+{
+  "name": "hermes-hub",
+  "version": "0.1.0",
+  "description": "Multi-agent collaboration platform with Telegram-style Bot API gateway",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.7.0",
+    "dockerode": "^4.0.4",
+    "dotenv": "16.4.7",
+    "express": "4.21.2",
+    "marked": "15.0.4",
+    "uuid": "10.0.0",
+    "ws": "8.18.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "private": true,
+  "license": "MIT"
+}

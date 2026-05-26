@@ -1,0 +1,17 @@
+services:
+  hermes-hub:
+    image: ghcr.io/uskyu/hermes-hub:latest
+    container_name: hermes-hub
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/db
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - PORT=3000
+      - SECRET_KEY=change-me-to-a-random-string
+      - DATA_DIR=/app/db
+      - HUB_URL=http://host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

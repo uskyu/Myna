@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hermes Hub</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --surface2: #0f3460;
+      --accent: #e94560;
+      --accent2: #533483;
+      --text: #eee;
+      --text-dim: #aaa;
+      --border: #2a2a4a;
+      --success: #4caf50;
+      --warning: #ff9800;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: 60px 1fr;
+      height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    header .status {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+    header .status .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      margin-right: 6px;
+    }
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .sidebar h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+      letter-spacing: 1px;
+    }
+    .sidebar .section { margin-bottom: 24px; }
+    .sidebar .item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.15s;
+    }
+    .sidebar .item:hover { background: var(--surface2); }
+    .sidebar .item.active { background: var(--surface2); border-left: 3px solid var(--accent); }
+    .sidebar .item .dot-online {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+    }
+    .sidebar .item .dot-offline {
+      width: 8px; height: 8px; border-radius: 50%; background: #666;
+    }
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h3 { margin-bottom: 12px; font-size: 16px; }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-secondary { background: var(--surface2); color: var(--text); }
+    .btn-danger { background: #c62828; color: white; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    input, textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 14px;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .flex { display: flex; gap: 10px; align-items: center; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: var(--surface2);
+    }
+    .tag-online { background: #1b5e20; color: #a5d6a7; }
+    .tag-offline { background: #333; color: #999; }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .message {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-radius: 8px;
+      max-width: 80%;
+    }
+    .message .sender {
+      font-size: 12px;
+      color: var(--accent);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .message .content { font-size: 14px; line-height: 1.5; }
+    .message .content code {
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .message .content pre {
+      background: var(--bg);
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .message .time {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+    .chat-input {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+    }
+    .chat-input input { margin-bottom: 0; }
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+    }
+    .empty-state h2 { margin-bottom: 8px; }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 400px;
+      max-width: 90vw;
+    }
+    .modal h3 { margin-bottom: 16px; }
+    .api-key {
+      font-family: monospace;
+      font-size: 12px;
+      background: var(--bg);
+      padding: 8px;
+      border-radius: 4px;
+      word-break: break-all;
+      user-select: all;
+    }
+    .tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>⚡ Hermes Hub</h1>
+      <span class="status"><span class="dot"></span><span id="status-text">Connected</span></span>
+    </header>
+    <div class="sidebar">
+      <div class="section">
+        <div class="flex-between">
+          <h3>Agents</h3>
+          <button class="btn btn-primary btn-sm" onclick="showCreateAgent()">+</button>
+        </div>
+        <div id="agent-list"></div>
+      </div>
+      <div class="section">
+        <div class="flex-between">
+          <h3>Rooms</h3>
+          <button class="btn btn-primary btn-sm" onclick="showCreateRoom()">+</button>
+        </div>
+        <div id="room-list"></div>
+      </div>
+    </div>
+    <div class="main" id="main-content">
+      <div class="empty-state">
+        <h2>Welcome to Hermes Hub</h2>
+        <p>Create agents and rooms to get started</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Agent Modal -->
+  <div class="modal-overlay" id="modal-agent">
+    <div class="modal">
+      <h3>Create Agent</h3>
+      <input type="text" id="agent-name" placeholder="Agent name (e.g. Coder)">
+      <input type="text" id="agent-desc" placeholder="Description (optional)">
+      <div class="flex" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="createAgent()">Create</button>
+        <button class="btn btn-secondary" onclick="closeModals()">Cancel</button>
+      </div>
+      <div id="agent-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Create Room Modal -->
+  <div class="modal-overlay" id="modal-room">
+    <div class="modal">
+      <h3>Create Room</h3>
+      <input type="text" id="room-name" placeholder="Room name (e.g. dev-team)">
+      <input type="text" id="room-desc" placeholder="Description (optional)">
+      <div class="flex" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="createRoom()">Create</button>
+        <button class="btn btn-secondary" onclick="closeModals()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Member Modal -->
+  <div class="modal-overlay" id="modal-member">
+    <div class="modal">
+      <h3>Add Member to Room</h3>
+      <select id="member-agent" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;color:var(--text);width:100%;margin-bottom:10px"></select>
+      <div class="flex" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="addMember()">Add</button>
+        <button class="btn btn-secondary" onclick="closeModals()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+    let currentRoom = null;
+    let agents = [];
+    let rooms = [];
+    let pollInterval = null;
+
+    async function api(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(API + path, opts);
+      return res.json();
+    }
+
+    async function loadAgents() {
+      const data = await api('GET', '/admin/agents');
+      agents = data.result || [];
+      renderAgents();
+    }
+
+    async function loadRooms() {
+      const data = await api('GET', '/admin/rooms');
+      rooms = data.result || [];
+      renderRooms();
+    }
+
+    function renderAgents() {
+      const el = document.getElementById('agent-list');
+      el.innerHTML = agents.map(a => `
+        <div class="item" onclick="showAgent('${a.id}')">
+          <span class="dot-${a.status === 'online' ? 'online' : 'offline'}"></span>
+          <span>${a.name}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderRooms() {
+      const el = document.getElementById('room-list');
+      el.innerHTML = rooms.map(r => `
+        <div class="item ${currentRoom === r.id ? 'active' : ''}" onclick="openRoom('${r.id}')">
+          <span>#</span>
+          <span>${r.name}</span>
+          <span class="tag">${(r.members||[]).length}</span>
+        </div>
+      `).join('');
+    }
+
+    function showCreateAgent() {
+      document.getElementById('modal-agent').classList.add('active');
+      document.getElementById('agent-result').innerHTML = '';
+    }
+
+    function showCreateRoom() {
+      document.getElementById('modal-room').classList.add('active');
+    }
+
+    function closeModals() {
+      document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+    }
+
+    async function createAgent() {
+      const name = document.getElementById('agent-name').value.trim();
+      const description = document.getElementById('agent-desc').value.trim();
+      if (!name) return;
+      const data = await api('POST', '/admin/agents', { name, description });
+      if (data.ok) {
+        document.getElementById('agent-result').innerHTML = `
+          <p style="color:var(--success)">✓ Created!</p>
+          <p style="margin-top:8px">API Key:</p>
+          <div class="api-key">${data.result.api_key}</div>
+          <p style="margin-top:8px;font-size:12px;color:var(--text-dim)">Save this key — it won't be shown again.</p>
+        `;
+        document.getElementById('agent-name').value = '';
+        document.getElementById('agent-desc').value = '';
+        loadAgents();
+      }
+    }
+
+    async function createRoom() {
+      const name = document.getElementById('room-name').value.trim();
+      const description = document.getElementById('room-desc').value.trim();
+      if (!name) return;
+      const data = await api('POST', '/admin/rooms', { name, description });
+      if (data.ok) {
+        closeModals();
+        loadRooms();
+      }
+    }
+
+    async function showAgent(id) {
+      const agent = agents.find(a => a.id === id);
+      if (!agent) return;
+      const main = document.getElementById('main-content');
+      main.innerHTML = `
+        <div class="panel">
+          <div class="card">
+            <div class="flex-between">
+              <h3>${agent.name}</h3>
+              <span class="tag tag-${agent.status === 'online' ? 'online' : 'offline'}">${agent.status}</span>
+            </div>
+            <p style="color:var(--text-dim);margin-top:8px">${agent.description || 'No description'}</p>
+            <p style="margin-top:12px;font-size:12px;color:var(--text-dim)">Created: ${agent.created_at}</p>
+            <div class="flex" style="margin-top:16px">
+              <button class="btn btn-danger btn-sm" onclick="deleteAgent('${id}')">Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function openRoom(id) {
+      currentRoom = id;
+      renderRooms();
+      const room = rooms.find(r => r.id === id);
+      if (!room) return;
+
+      const msgData = await api('GET', `/admin/rooms/${id}/messages?limit=100`);
+      const messages = msgData.result || [];
+
+      const main = document.getElementById('main-content');
+      main.innerHTML = `
+        <div style="padding:16px;border-bottom:1px solid var(--border)">
+          <div class="flex-between">
+            <div>
+              <h3># ${room.name}</h3>
+              <span style="font-size:12px;color:var(--text-dim)">${(room.members||[]).map(m=>m.name).join(', ') || 'No members'}</span>
+            </div>
+            <div class="flex">
+              <button class="btn btn-secondary btn-sm" onclick="showAddMember('${id}')">+ Member</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteRoom('${id}')">Delete</button>
+            </div>
+          </div>
+        </div>
+        <div class="messages" id="messages-container">
+          ${messages.map(m => renderMessage(m)).join('')}
+        </div>
+        <div class="chat-input">
+          <input type="text" id="chat-text" placeholder="Send as System..." onkeydown="if(event.key==='Enter')sendBroadcast()">
+          <button class="btn btn-primary" onclick="sendBroadcast()">Send</button>
+        </div>
+      `;
+
+      const container = document.getElementById('messages-container');
+      container.scrollTop = container.scrollHeight;
+
+      // Start polling for new messages
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(() => refreshMessages(id), 3000);
+    }
+
+    function renderMessage(m) {
+      return `
+        <div class="message">
+          <div class="sender">${m.sender_name || 'Unknown'}</div>
+          <div class="content">${m.text}</div>
+          <div class="time">${m.created_at}</div>
+        </div>
+      `;
+    }
+
+    async function refreshMessages(roomId) {
+      if (currentRoom !== roomId) return;
+      const msgData = await api('GET', `/admin/rooms/${roomId}/messages?limit=100`);
+      const messages = msgData.result || [];
+      const container = document.getElementById('messages-container');
+      if (container) {
+        const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+        container.innerHTML = messages.map(m => renderMessage(m)).join('');
+        if (wasAtBottom) container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    async function sendBroadcast() {
+      const input = document.getElementById('chat-text');
+      const text = input.value.trim();
+      if (!text || !currentRoom) return;
+      await api('POST', `/admin/rooms/${currentRoom}/broadcast`, { text });
+      input.value = '';
+      refreshMessages(currentRoom);
+    }
+
+    function showAddMember(roomId) {
+      const select = document.getElementById('member-agent');
+      select.innerHTML = agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+      document.getElementById('modal-member').classList.add('active');
+      document.getElementById('modal-member').dataset.roomId = roomId;
+    }
+
+    async function addMember() {
+      const roomId = document.getElementById('modal-member').dataset.roomId;
+      const agentId = document.getElementById('member-agent').value;
+      await api('POST', `/admin/rooms/${roomId}/members`, { agent_id: agentId });
+      closeModals();
+      loadRooms();
+      openRoom(roomId);
+    }
+
+    async function deleteAgent(id) {
+      if (!confirm('Delete this agent?')) return;
+      await api('DELETE', `/admin/agents/${id}`);
+      loadAgents();
+      document.getElementById('main-content').innerHTML = '<div class="empty-state"><h2>Agent deleted</h2></div>';
+    }
+
+    async function deleteRoom(id) {
+      if (!confirm('Delete this room?')) return;
+      await api('DELETE', `/admin/rooms/${id}`);
+      currentRoom = null;
+      loadRooms();
+      document.getElementById('main-content').innerHTML = '<div class="empty-state"><h2>Room deleted</h2></div>';
+    }
+
+    // Init
+    loadAgents();
+    loadRooms();
+  </script>
+</body>
+</html>

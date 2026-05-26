@@ -1,0 +1,69 @@
+require('dotenv').config();
+
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const WSManager = require('./gateway/ws');
+const gatewayRouter = require('./gateway/index');
+const orchestratorRouter = require('./orchestrator/index');
+const agentManagerRouter = require('./agent-manager/index');
+const db = require('./db');
+
+const app = express();
+const server = http.createServer(app);
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// CORS for local dev
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
+// WebSocket manager
+const wsManager = new WSManager();
+wsManager.init(server);
+app.set('wsManager', wsManager);
+
+// Routes
+app.use('/', gatewayRouter);           // /bot{key}/...
+app.use('/admin', orchestratorRouter); // /admin/agents, /admin/rooms
+app.use('/admin', agentManagerRouter); // /admin/agents/:id/start|stop|logs
+
+// Static web UI
+app.use(express.static(path.join(__dirname, 'web', 'public')));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    agents: db.listAgents().length,
+    rooms: db.listRooms().length,
+    online: wsManager.getOnlineAgents().length
+  });
+});
+
+// Cleanup job every 5 minutes
+setInterval(() => {
+  db.cleanupUpdates();
+}, 5 * 60 * 1000);
+
+// Start
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`
+╔══════════════════════════════════════════╗
+║          hermes-hub v0.1.0              ║
+╠══════════════════════════════════════════╣
+║  Web UI:    http://localhost:${PORT}        ║
+║  Gateway:   http://localhost:${PORT}/bot*   ║
+║  WebSocket: ws://localhost:${PORT}/ws       ║
+║  Admin API: http://localhost:${PORT}/admin  ║
+╚══════════════════════════════════════════╝
+  `);
+});
