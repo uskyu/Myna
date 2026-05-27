@@ -299,6 +299,42 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
 
   const recentMessages = await db.getRoomMessages(roomId, 20);
 
+  // Resolve uploaded file references in messages
+  const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'data', 'uploads');
+  const TEXT_EXTS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml', '.html', '.css', '.js', '.ts', '.py', '.sh', '.log', '.env', '.toml', '.ini', '.cfg'];
+  function resolveUploads(text) {
+    // Match markdown links/images pointing to /uploads/
+    const uploadRegex = /!?\[([^\]]*)\]\((\/uploads\/[^\)]+)\)/g;
+    let resolved = text;
+    const files = [];
+    let m;
+    while ((m = uploadRegex.exec(text)) !== null) {
+      const [full, name, relPath] = m;
+      const absPath = path.join(UPLOADS_DIR, path.basename(relPath));
+      files.push({ name, absPath, relPath });
+    }
+    if (files.length > 0) {
+      const parts = [];
+      for (const f of files) {
+        const ext = path.extname(f.absPath).toLowerCase();
+        // For small text files, inline the content directly
+        if (TEXT_EXTS.includes(ext) && fs.existsSync(f.absPath)) {
+          try {
+            const content = fs.readFileSync(f.absPath, 'utf8');
+            if (content.length <= 3000) {
+              parts.push(`📎 文件「${f.name}」内容:\n\`\`\`\n${content}\n\`\`\``);
+              continue;
+            }
+          } catch {}
+        }
+        // For larger files or binary, just provide the path
+        parts.push(`📎 文件「${f.name}」路径: ${f.absPath}（可用 read_file 工具读取）`);
+      }
+      resolved += '\n\n' + parts.join('\n');
+    }
+    return resolved;
+  }
+
   for (const agent of respondingAgents) {
     const fullAgent = await db.getAgentById(agent.id);
     if (!fullAgent) continue;
@@ -306,8 +342,8 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
     const history = recentMessages.map(m => ({
       role: m.sender_id === agent.id ? 'assistant' : 'user',
       content: m.sender_name && m.sender_id !== agent.id
-        ? `[${m.sender_name}]: ${m.text}`
-        : m.text
+        ? `[${m.sender_name}]: ${resolveUploads(m.text)}`
+        : resolveUploads(m.text)
     }));
 
     // Tell the agent about other members it can collaborate with
