@@ -200,6 +200,10 @@ class SQLiteAdapter extends DatabaseAdapter {
     `).all(room_id, limit).reverse();
   }
 
+  clearRoomMessages(room_id) {
+    this.db.prepare(`DELETE FROM messages WHERE room_id = ?`).run(room_id);
+  }
+
   pushUpdate(agent_id, type, payload) {
     this.db.prepare(`INSERT INTO updates (agent_id, type, payload) VALUES (?, ?, ?)`)
       .run(agent_id, type, JSON.stringify(payload));

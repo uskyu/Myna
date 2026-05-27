@@ -124,13 +124,7 @@ router.get('/rooms/:id/messages', async (req, res) => {
 // Clear room messages
 router.delete('/rooms/:id/messages', async (req, res) => {
   const db = getDatabase();
-  const roomId = req.params.id;
-  // Delete all messages in this room
-  if (db.driver === 'mysql') {
-    await db.conn.execute('DELETE FROM messages WHERE room_id = ?', [roomId]);
-  } else {
-    db.conn.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
-  }
+  await db.clearRoomMessages(req.params.id);
   res.json({ ok: true });
 });
 
