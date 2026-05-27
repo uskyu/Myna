@@ -8,6 +8,7 @@ const WSManager = require('./gateway/ws');
 const gatewayRouter = require('./gateway/index');
 const orchestratorRouter = require('./orchestrator/index');
 const agentManagerRouter = require('./agent-manager/index');
+const configRouter = require('./config/index');
 
 const app = express();
 const server = http.createServer(app);
@@ -34,6 +35,7 @@ app.set('wsManager', wsManager);
 app.use('/', gatewayRouter);           // /bot{key}/...
 app.use('/admin', orchestratorRouter); // /admin/agents, /admin/rooms
 app.use('/admin', agentManagerRouter); // /admin/agents/:id/start|stop|logs
+app.use('/admin/config', configRouter); // /admin/config
 
 // Static web UI
 app.use(express.static(path.join(__dirname, 'web', 'public')));
