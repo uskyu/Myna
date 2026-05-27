@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, provide } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, provide } from 'vue'
 import ChatList from './components/ChatList.vue'
 import ChatView from './components/ChatView.vue'
 import AgentList from './components/AgentList.vue'
@@ -48,14 +48,28 @@ provide('page', page)
 function openChat(room, type) {
   currentRoom.value = room
   currentRoomType.value = type
+  // Push history state so mobile back button works
+  history.pushState({ view: 'chat', roomId: room.id }, '', `#chat/${room.id}`)
 }
 
 function closeChat() {
   currentRoom.value = null
+  // Replace state to list view
+  history.replaceState({ view: 'list' }, '', '#')
 }
 
 function openAgentDetail(agent) {
   currentAgent.value = agent
+  history.pushState({ view: 'agent', agentId: agent.id }, '', `#agent/${agent.id}`)
+}
+
+// Handle browser back button (mobile)
+function onPopState(e) {
+  if (currentRoom.value) {
+    currentRoom.value = null
+  } else if (currentAgent.value) {
+    currentAgent.value = null
+  }
 }
 
 function showModal(name) { modals[name] = true }
@@ -79,5 +93,13 @@ onMounted(() => {
   // Init theme
   const dark = localStorage.getItem('hub-theme') === 'dark'
   if (dark) document.documentElement.setAttribute('data-theme', 'dark')
+  // Listen for back button
+  window.addEventListener('popstate', onPopState)
+  // Set initial state
+  history.replaceState({ view: 'list' }, '', '#')
+})
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', onPopState)
 })
 </script>

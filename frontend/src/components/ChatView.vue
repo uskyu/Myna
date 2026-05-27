@@ -8,8 +8,8 @@
         {{ title }}
         <span v-if="subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">{{ subtitle }}</span>
       </span>
-      <!-- Thread drawer toggle (group only) -->
-      <button v-if="type === 'group'" class="thread-toggle-btn" :class="{ active: threadDrawerOpen }" @click="threadDrawerOpen = !threadDrawerOpen" title="对话列表">
+      <!-- Thread drawer toggle -->
+      <button class="thread-toggle-btn" :class="{ active: threadDrawerOpen }" @click="threadDrawerOpen = !threadDrawerOpen" title="对话列表">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="thread-toggle-count" v-if="threads.length > 0">{{ threads.length + 1 }}</span>
       </button>
@@ -53,11 +53,12 @@
         <div class="msg-group" :class="{ self: group.self }">
           <div v-for="(msg, mi) in group.messages" :key="msg.id || mi" class="msg" :class="{ self: group.self, streaming: msg.streaming }">
             <div v-if="msg.showName" class="sender-name">{{ msg.sender_name }}</div>
-            <!-- Working bubble (tool calls in progress) -->
-            <div v-if="msg.streaming && msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded }">
+            <!-- Working bubble (tool calls - streaming or saved) -->
+            <div v-if="msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded, done: !msg.streaming }">
               <div class="working-header" @click="toggleToolsExpand(msg)">
-                <div class="working-spinner"></div>
-                <span class="working-label">工作中</span>
+                <div v-if="msg.streaming" class="working-spinner"></div>
+                <svg v-else class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                <span class="working-label">{{ msg.streaming ? '工作中' : '工具调用' }}</span>
                 <span class="working-count">{{ msg.toolCalls.length }} 步</span>
                 <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
               </div>
@@ -90,7 +91,7 @@
       </div>
 
       <!-- Thread drawer (overlay, does NOT affect main chat layout) -->
-      <div v-if="type === 'group' && threadDrawerOpen" class="thread-drawer-overlay" @click.self="threadDrawerOpen = false">
+      <div v-if="threadDrawerOpen" class="thread-drawer-overlay" @click.self="threadDrawerOpen = false">
         <div class="thread-drawer">
           <div class="thread-drawer-header">
             <span class="thread-drawer-title">对话列表</span>
@@ -241,7 +242,7 @@ const TOOL_LABELS = {
 }
 function toolLabel(name) { return TOOL_LABELS[name] || name }
 function toggleToolsExpand(msg) {
-  const sid = msg.id.replace('stream-', '')
+  const sid = String(msg.id).startsWith('stream-') ? msg.id.replace('stream-', '') : `saved-${msg.id}`
   toolsExpandedMap.value[sid] = !msg.toolsExpanded
 }
 
@@ -324,6 +325,16 @@ const messageGroups = computed(() => {
   const allMsgs = []
   messages.value.forEach(m => {
     const self = m.sender_id === 'user' || m.sender_id === 'system'
+    // Parse metadata for tool_calls
+    let toolCalls = null
+    if (m.metadata) {
+      try {
+        const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
+        if (meta.tool_calls && meta.tool_calls.length > 0) {
+          toolCalls = meta.tool_calls
+        }
+      } catch {}
+    }
     allMsgs.push({
       id: m.id,
       sender_id: m.sender_id,
@@ -333,7 +344,9 @@ const messageGroups = computed(() => {
       time: (m.created_at || '').slice(11, 16),
       date: (m.created_at || '').slice(0, 10),
       self,
-      showName: !self && props.type === 'group',
+      showName: !self && (props.type === 'group' || !self),
+      toolCalls,
+      toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
     })
   })
   for (const sid in store.activeStreams) {
@@ -392,7 +405,6 @@ async function fetchMessages() {
 }
 
 async function fetchThreads() {
-  if (props.type !== 'group') return
   const data = await api('GET', `/admin/rooms/${props.room.id}/threads`)
   threads.value = data.result || []
 }

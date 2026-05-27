@@ -90,6 +90,8 @@ class SQLiteAdapter extends DatabaseAdapter {
     try { this.db.prepare(`ALTER TABLE agents ADD COLUMN model_config_id TEXT`).run(); } catch(e) {}
     // Add params_json column to model_configs if not exists
     try { this.db.prepare(`ALTER TABLE model_configs ADD COLUMN params_json TEXT`).run(); } catch(e) {}
+    // Add metadata column to messages for tool_calls persistence
+    try { this.db.prepare(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT NULL`).run(); } catch(e) {}
     try {
       this.db.prepare(`ALTER TABLE agents ADD COLUMN model_config_id TEXT DEFAULT NULL`).run();
     } catch (e) {
@@ -239,12 +241,12 @@ class SQLiteAdapter extends DatabaseAdapter {
     `).all(agent_id);
   }
 
-  createMessage(room_id, sender_id, text, parse_mode = 'markdown', reply_to = null, mentions = []) {
+  createMessage(room_id, sender_id, text, parse_mode = 'markdown', reply_to = null, mentions = [], metadata = null) {
     const result = this.db.prepare(`
-      INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(room_id, sender_id, text, parse_mode, reply_to, JSON.stringify(mentions));
-    return { id: Number(result.lastInsertRowid), room_id, sender_id, text, parse_mode, reply_to_message_id: reply_to, mentions };
+      INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(room_id, sender_id, text, parse_mode, reply_to, JSON.stringify(mentions), metadata ? JSON.stringify(metadata) : null);
+    return { id: Number(result.lastInsertRowid), room_id, sender_id, text, parse_mode, reply_to_message_id: reply_to, mentions, metadata };
   }
 
   getRoomMessages(room_id, limit = 50, before_id = null) {
@@ -414,14 +416,14 @@ class SQLiteAdapter extends DatabaseAdapter {
     `).all(threadId, limit).reverse();
   }
 
-  createMessageInThread(roomId, threadId, senderId, text, parseMode = 'markdown', replyTo = null, mentions = []) {
+  createMessageInThread(roomId, threadId, senderId, text, parseMode = 'markdown', replyTo = null, mentions = [], metadata = null) {
     const result = this.db.prepare(`
-      INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, thread_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(roomId, senderId, text, parseMode, replyTo, JSON.stringify(mentions), threadId);
+      INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, thread_id, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(roomId, senderId, text, parseMode, replyTo, JSON.stringify(mentions), threadId, metadata ? JSON.stringify(metadata) : null);
     // Touch thread updated_at
     this.db.prepare(`UPDATE threads SET updated_at = datetime('now') WHERE id = ?`).run(threadId);
-    return { id: Number(result.lastInsertRowid), room_id: roomId, sender_id: senderId, text, parse_mode: parseMode, reply_to_message_id: replyTo, mentions, thread_id: threadId };
+    return { id: Number(result.lastInsertRowid), room_id: roomId, sender_id: senderId, text, parse_mode: parseMode, reply_to_message_id: replyTo, mentions, thread_id: threadId, metadata };
   }
 
   // === Workflows ===

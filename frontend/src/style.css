@@ -1410,6 +1410,16 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   transition: all 0.2s ease;
   width: 100%;
 }
+.working-bubble.done {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.working-bubble.done .working-header { opacity: 0.8; }
+.working-done-icon {
+  width: 14px; height: 14px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
 .working-header {
   display: flex;
   align-items: center;

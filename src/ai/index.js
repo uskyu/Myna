@@ -389,6 +389,9 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
       });
     }
 
+    // Collect tool calls for persistence
+    const collectedToolCalls = [];
+
     // Callbacks for real-time tool events
     const callbacks = {
       onToken(chunk) {
@@ -403,6 +406,7 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
         }
       },
       onToolCall({ name, args, summary }) {
+        collectedToolCalls.push({ name, summary, status: 'running', result: null });
         if (wsManager) {
           wsManager.notifyUI({
             type: 'tool_call',
@@ -416,6 +420,11 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
         }
       },
       onToolResult({ name, ok, output }) {
+        const last = collectedToolCalls.findLast(t => t.name === name && t.status === 'running');
+        if (last) {
+          last.status = ok ? 'done' : 'error';
+          last.result = (output || '').slice(0, 200);
+        }
         if (wsManager) {
           wsManager.notifyUI({
             type: 'tool_result',
@@ -446,6 +455,9 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
 
     if (!reply) continue;
 
+    // Build metadata with tool_calls if any were used
+    const metadata = collectedToolCalls.length > 0 ? { tool_calls: collectedToolCalls } : null;
+
     // Parse @mentions in reply
     const replyMentions = [];
     const mentionRegex = /@(\S+)/g;
@@ -457,8 +469,8 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
     }
 
     const message = threadId
-      ? await db.createMessageInThread(roomId, threadId, agent.id, reply, 'markdown', null, replyMentions)
-      : await db.createMessage(roomId, agent.id, reply, 'markdown', null, replyMentions);
+      ? await db.createMessageInThread(roomId, threadId, agent.id, reply, 'markdown', null, replyMentions, metadata)
+      : await db.createMessage(roomId, agent.id, reply, 'markdown', null, replyMentions, metadata);
 
     // Notify via WebSocket (for agent connections)
     for (const member of members) {
