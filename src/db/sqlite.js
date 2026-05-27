@@ -485,6 +485,10 @@ class SQLiteAdapter extends DatabaseAdapter {
     return row ? row.cnt : 0;
   }
 
+  getWorkflowRuns(workflowId) {
+    return this.db.prepare(`SELECT id, workflow_id, thread_id, status, current_step, started_at, completed_at FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC`).all(workflowId);
+  }
+
   close() {
     this.db.close();
   }

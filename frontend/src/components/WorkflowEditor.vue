@@ -2,7 +2,7 @@
   <div class="wf-overlay" @click.self="$emit('close')">
     <div class="wf-modal">
       <div class="wf-header">
-        <h3>创建工作流</h3>
+        <h3>{{ isEditing ? '编辑工作流' : '创建工作流' }}</h3>
         <button class="wf-close" @click="$emit('close')">×</button>
       </div>
 
@@ -21,7 +21,55 @@
           <label>触发方式</label>
           <select v-model="form.trigger_type">
             <option value="manual">手动触发</option>
+            <option value="schedule">定时触发</option>
           </select>
+        </div>
+
+        <!-- Schedule config -->
+        <div v-if="form.trigger_type === 'schedule'" class="wf-field">
+          <label>定时配置</label>
+          <div class="schedule-config">
+            <select v-model="scheduleType" class="schedule-select">
+              <option value="interval">每N小时</option>
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="cron">Cron 表达式</option>
+            </select>
+
+            <div v-if="scheduleType === 'interval'" class="schedule-row">
+              <span>每</span>
+              <input type="number" v-model.number="scheduleInterval" min="1" max="24" class="schedule-num" />
+              <span>小时执行一次</span>
+            </div>
+
+            <div v-if="scheduleType === 'daily'" class="schedule-row">
+              <span>每天</span>
+              <input type="time" v-model="scheduleDailyTime" class="schedule-time" />
+              <span>执行</span>
+            </div>
+
+            <div v-if="scheduleType === 'weekly'" class="schedule-row">
+              <span>每周</span>
+              <select v-model.number="scheduleWeeklyDay" class="schedule-day">
+                <option :value="0">周日</option>
+                <option :value="1">周一</option>
+                <option :value="2">周二</option>
+                <option :value="3">周三</option>
+                <option :value="4">周四</option>
+                <option :value="5">周五</option>
+                <option :value="6">周六</option>
+              </select>
+              <input type="time" v-model="scheduleWeeklyTime" class="schedule-time" />
+              <span>执行</span>
+            </div>
+
+            <div v-if="scheduleType === 'cron'" class="schedule-row">
+              <input type="text" v-model="scheduleCron" placeholder="*/30 * * * *" class="schedule-cron" />
+            </div>
+            <div v-if="scheduleType === 'cron'" class="schedule-hint">
+              格式: 分 时 日 月 周 (例: <code>0 9 * * 1-5</code> = 工作日9点)
+            </div>
+          </div>
         </div>
 
         <div class="wf-field">
@@ -52,12 +100,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { api, store } from '../store.js'
 
-const props = defineProps({ room: Object })
+const props = defineProps({ room: Object, workflow: Object })
 const emit = defineEmits(['close', 'saved'])
 
+const isEditing = computed(() => !!props.workflow)
 const agents = computed(() => store.agents.filter(a => a.id !== 'user' && a.id !== 'system'))
 
 const form = reactive({
@@ -65,6 +114,53 @@ const form = reactive({
   description: '',
   trigger_type: 'manual',
   steps: [{ agent_id: '', prompt: '', wait_for_reply: true }]
+})
+
+// Schedule config state
+const scheduleType = ref('interval')
+const scheduleInterval = ref(4)
+const scheduleDailyTime = ref('09:00')
+const scheduleWeeklyDay = ref(1)
+const scheduleWeeklyTime = ref('09:00')
+const scheduleCron = ref('')
+
+// Pre-fill form when editing
+onMounted(() => {
+  if (props.workflow) {
+    form.name = props.workflow.name || ''
+    form.description = props.workflow.description || ''
+    form.trigger_type = props.workflow.trigger_type || 'manual'
+    try {
+      const steps = typeof props.workflow.steps_json === 'string'
+        ? JSON.parse(props.workflow.steps_json)
+        : props.workflow.steps_json
+      if (Array.isArray(steps) && steps.length > 0) {
+        form.steps = steps.map(s => ({ ...s }))
+      }
+    } catch {}
+    // Parse trigger_config
+    if (form.trigger_type === 'schedule') {
+      try {
+        const config = typeof props.workflow.trigger_config === 'string'
+          ? JSON.parse(props.workflow.trigger_config || '{}')
+          : (props.workflow.trigger_config || {})
+        if (config.cron) {
+          scheduleType.value = 'cron'
+          scheduleCron.value = config.cron
+        } else if (config.interval_hours) {
+          scheduleType.value = 'interval'
+          scheduleInterval.value = config.interval_hours
+        } else if (config.daily_time) {
+          scheduleType.value = 'daily'
+          scheduleDailyTime.value = config.daily_time
+        } else if (config.weekly_day !== undefined) {
+          scheduleType.value = 'weekly'
+          scheduleWeeklyDay.value = config.weekly_day
+          scheduleWeeklyTime.value = config.weekly_time || '09:00'
+        }
+      } catch {}
+    }
+  }
 })
 
 const canSave = computed(() => {
@@ -80,16 +176,37 @@ function removeStep(idx) {
   form.steps.splice(idx, 1)
 }
 
+function buildTriggerConfig() {
+  if (form.trigger_type !== 'schedule') return '{}'
+  if (scheduleType.value === 'cron') {
+    return JSON.stringify({ cron: scheduleCron.value.trim() })
+  } else if (scheduleType.value === 'interval') {
+    return JSON.stringify({ interval_hours: scheduleInterval.value })
+  } else if (scheduleType.value === 'daily') {
+    return JSON.stringify({ daily_time: scheduleDailyTime.value })
+  } else if (scheduleType.value === 'weekly') {
+    return JSON.stringify({ weekly_day: scheduleWeeklyDay.value, weekly_time: scheduleWeeklyTime.value })
+  }
+  return '{}'
+}
+
 async function save() {
   if (!canSave.value) return
-  const data = await api('POST', `/admin/rooms/${props.room.id}/workflows`, {
+  const payload = {
     name: form.name.trim(),
     description: form.description.trim(),
     steps_json: form.steps,
     trigger_type: form.trigger_type,
-    trigger_config: '{}'
-  })
-  if (data.ok) {
+    trigger_config: buildTriggerConfig()
+  }
+
+  let data
+  if (isEditing.value) {
+    data = await api('PUT', `/admin/workflows/${props.workflow.id}`, payload)
+  } else {
+    data = await api('POST', `/admin/rooms/${props.room.id}/workflows`, payload)
+  }
+  if (data.ok || data.ok === undefined) {
     emit('saved')
   }
 }
@@ -167,6 +284,85 @@ async function save() {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--shadow-glow);
+}
+
+/* Schedule config */
+.schedule-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.schedule-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--surface2);
+  color: var(--text);
+}
+.schedule-select:focus { outline: none; border-color: var(--accent); }
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.schedule-num {
+  width: 60px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--surface2);
+  color: var(--text);
+  text-align: center;
+}
+.schedule-num:focus { outline: none; border-color: var(--accent); }
+.schedule-time {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--surface2);
+  color: var(--text);
+}
+.schedule-time:focus { outline: none; border-color: var(--accent); }
+.schedule-day {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--surface2);
+  color: var(--text);
+}
+.schedule-day:focus { outline: none; border-color: var(--accent); }
+.schedule-cron {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  background: var(--surface2);
+  color: var(--text);
+}
+.schedule-cron:focus { outline: none; border-color: var(--accent); }
+.schedule-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.schedule-hint code {
+  background: var(--surface2);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
 }
 
 .wf-steps {

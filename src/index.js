@@ -10,6 +10,7 @@ const orchestratorRouter = require('./orchestrator/index');
 const agentManagerRouter = require('./agent-manager/index');
 const configRouter = require('./config/index');
 const WorkflowRunner = require('./workflow/runner');
+const WorkflowScheduler = require('./workflow/scheduler');
 
 const app = express();
 const server = http.createServer(app);
@@ -90,6 +91,11 @@ async function main() {
   // Initialize WorkflowRunner
   const workflowRunner = new WorkflowRunner(db, wsManager);
   app.set('workflowRunner', workflowRunner);
+
+  // Initialize WorkflowScheduler
+  const workflowScheduler = new WorkflowScheduler(db, workflowRunner);
+  workflowScheduler.start();
+  app.set('workflowScheduler', workflowScheduler);
 
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {

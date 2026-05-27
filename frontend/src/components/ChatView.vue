@@ -8,10 +8,35 @@
         {{ title }}
         <span v-if="subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">{{ subtitle }}</span>
       </span>
+      <!-- Thread drawer toggle (group only) -->
+      <button v-if="type === 'group'" class="thread-toggle-btn" :class="{ active: threadDrawerOpen }" @click="threadDrawerOpen = !threadDrawerOpen" title="对话列表">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="thread-toggle-count" v-if="threads.length > 0">{{ threads.length + 1 }}</span>
+      </button>
       <button v-if="type === 'group'" class="more-btn" :class="{ active: showSettings }" @click="showSettings = !showSettings" :title="showSettings ? '返回聊天' : '群聊信息'">
         <svg v-if="!showSettings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
+      <div style="position:relative">
+        <button class="settings-btn" @click="showChatSettings = !showChatSettings" title="聊天设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <div v-if="showChatSettings" class="chat-settings-dropdown">
+          <div class="chat-settings-title">工具调用显示</div>
+          <label class="chat-settings-option">
+            <input type="radio" name="tool-display" value="expanded" :checked="chatSettings.toolCallDisplay === 'expanded'" @change="onSettingsChange('expanded')">
+            <span>展开</span>
+          </label>
+          <label class="chat-settings-option">
+            <input type="radio" name="tool-display" value="collapsed" :checked="chatSettings.toolCallDisplay === 'collapsed'" @change="onSettingsChange('collapsed')">
+            <span>折叠</span>
+          </label>
+          <label class="chat-settings-option">
+            <input type="radio" name="tool-display" value="collapsed-after-complete" :checked="chatSettings.toolCallDisplay === 'collapsed-after-complete'" @change="onSettingsChange('collapsed-after-complete')">
+            <span>完成后折叠</span>
+          </label>
+        </div>
+      </div>
     </div>
 
     <!-- Group info panel (replaces messages area when active) -->
@@ -19,26 +44,10 @@
       <RoomInfoPanel :room="room" @changed="onMembersChanged" @close="showSettings = false" @deleted="$emit('close')" />
     </div>
 
-    <!-- Thread bar (group chats only) -->
-    <div v-else-if="type === 'group'" class="thread-bar-wrapper">
-      <div class="thread-bar">
-        <div class="thread-tab" :class="{ active: !activeThreadId }" @click="selectThread(null)">主线</div>
-        <div
-          v-for="t in threads"
-          :key="t.id"
-          class="thread-tab"
-          :class="{ active: activeThreadId === t.id }"
-          @click="selectThread(t.id)"
-        >
-          <span v-if="t.status === 'workflow_running'" class="thread-status">🔄</span>
-          {{ t.title }}
-          <button class="thread-close" @click.stop="deleteThread(t.id)" title="删除话题">×</button>
-        </div>
-        <button class="thread-add" @click="createThread" title="新建话题">+</button>
-      </div>
-    </div>
-
-    <div v-if="!(type === 'group' && showSettings)" class="messages-area" ref="messagesArea" @scroll="onScroll">
+    <!-- Chat body with optional thread panel -->
+    <div v-if="!(type === 'group' && showSettings)" class="chat-body-wrapper">
+      <!-- Messages area -->
+      <div class="messages-area" ref="messagesArea" @scroll="onScroll">
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
         <div class="msg-group" :class="{ self: group.self }">
@@ -77,6 +86,55 @@
       <div v-if="typingAgent" class="typing-indicator active">
         <span style="font-size:12px;color:var(--text-dim);margin-right:4px">{{ typingAgent }}</span>
         <div class="dots"><span></span><span></span><span></span></div>
+      </div>
+      </div>
+
+      <!-- Thread drawer (overlay, does NOT affect main chat layout) -->
+      <div v-if="type === 'group' && threadDrawerOpen" class="thread-drawer-overlay" @click.self="threadDrawerOpen = false">
+        <div class="thread-drawer">
+          <div class="thread-drawer-header">
+            <span class="thread-drawer-title">对话列表</span>
+            <span class="thread-drawer-count">{{ threads.length + 1 }}</span>
+            <button class="thread-drawer-close" @click="threadDrawerOpen = false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="thread-drawer-body">
+            <button class="thread-new-btn" @click="createThread">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              + 新建对话
+            </button>
+            <div class="thread-list">
+              <div
+                class="thread-item"
+                :class="{ active: !activeThreadId }"
+                @click="selectThread(null); threadDrawerOpen = false"
+              >
+                <div class="thread-item-title">主线</div>
+                <div class="thread-item-preview">默认对话</div>
+              </div>
+              <div
+                v-for="t in threads"
+                :key="t.id"
+                class="thread-item"
+                :class="{ active: activeThreadId === t.id }"
+                @click="selectThread(t.id); threadDrawerOpen = false"
+              >
+                <div class="thread-item-header">
+                  <div class="thread-item-title">
+                    <span v-if="t.status === 'workflow_running'" class="thread-status-icon">🔄</span>
+                    {{ t.title }}
+                  </div>
+                  <button class="thread-item-delete" @click.stop="deleteThread(t.id)" title="删除对话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </div>
+                <div class="thread-item-preview">{{ t.last_message || '暂无消息' }}</div>
+                <div v-if="t.updated_at" class="thread-item-time">{{ formatThreadTime(t.updated_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <!-- Input bar (hidden when info panel showing) -->
@@ -144,7 +202,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
-import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, clearUnread, currentRoomId } from '../store.js'
+import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, clearUnread, currentRoomId, chatSettings, saveChatSettings } from '../store.js'
 import RoomInfoPanel from './RoomInfoPanel.vue'
 
 const props = defineProps({ room: Object, type: String })
@@ -160,6 +218,8 @@ const showSettings = ref(false)
 const attachments = ref([])
 const threads = ref([])
 const activeThreadId = ref(null)
+const threadDrawerOpen = ref(false)
+const showChatSettings = ref(false)
 
 // Mention autocomplete
 const showMentions = ref(false)
@@ -183,6 +243,22 @@ function toolLabel(name) { return TOOL_LABELS[name] || name }
 function toggleToolsExpand(msg) {
   const sid = msg.id.replace('stream-', '')
   toolsExpandedMap.value[sid] = !msg.toolsExpanded
+}
+
+function getToolsExpanded(sid, isStreaming) {
+  // If user has manually toggled, respect that
+  if (toolsExpandedMap.value[sid] !== undefined) return toolsExpandedMap.value[sid]
+  // Otherwise use chatSettings
+  const mode = chatSettings.toolCallDisplay
+  if (mode === 'expanded') return true
+  if (mode === 'collapsed') return false
+  // 'collapsed-after-complete': expanded while streaming, collapsed after
+  return isStreaming
+}
+
+function onSettingsChange(val) {
+  chatSettings.toolCallDisplay = val
+  saveChatSettings()
 }
 
 const title = computed(() => {
@@ -276,7 +352,7 @@ const messageGroups = computed(() => {
       streaming: true,
       working: s.working,
       toolCalls: s.toolCalls || [],
-      toolsExpanded: toolsExpandedMap.value[sid] !== false, // default expanded
+      toolsExpanded: getToolsExpanded(sid, true), // streaming = true
     })
   }
   const groups = []
@@ -345,6 +421,18 @@ async function deleteThread(threadId) {
   }
   await fetchThreads()
   fetchMessages()
+}
+
+function formatThreadTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const diff = now - d
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
+  if (diff < 604800000) return Math.floor(diff / 86400000) + '天前'
+  return ts.slice(0, 10)
 }
 
 // Smart scroll: only auto-scroll if user is near bottom
@@ -593,11 +681,18 @@ onMounted(() => {
   fetchThreads()
   pollTimer = setInterval(fetchMessages, 3000)
   ws.onMessage(handleWS)
+  // If there are already active streams for this room (e.g. from WS reconnect before mount),
+  // scroll to bottom to show the generating bubble
+  nextTick(() => {
+    const hasActiveStream = Object.values(store.activeStreams).some(s => s.roomId === props.room.id)
+    if (hasActiveStream) scrollToBottom()
+  })
 })
 
 onUnmounted(() => {
   clearInterval(pollTimer)
   currentRoomId.value = null
+  ws.offMessage(handleWS)
 })
 
 // When room prop changes, update currentRoomId and clear unread

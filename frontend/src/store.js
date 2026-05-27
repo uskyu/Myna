@@ -16,6 +16,14 @@ export async function api(method, path, body) {
 // Track which room is currently open
 export const currentRoomId = ref(null)
 
+// Chat settings (persisted in localStorage)
+export const chatSettings = reactive({
+  toolCallDisplay: localStorage.getItem('hermes_tool_display') || 'collapsed-after-complete'
+})
+export function saveChatSettings() {
+  localStorage.setItem('hermes_tool_display', chatSettings.toolCallDisplay)
+}
+
 // Global state
 export const store = reactive({
   agents: [],
@@ -51,12 +59,17 @@ export const ws = {
   _ws: null,
   _handlers: [],
   _reconnectTimer: null,
+  connected: ref(false),
   connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     this._ws = new WebSocket(`${proto}//${location.host}/ws?ui=1`)
-    this._ws.onopen = () => console.log('[WS] Connected')
+    this._ws.onopen = () => {
+      console.log('[WS] Connected')
+      this.connected.value = true
+    }
     this._ws.onclose = () => {
       console.log('[WS] Disconnected, reconnecting in 3s...')
+      this.connected.value = false
       this._reconnectTimer = setTimeout(() => this.connect(), 3000)
     }
     this._ws.onerror = () => {}
@@ -72,10 +85,15 @@ export const ws = {
   onMessage(handler) {
     this._handlers.push(handler)
   },
+  offMessage(handler) {
+    const idx = this._handlers.indexOf(handler)
+    if (idx !== -1) this._handlers.splice(idx, 1)
+  },
   destroy() {
     clearTimeout(this._reconnectTimer)
     this._ws?.close()
     this._handlers = []
+    this.connected.value = false
   }
 }
 

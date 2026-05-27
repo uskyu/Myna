@@ -384,7 +384,8 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
         stream_id: streamId,
         room_id: roomId,
         agent_id: agent.id,
-        agent_name: agent.name || fullAgent.name
+        agent_name: agent.name || fullAgent.name,
+        thread_id: threadId || null
       });
     }
 

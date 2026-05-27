@@ -488,22 +488,57 @@ router.post('/rooms/:id/workflows', async (req, res) => {
   const { name, description, steps_json, trigger_type, trigger_config } = req.body;
   if (!name || !steps_json) return res.status(400).json({ ok: false, error: 'name and steps_json are required' });
   const workflow = db.createWorkflow(req.params.id, name, description, steps_json, trigger_type, trigger_config);
+  const scheduler = req.app.get('workflowScheduler'); if (scheduler) scheduler.reload();
+  res.json({ ok: true, result: workflow });
+});
+
+// GET single workflow by ID
+router.get('/workflows/:id', async (req, res) => {
+  const db = getDatabase();
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found' });
   res.json({ ok: true, result: workflow });
 });
 
 router.put('/workflows/:id', async (req, res) => {
   const db = getDatabase();
   db.updateWorkflow(req.params.id, req.body);
+  const scheduler = req.app.get('workflowScheduler'); if (scheduler) scheduler.reload();
   res.json({ ok: true });
 });
 
 router.delete('/workflows/:id', async (req, res) => {
   const db = getDatabase();
   db.deleteWorkflow(req.params.id);
+  const scheduler = req.app.get('workflowScheduler'); if (scheduler) scheduler.reload();
   res.json({ ok: true });
 });
 
+// Workflow run history
+router.get('/workflows/:id/runs', async (req, res) => {
+  const db = getDatabase();
+  const runs = db.getWorkflowRuns ? db.getWorkflowRuns(req.params.id) : [];
+  res.json({ ok: true, result: runs });
+});
+
 router.post('/workflows/:id/run', async (req, res) => {
+  const db = getDatabase();
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found' });
+
+  const runner = req.app.get('workflowRunner');
+  if (!runner) return res.status(500).json({ ok: false, error: 'WorkflowRunner not initialized' });
+
+  try {
+    const { runId, threadId } = await runner.start(req.params.id, workflow.room_id);
+    res.json({ ok: true, result: { runId, threadId } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Alias: POST /admin/workflows/:id/trigger
+router.post('/workflows/:id/trigger', async (req, res) => {
   const db = getDatabase();
   const workflow = db.getWorkflow(req.params.id);
   if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found' });

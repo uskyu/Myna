@@ -93,21 +93,47 @@
     <div class="info-section">
       <div class="section-head">
         <h4>🛠 工作流</h4>
-        <button class="btn-sm" @click="showWorkflowEditor = true">创建工作流</button>
+        <button class="btn-sm" @click="openCreateWorkflow">创建工作流</button>
       </div>
       <div v-if="workflows.length === 0" class="hint-box">
         <p>暂无工作流。创建一个多步骤流程来自动化协作。</p>
       </div>
       <div v-else class="workflow-list">
         <div v-for="wf in workflows" :key="wf.id" class="workflow-row">
-          <div class="workflow-info">
+          <div class="workflow-info clickable" @click="openEditWorkflow(wf)">
             <div class="workflow-name">{{ wf.name }}</div>
-            <div class="workflow-meta">{{ triggerLabel(wf.trigger_type) }} · {{ stepCount(wf) }} 步</div>
+            <div class="workflow-meta">
+              {{ triggerLabel(wf.trigger_type) }}
+              <span v-if="wf.trigger_type === 'schedule'" class="schedule-desc">· {{ scheduleDescription(wf) }}</span>
+              · {{ stepCount(wf) }} 步
+            </div>
           </div>
           <button class="icon-btn add" @click="runWorkflow(wf)" title="运行">▶</button>
+          <button class="icon-btn edit" @click="openEditWorkflow(wf)" title="编辑">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="icon-btn history" @click="toggleHistory(wf)" title="历史">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
           <button class="icon-btn danger" @click="deleteWorkflow(wf)" title="删除">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
+        </div>
+      </div>
+
+      <!-- History dropdown -->
+      <div v-if="historyWorkflowId" class="history-dropdown">
+        <div class="history-header">
+          <span>运行历史</span>
+          <button class="history-close" @click="historyWorkflowId = null">×</button>
+        </div>
+        <div v-if="historyRuns.length === 0" class="history-empty">暂无运行记录</div>
+        <div v-else class="history-list">
+          <div v-for="run in historyRuns" :key="run.id" class="history-item">
+            <span class="history-status">{{ runStatusIcon(run.status) }}</span>
+            <span class="history-time">{{ formatTime(run.started_at) }}</span>
+            <span class="history-duration">{{ runDuration(run) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -116,6 +142,7 @@
     <WorkflowEditor
       v-if="showWorkflowEditor"
       :room="room"
+      :workflow="editingWorkflow"
       @close="showWorkflowEditor = false"
       @saved="onWorkflowSaved"
     />
@@ -151,6 +178,9 @@ const saving = ref(false)
 const lastSavedTag = ref('')
 const workflows = ref([])
 const showWorkflowEditor = ref(false)
+const editingWorkflow = ref(null)
+const historyWorkflowId = ref(null)
+const historyRuns = ref([])
 const form = reactive({
   name: props.room.name || '',
   description: props.room.description || '',
@@ -267,6 +297,21 @@ function triggerLabel(type) {
   return labels[type] || type
 }
 
+function scheduleDescription(wf) {
+  try {
+    const config = typeof wf.trigger_config === 'string'
+      ? JSON.parse(wf.trigger_config || '{}')
+      : (wf.trigger_config || {})
+    if (config.interval_hours) return `每${config.interval_hours}小时`
+    if (config.daily_time) return `每天 ${config.daily_time}`
+    if (config.weekly_day !== undefined) {
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+      return `每${days[config.weekly_day]} ${config.weekly_time || ''}`
+    }
+  } catch {}
+  return ''
+}
+
 function stepCount(wf) {
   try {
     const steps = typeof wf.steps_json === 'string' ? JSON.parse(wf.steps_json) : wf.steps_json
@@ -281,6 +326,16 @@ async function runWorkflow(wf) {
   }
 }
 
+function openCreateWorkflow() {
+  editingWorkflow.value = null
+  showWorkflowEditor.value = true
+}
+
+function openEditWorkflow(wf) {
+  editingWorkflow.value = wf
+  showWorkflowEditor.value = true
+}
+
 async function deleteWorkflow(wf) {
   if (!confirm(`确定删除工作流「${wf.name}」？`)) return
   await api('DELETE', `/admin/workflows/${wf.id}`)
@@ -289,7 +344,40 @@ async function deleteWorkflow(wf) {
 
 async function onWorkflowSaved() {
   showWorkflowEditor.value = false
+  editingWorkflow.value = null
   await loadWorkflows()
+}
+
+// === History methods ===
+async function toggleHistory(wf) {
+  if (historyWorkflowId.value === wf.id) {
+    historyWorkflowId.value = null
+    return
+  }
+  historyWorkflowId.value = wf.id
+  const data = await api('GET', `/admin/workflows/${wf.id}/runs`)
+  historyRuns.value = (data.result || []).slice(0, 20)
+}
+
+function runStatusIcon(status) {
+  if (status === 'completed') return '✅'
+  if (status === 'failed' || status === 'cancelled') return '❌'
+  return '🔄'
+}
+
+function formatTime(ts) {
+  if (!ts) return ''
+  return ts.replace('T', ' ').slice(0, 16)
+}
+
+function runDuration(run) {
+  if (!run.started_at || !run.completed_at) return run.status === 'running' ? '进行中' : ''
+  const start = new Date(run.started_at).getTime()
+  const end = new Date(run.completed_at).getTime()
+  const diff = Math.floor((end - start) / 1000)
+  if (diff < 60) return `${diff}秒`
+  if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`
+  return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`
 }
 
 onMounted(() => { load(); loadWorkflows() })
@@ -445,6 +533,8 @@ onMounted(() => { load(); loadWorkflows() })
 }
 .icon-btn svg { width: 14px; height: 14px; }
 .icon-btn.add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.icon-btn.edit:hover { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+.icon-btn.history:hover { color: var(--text-2); border-color: var(--text-2); background: var(--surface2); }
 .icon-btn.danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
 
 .add-member-block { margin-top: 12px; }
@@ -520,11 +610,15 @@ onMounted(() => { load(); loadWorkflows() })
 }
 .btn-sm:hover { background: var(--accent); color: white; }
 
+.btn { padding: 8px 16px; border-radius: var(--radius); font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
+.btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
+.btn-danger:hover { background: var(--danger); color: white; }
+
 .workflow-list { }
 .workflow-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -532,7 +626,66 @@ onMounted(() => { load(); loadWorkflows() })
   background: var(--surface);
 }
 .workflow-row:hover { background: var(--surface2); }
-.workflow-info { flex: 1; min-width: 0; }
-.workflow-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.workflow-info { flex: 1; min-width: 0; cursor: pointer; }
+.workflow-info:hover .workflow-name { color: var(--accent); }
+.workflow-name { font-size: 14px; font-weight: 600; color: var(--text); transition: color 0.15s ease; }
 .workflow-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.schedule-desc { color: var(--amber); }
+
+/* History dropdown */
+.history-dropdown {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.history-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--text-dim);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+.history-close:hover { background: var(--surface2); color: var(--text); }
+.history-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.history-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.history-item:last-child { border-bottom: none; }
+.history-status { font-size: 14px; }
+.history-time { flex: 1; color: var(--text-2); }
+.history-duration { color: var(--text-dim); font-size: 12px; }
 </style>
