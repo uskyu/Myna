@@ -267,7 +267,27 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
   if (roomType === 'dm') {
     respondingAgents = members.filter(m => m.id !== senderId && m.id !== 'system' && m.id !== 'user');
   } else if (mentions.length > 0) {
+    // First try to find mentioned agents in room members
     respondingAgents = members.filter(m => mentions.includes(m.id));
+    // If some mentioned agents are not in the room, auto-add them (for chain collaboration)
+    if (respondingAgents.length < mentions.length) {
+      const allAgents = await db.listAgents();
+      for (const mid of mentions) {
+        if (!members.find(m => m.id === mid)) {
+          const agent = allAgents.find(a => a.id === mid);
+          if (agent && agent.status !== 'offline') {
+            // Auto-add to room for collaboration
+            try {
+              await db.addMember(roomId, mid);
+              respondingAgents.push(agent);
+              console.log(`[AI] Auto-added ${agent.name} to room for chain collaboration`);
+            } catch(e) {
+              console.log(`[AI] Failed to auto-add ${mid}: ${e.message}`);
+            }
+          }
+        }
+      }
+    }
   }
 
   if (respondingAgents.length === 0) return;
@@ -288,6 +308,19 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
         ? `[${m.sender_name}]: ${m.text}`
         : m.text
     }));
+
+    // Tell the agent about other members it can collaborate with
+    if (roomType === 'group') {
+      const allAgents = await db.listAgents();
+      const otherAgents = allAgents.filter(a => a.id !== agent.id && a.id !== 'user' && a.status === 'online');
+      if (otherAgents.length > 0) {
+        const agentList = otherAgents.map(a => `@${a.name}（${a.description || '通用智能体'}）`).join('、');
+        history.unshift({
+          role: 'system',
+          content: `[群聊环境] 当前可协作的其他智能体：${agentList}。如果用户的问题需要其他智能体的专长，可以在回复中 @他们的名字来请求协助。`
+        });
+      }
+    }
 
     if (chainDepth > 0) {
       history.push({
