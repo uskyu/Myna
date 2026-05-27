@@ -5,6 +5,7 @@ class WSManager {
   constructor() {
     this.connections = new Map(); // agent_id -> Set<ws>
     this.uiConnections = new Set(); // UI client connections (no auth needed for single-user)
+    this.activeStreams = new Map(); // stream_id -> { room_id, agent_id, agent_name, thread_id }
   }
 
   init(server) {
@@ -21,6 +22,17 @@ class WSManager {
         this.uiConnections.add(ws);
         ws.on('close', () => this.uiConnections.delete(ws));
         ws.send(JSON.stringify({ type: 'connected', client: 'ui' }));
+        // Send current active streams so UI can restore "generating" state
+        for (const [streamId, info] of this.activeStreams) {
+          ws.send(JSON.stringify({
+            type: 'stream_start',
+            stream_id: streamId,
+            room_id: info.room_id,
+            agent_id: info.agent_id,
+            agent_name: info.agent_name,
+            thread_id: info.thread_id || null
+          }));
+        }
         return;
       }
 
@@ -149,6 +161,17 @@ class WSManager {
 
   // Notify all UI clients (for streaming, new messages, etc.)
   notifyUI(payload) {
+    // Track active streams for reconnection recovery
+    if (payload.type === 'stream_start') {
+      this.activeStreams.set(payload.stream_id, {
+        room_id: payload.room_id,
+        agent_id: payload.agent_id,
+        agent_name: payload.agent_name,
+        thread_id: payload.thread_id || null
+      });
+    } else if (payload.type === 'stream_end') {
+      this.activeStreams.delete(payload.stream_id);
+    }
     const data = JSON.stringify(payload);
     for (const ws of this.uiConnections) {
       if (ws.readyState === WebSocket.OPEN) {

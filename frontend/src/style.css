@@ -476,7 +476,8 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .msg-group.self .msg .msg-time { color: rgba(255, 255, 255, 0.7); }
 
-.msg .msg-text { white-space: normal; word-wrap: break-word; line-height: 1.6; }
+.msg .msg-text { white-space: normal; word-wrap: break-word; overflow-wrap: break-word; line-height: 1.6; overflow: hidden; }
+.msg .msg-text pre { overflow-x: auto; max-width: 100%; }
 .msg .msg-text p { margin: 0 0 8px 0; }
 .msg .msg-text p:last-child { margin-bottom: 0; }
 .msg .msg-text code {

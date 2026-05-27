@@ -159,6 +159,12 @@ const executors = {
     if (SENSITIVE_PATHS.some(p => filePath.startsWith(p))) {
       return { ok: false, output: '⚠️ 该文件路径被安全策略阻止' };
     }
+    // Prevent AI from overwriting project source files
+    const projectDir = require('path').resolve(__dirname, '..', '..');
+    const resolved = require('path').resolve(filePath);
+    if (resolved.startsWith(projectDir + '/src/') || resolved.startsWith(projectDir + '/frontend/')) {
+      return { ok: false, output: '⚠️ 不允许写入项目源代码目录。请写入 /tmp/ 或 data/uploads/ 目录。' };
+    }
     try {
       const dir = require('path').dirname(filePath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

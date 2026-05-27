@@ -219,7 +219,25 @@ function renderMd(text) {
   if (!text) return ''
   try {
     marked.setOptions({ breaks: true, gfm: true })
-    let html = marked.parse(text)
+    // Escape raw HTML tags in the source to prevent DOM injection
+    // But preserve code blocks (``` ... ```) which should show HTML as-is
+    let processed = text
+    // Temporarily protect code blocks
+    const codeBlocks = []
+    processed = processed.replace(/```[\s\S]*?```/g, (match) => {
+      codeBlocks.push(match)
+      return `__CODE_BLOCK_${codeBlocks.length - 1}__`
+    })
+    // Escape HTML tags outside code blocks (prevent layout breakage)
+    processed = processed.replace(/<(script|style|link|meta|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, (match) => {
+      return '```html\n' + match + '\n```'
+    })
+    processed = processed.replace(/<(script|style|link|meta|iframe|object|embed|form)[^>]*\/?>/gi, (match) => {
+      return '`' + match + '`'
+    })
+    // Restore code blocks
+    processed = processed.replace(/__CODE_BLOCK_(\d+)__/g, (_, i) => codeBlocks[i])
+    let html = marked.parse(processed)
     html = html.replace(/<table>/g, '<div class="table-wrapper"><table>').replace(/<\/table>/g, '</table></div>')
     html = html.replace(/<img /g, '<img style="max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;display:block;margin:4px 0" onclick="window.open(this.src)" ')
     return html
