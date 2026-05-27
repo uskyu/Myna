@@ -98,12 +98,44 @@ router.post('/', (req, res) => {
   }
 });
 
+// Helper: get stored API key
+function getStoredKey() {
+  try {
+    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const config = yaml.load(raw);
+    const provider = config.model?.provider || '';
+    const providerName = provider.replace('custom:', '');
+    const providerConfig = config.providers?.[providerName] || {};
+    const keyEnv = providerConfig.key_env || '';
+    if (keyEnv && fs.existsSync(ENV_PATH)) {
+      const envContent = fs.readFileSync(ENV_PATH, 'utf8');
+      const match = envContent.match(new RegExp(`^${keyEnv}=['"]?([^'"\\n]+)`, 'm'));
+      if (match) return match[1];
+    }
+  } catch(e) {}
+  return '';
+}
+
 // POST /admin/config/models - fetch models from API
 router.post('/models', async (req, res) => {
-  const { base_url, api_key } = req.body;
-  if (!base_url || !api_key) {
-    return res.json({ ok: false, error: '请填写 API 地址和密钥' });
+  let { base_url, api_key } = req.body;
+  
+  // If no key provided, use stored key
+  if (!api_key) api_key = getStoredKey();
+  
+  // If no base_url provided, use stored one
+  if (!base_url) {
+    try {
+      const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+      const config = yaml.load(raw);
+      const provider = config.model?.provider || '';
+      const providerName = provider.replace('custom:', '');
+      base_url = config.providers?.[providerName]?.base_url || '';
+    } catch(e) {}
   }
+
+  if (!base_url) return res.json({ ok: false, error: '请填写 API 地址' });
+  if (!api_key) return res.json({ ok: false, error: '请填写 API 密钥' });
 
   try {
     const url = base_url.replace(/\/$/, '') + '/models';

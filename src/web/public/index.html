@@ -7,175 +7,79 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
-      --bg: #f5f5f7;
-      --surface: #ffffff;
-      --surface2: #f2f2f7;
-      --text: #1d1d1f;
-      --text-dim: #86868b;
-      --border: #e5e5ea;
-      --accent: #007aff;
-      --accent-light: #e8f4fd;
-      --danger: #ff3b30;
-      --success: #34c759;
-      --radius: 12px;
-      --radius-lg: 16px;
-      --shadow: 0 1px 3px rgba(0,0,0,0.06);
-      --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
-      --nav-height: 52px;
-      --header-height: 48px;
+      --bg: #f5f5f7; --surface: #ffffff; --surface2: #f2f2f7;
+      --text: #1d1d1f; --text-dim: #86868b; --border: #e5e5ea;
+      --accent: #007aff; --accent-light: #e8f4fd;
+      --danger: #ff3b30; --success: #34c759;
+      --radius: 12px; --radius-lg: 16px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06); --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+      --nav-height: 56px; --header-height: 48px;
     }
     [data-theme="dark"] {
-      --bg: #000000;
-      --surface: #1c1c1e;
-      --surface2: #2c2c2e;
-      --text: #f5f5f7;
-      --text-dim: #98989d;
-      --border: #38383a;
-      --accent: #0a84ff;
-      --accent-light: #1a2a3a;
-      --shadow: 0 1px 3px rgba(0,0,0,0.3);
-      --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+      --bg: #000000; --surface: #1c1c1e; --surface2: #2c2c2e;
+      --text: #f5f5f7; --text-dim: #98989d; --border: #38383a;
+      --accent: #0a84ff; --accent-light: #1a2a3a;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3); --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
     }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      height: 100dvh;
-      overflow: hidden;
-      -webkit-font-smoothing: antialiased;
-    }
-    .app {
-      height: 100vh;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
-    @media (min-width: 768px) {
-      .app-inner { display: grid; grid-template-columns: 380px 1fr; flex: 1; overflow: hidden; }
-      .page { border-right: 1px solid var(--border); }
-      .chat-detail { display: flex !important; }
-      .bottom-nav { display: flex !important; }
-    }
-    @media (max-width: 767px) {
-      .chat-detail { position: fixed; inset: 0; z-index: 200; background: var(--bg); }
-      .chat-detail.hidden { display: none !important; }
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; overflow: hidden; -webkit-font-smoothing: antialiased; }
+    .app { height: 100dvh; display: flex; flex-direction: column; }
+    .app-inner { flex: 1; overflow: hidden; position: relative; }
+    .page { position: absolute; inset: 0; display: none; flex-direction: column; overflow: hidden; }
+    .page.active { display: flex; }
 
     /* Header */
-    .header {
-      height: var(--header-height);
-      display: flex;
-      align-items: center;
-      padding: 0 16px;
-      background: var(--surface);
-      border-bottom: 0.5px solid var(--border);
-      flex-shrink: 0;
-    }
-    .header h1 { font-size: 17px; font-weight: 600; }
-    .header .actions { margin-left: auto; }
-    .header .actions button {
-      background: none; border: none;
-      color: var(--accent); cursor: pointer; padding: 6px;
-    }
-    .header .actions button svg { width: 22px; height: 22px; }
+    .header { height: var(--header-height); display: flex; align-items: center; padding: 0 16px; background: var(--surface); border-bottom: 0.5px solid var(--border); flex-shrink: 0; }
+    .header h1 { font-size: 17px; font-weight: 600; flex: 1; }
+    .header .actions { display: flex; gap: 4px; }
+    .header .actions button { background: none; border: none; color: var(--accent); cursor: pointer; padding: 6px; border-radius: 8px; }
+    .header .actions button:active { background: var(--surface2); }
+    .header .actions button svg { width: 22px; height: 22px; display: block; }
 
-    /* Bottom Nav - FIXED at bottom */
-    .bottom-nav {
-      height: var(--nav-height);
-      background: var(--surface);
-      border-top: 0.5px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-around;
-      flex-shrink: 0;
-      padding-bottom: env(safe-area-inset-bottom, 0);
-    }
-    .nav-item {
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
-      cursor: pointer; padding: 4px 20px; border-radius: 8px;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .nav-item svg { width: 24px; height: 24px; color: var(--text-dim); stroke-width: 1.5; }
+    /* Bottom Nav */
+    .bottom-nav { height: var(--nav-height); background: var(--surface); border-top: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-around; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom, 0); position: relative; z-index: 100; }
+    .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 6px 20px; border-radius: 8px; -webkit-tap-highlight-color: transparent; }
+    .nav-item svg { width: 24px; height: 24px; color: var(--text-dim); }
     .nav-item .label { font-size: 10px; color: var(--text-dim); }
     .nav-item.active svg { color: var(--accent); }
     .nav-item.active .label { color: var(--accent); font-weight: 500; }
 
-    /* Pages */
-    .app-inner { flex: 1; overflow: hidden; position: relative; }
-    .page { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: none; flex-direction: column; }
-    .page.active { display: flex; position: relative; }
-    @media (min-width: 768px) { .page { position: relative; } }
-
     /* Chat List */
-    .chat-list { flex: 1; }
-    .chat-item {
-      display: flex; align-items: center; padding: 12px 16px; gap: 12px;
-      cursor: pointer; border-bottom: 0.5px solid var(--border);
-      transition: background 0.1s;
-    }
+    .chat-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .chat-item { display: flex; align-items: center; padding: 12px 16px; gap: 12px; cursor: pointer; border-bottom: 0.5px solid var(--border); transition: background 0.1s; }
     .chat-item:active { background: var(--surface2); }
-    .chat-item .avatar {
-      width: 48px; height: 48px; border-radius: var(--radius);
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
+    .chat-item .avatar { width: 48px; height: 48px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .chat-item .avatar svg { width: 24px; height: 24px; color: white; }
     .chat-item .info { flex: 1; min-width: 0; }
     .chat-item .info .name { font-size: 16px; font-weight: 500; }
     .chat-item .info .preview { font-size: 13px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-item .meta { font-size: 12px; color: var(--text-dim); }
 
-    /* Chat Detail */
-    .chat-detail { display: none; flex-direction: column; height: 100%; background: var(--bg); }
-    .chat-header {
-      height: var(--header-height); display: flex; align-items: center;
-      padding: 0 12px; background: var(--surface); border-bottom: 0.5px solid var(--border); gap: 10px; flex-shrink: 0;
-    }
+    /* Chat View (replaces detail panel) */
+    .chat-view { position: absolute; inset: 0; display: none; flex-direction: column; background: var(--bg); z-index: 50; }
+    .chat-view.active { display: flex; }
+    .chat-header { height: var(--header-height); display: flex; align-items: center; padding: 0 12px; background: var(--surface); border-bottom: 0.5px solid var(--border); gap: 10px; flex-shrink: 0; }
     .chat-header .back-btn { color: var(--accent); cursor: pointer; background: none; border: none; padding: 4px; }
-    .chat-header .back-btn svg { width: 24px; height: 24px; }
+    .chat-header .back-btn svg { width: 24px; height: 24px; display: block; }
     .chat-header .title { font-size: 16px; font-weight: 600; flex: 1; }
     .chat-header .more-btn { color: var(--text-dim); cursor: pointer; background: none; border: none; padding: 4px; }
-    .chat-header .more-btn svg { width: 20px; height: 20px; }
+    .chat-header .more-btn svg { width: 20px; height: 20px; display: block; }
     .messages-area { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
     .msg { max-width: 75%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.4; word-break: break-word; }
     .msg.other { align-self: flex-start; background: var(--surface); border: 0.5px solid var(--border); }
     .msg.self { align-self: flex-end; background: var(--accent); color: white; }
-    .msg .msg-sender { font-size: 12px; color: var(--accent); margin-bottom: 2px; font-weight: 500; }
-    .msg.self .msg-sender { color: rgba(255,255,255,0.8); }
     .msg .msg-time { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
     .msg.self .msg-time { color: rgba(255,255,255,0.7); }
-    .input-bar {
-      padding: 8px 12px; background: var(--surface); border-top: 0.5px solid var(--border);
-      display: flex; gap: 8px; align-items: flex-end;
-      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0)); flex-shrink: 0;
-    }
-    .input-bar textarea {
-      flex: 1; border: 1px solid var(--border); border-radius: 20px;
-      padding: 8px 14px; font-size: 15px; background: var(--surface2);
-      color: var(--text); resize: none; max-height: 100px; line-height: 1.4; font-family: inherit;
-    }
+    .input-bar { padding: 8px 12px; background: var(--surface); border-top: 0.5px solid var(--border); display: flex; gap: 8px; align-items: flex-end; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0)); flex-shrink: 0; }
+    .input-bar textarea { flex: 1; border: 1px solid var(--border); border-radius: 20px; padding: 8px 14px; font-size: 15px; background: var(--surface2); color: var(--text); resize: none; max-height: 100px; line-height: 1.4; font-family: inherit; }
     .input-bar textarea:focus { outline: none; border-color: var(--accent); }
-    .input-bar .send-btn {
-      width: 32px; height: 32px; border-radius: 50%; background: var(--accent);
-      border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
+    .input-bar .send-btn { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .input-bar .send-btn svg { width: 16px; height: 16px; }
 
     /* Agent Grid */
-    .agent-grid { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-    .agent-card {
-      background: var(--surface); border-radius: var(--radius-lg); padding: 16px;
-      text-align: center; cursor: pointer; box-shadow: var(--shadow);
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
+    .agent-grid { flex: 1; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start; }
+    .agent-card { background: var(--surface); border-radius: var(--radius-lg); padding: 16px; text-align: center; cursor: pointer; box-shadow: var(--shadow); transition: transform 0.15s; }
     .agent-card:active { transform: scale(0.97); }
-    .agent-card .agent-avatar {
-      width: 52px; height: 52px; border-radius: 50%;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      margin: 0 auto 10px; display: flex; align-items: center; justify-content: center;
-    }
+    .agent-card .agent-avatar { width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; }
     .agent-card .agent-avatar svg { width: 26px; height: 26px; color: white; }
     .agent-card .agent-name { font-size: 14px; font-weight: 600; }
     .agent-card .agent-desc { font-size: 12px; color: var(--text-dim); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -184,8 +88,21 @@
     .agent-card .agent-status .dot.online { background: var(--success); }
     .agent-card .agent-status .dot.offline { background: var(--text-dim); }
 
+    /* Agent Detail View */
+    .agent-detail { position: absolute; inset: 0; display: none; flex-direction: column; background: var(--bg); z-index: 50; }
+    .agent-detail.active { display: flex; }
+    .agent-detail-content { flex: 1; overflow-y: auto; padding: 20px 16px; }
+    .agent-detail .avatar-large { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; }
+    .agent-detail .avatar-large svg { width: 40px; height: 40px; color: white; }
+    .agent-detail .field { margin-bottom: 16px; }
+    .agent-detail .field label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: block; }
+    .agent-detail .field input, .agent-detail .field textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; background: var(--surface); color: var(--text); font-family: inherit; }
+    .agent-detail .field input:focus, .agent-detail .field textarea:focus { outline: none; border-color: var(--accent); }
+    .agent-detail .field textarea { resize: none; min-height: 80px; }
+    .agent-detail .btn-group { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+
     /* Settings */
-    .settings-page { padding: 12px 16px; overflow-y: auto; flex: 1; }
+    .settings-page { flex: 1; overflow-y: auto; padding: 12px 16px; }
     .settings-section { background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 16px; box-shadow: var(--shadow); }
     .settings-section .section-title { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 16px 6px; }
     .setting-item { display: flex; align-items: center; padding: 13px 16px; border-bottom: 0.5px solid var(--border); gap: 12px; cursor: pointer; }
@@ -194,8 +111,7 @@
     .setting-item svg { width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
     .setting-item .setting-label { flex: 1; font-size: 15px; }
     .setting-item .setting-value { font-size: 14px; color: var(--text-dim); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .setting-item .chevron { color: var(--text-dim); }
-    .setting-item .chevron svg { width: 16px; height: 16px; }
+    .setting-item .chevron svg { width: 16px; height: 16px; color: var(--text-dim); }
     .toggle { width: 44px; height: 26px; border-radius: 13px; background: var(--border); position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
     .toggle.on { background: var(--success); }
     .toggle::after { content: ''; position: absolute; width: 22px; height: 22px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
@@ -204,25 +120,22 @@
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 300; align-items: flex-end; justify-content: center; }
     .modal-overlay.active { display: flex; }
-    @media (min-width: 768px) { .modal-overlay { align-items: center; } .modal { border-radius: var(--radius-lg) !important; max-width: 420px; } }
+    @media (min-width: 768px) { .modal-overlay { align-items: center; } .modal { border-radius: var(--radius-lg) !important; max-width: 440px; } }
     .modal { background: var(--surface); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: 20px; width: 100%; max-height: 85vh; overflow-y: auto; animation: slideUp 0.25s ease; }
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
     .modal h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; text-align: center; }
-    .modal input, .modal select, .modal textarea {
-      width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
-      font-size: 15px; background: var(--surface2); color: var(--text); margin-bottom: 10px; font-family: inherit;
-    }
+    .modal input, .modal select { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; background: var(--surface2); color: var(--text); margin-bottom: 10px; font-family: inherit; }
     .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); }
-    .modal .btn-row { display: flex; gap: 10px; margin-top: 16px; }
-    .btn { padding: 12px 20px; border: none; border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer; flex: 1; text-align: center; font-family: inherit; transition: opacity 0.15s; }
+    .btn { padding: 12px 20px; border: none; border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer; text-align: center; font-family: inherit; transition: opacity 0.15s; display: block; width: 100%; }
     .btn:active { opacity: 0.7; }
     .btn-primary { background: var(--accent); color: white; }
     .btn-cancel { background: var(--surface2); color: var(--text); }
     .btn-danger { background: var(--danger); color: white; }
-    .btn-block { display: block; width: 100%; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+    .btn-row .btn { flex: 1; }
 
-    /* Model list */
+    /* Model config */
     .model-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
     .model-item { padding: 10px 14px; border-bottom: 0.5px solid var(--border); cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; }
     .model-item:last-child { border-bottom: none; }
@@ -231,7 +144,6 @@
     .model-item .check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; }
     .model-item.selected .check { border-color: var(--accent); background: var(--accent); position: relative; }
     .model-item.selected .check::after { content: ''; position: absolute; top: 3px; left: 5px; width: 5px; height: 8px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-
     .hint { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; }
     .status-msg { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; }
     .status-msg.error { background: #fff0f0; color: var(--danger); }
@@ -239,14 +151,22 @@
     [data-theme="dark"] .status-msg.error { background: #2a1a1a; }
     [data-theme="dark"] .status-msg.success { background: #1a2a1a; }
 
+    /* Tabs */
+    .tab-bar { display: flex; gap: 0; margin-bottom: 12px; background: var(--surface2); border-radius: 8px; padding: 3px; }
+    .tab-bar .tab { flex: 1; padding: 8px; text-align: center; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; color: var(--text-dim); }
+    .tab-bar .tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
     /* Empty */
     .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-dim); text-align: center; flex: 1; }
     .empty svg { width: 48px; height: 48px; margin-bottom: 12px; color: var(--border); }
     .empty p { font-size: 14px; margin-top: 6px; }
 
-    /* Loading spinner */
-    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    .toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 14px; z-index: 999; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   </style>
 </head>
 <body>
@@ -257,7 +177,7 @@
         <div class="header">
           <h1>群聊</h1>
           <div class="actions">
-            <button onclick="showCreateRoom()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button onclick="showCreateRoom()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
           </div>
         </div>
         <div class="chat-list" id="chat-list"></div>
@@ -266,6 +186,19 @@
           <p>还没有群聊</p>
           <p>点击右上角 + 创建</p>
         </div>
+        <!-- Chat View (overlay on same page) -->
+        <div class="chat-view" id="chat-view">
+          <div class="chat-header">
+            <button class="back-btn" onclick="closeChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <span class="title" id="chat-title"></span>
+            <button class="more-btn" onclick="showRoomSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          </div>
+          <div class="messages-area" id="messages-area"></div>
+          <div class="input-bar">
+            <textarea id="msg-input" rows="1" placeholder="输入消息..." oninput="autoResize(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+            <button class="send-btn" onclick="sendMsg()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <!-- Page: Agents -->
@@ -273,14 +206,42 @@
         <div class="header">
           <h1>智能体</h1>
           <div class="actions">
-            <button onclick="showCreateAgent()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button onclick="showCreateAgent()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
           </div>
         </div>
         <div class="agent-grid" id="agent-grid"></div>
         <div class="empty" id="agents-empty" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><path d="M8 15h.01M16 15h.01"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
           <p>还没有智能体</p>
           <p>点击右上角 + 创建</p>
+        </div>
+        <!-- Agent Detail View -->
+        <div class="agent-detail" id="agent-detail">
+          <div class="chat-header">
+            <button class="back-btn" onclick="closeAgentDetail()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <span class="title">编辑智能体</span>
+          </div>
+          <div class="agent-detail-content">
+            <div class="avatar-large" id="agent-edit-avatar" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+            </div>
+            <div class="field">
+              <label>名称</label>
+              <input type="text" id="agent-edit-name">
+            </div>
+            <div class="field">
+              <label>描述</label>
+              <textarea id="agent-edit-desc"></textarea>
+            </div>
+            <div class="field">
+              <label>状态</label>
+              <input type="text" id="agent-edit-status" disabled>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-primary" onclick="saveAgent()">保存修改</button>
+              <button class="btn btn-danger" onclick="deleteAgent()">删除智能体</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -322,20 +283,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Chat Detail -->
-      <div class="chat-detail hidden" id="chat-detail">
-        <div class="chat-header">
-          <button class="back-btn" onclick="closeChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
-          <span class="title" id="chat-title"></span>
-          <button class="more-btn" onclick="showRoomSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
-        </div>
-        <div class="messages-area" id="messages-area"></div>
-        <div class="input-bar">
-          <textarea id="msg-input" rows="1" placeholder="输入消息..." oninput="autoResize(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
-          <button class="send-btn" onclick="sendMsg()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
-        </div>
-      </div>
     </div>
 
     <!-- Bottom Nav -->
@@ -345,11 +292,11 @@
         <span class="label">群聊</span>
       </div>
       <div class="nav-item" onclick="switchPage('agents')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><path d="M8 15h.01M16 15h.01"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
         <span class="label">智能体</span>
       </div>
       <div class="nav-item" onclick="switchPage('settings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="label">设置</span>
       </div>
     </div>
@@ -372,8 +319,8 @@
   <div class="modal-overlay" id="modal-agent">
     <div class="modal">
       <h3>创建智能体</h3>
-      <input type="text" id="agent-name" placeholder="智能体名称">
-      <input type="text" id="agent-desc" placeholder="描述（可选）">
+      <input type="text" id="new-agent-name" placeholder="智能体名称">
+      <input type="text" id="new-agent-desc" placeholder="描述（可选）">
       <div class="btn-row">
         <button class="btn btn-cancel" onclick="closeModals()">取消</button>
         <button class="btn btn-primary" onclick="createAgent()">创建</button>
@@ -385,16 +332,26 @@
   <div class="modal-overlay" id="modal-model-setup">
     <div class="modal">
       <h3>API 配置</h3>
-      <div class="hint">输入 API 地址和密钥，点击获取模型列表</div>
-      <input type="url" id="setup-base-url" placeholder="API 地址 (如 https://api.openai.com/v1)">
-      <input type="password" id="setup-api-key" placeholder="API Key (sk-...)">
-      <div id="model-fetch-status"></div>
-      <button class="btn btn-primary btn-block" id="fetch-models-btn" onclick="fetchModels()" style="margin-bottom:12px">获取模型列表</button>
-      <div id="model-list-container" style="display:none">
-        <div class="hint">选择模型：</div>
-        <div class="model-list" id="model-list"></div>
-        <div class="hint" style="margin-top:8px">或手动输入：</div>
-        <input type="text" id="setup-custom-model" placeholder="自定义模型名称">
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchModelTab('fetch')">获取模型列表</div>
+        <div class="tab" onclick="switchModelTab('custom')">自定义模型</div>
+      </div>
+      <div id="model-tab-fetch">
+        <div class="hint">填写 API 地址和密钥后获取可用模型（已保存密钥可留空）</div>
+        <input type="url" id="setup-base-url" placeholder="API 地址 (如 https://api.openai.com/v1)">
+        <input type="password" id="setup-api-key" placeholder="API Key (留空使用已保存的密钥)">
+        <div id="model-fetch-status"></div>
+        <button class="btn btn-primary" id="fetch-models-btn" onclick="fetchModels()" style="margin-bottom:12px">获取模型列表</button>
+        <div id="model-list-container" style="display:none">
+          <div class="hint">选择模型：</div>
+          <div class="model-list" id="model-list"></div>
+        </div>
+      </div>
+      <div id="model-tab-custom" style="display:none">
+        <div class="hint">手动输入模型名称</div>
+        <input type="url" id="setup-base-url-2" placeholder="API 地址 (如 https://api.openai.com/v1)">
+        <input type="password" id="setup-api-key-2" placeholder="API Key (留空使用已保存的密钥)">
+        <input type="text" id="setup-custom-model" placeholder="模型名称 (如 gpt-4o, claude-3-opus)">
       </div>
       <div class="btn-row">
         <button class="btn btn-cancel" onclick="closeModals()">取消</button>
@@ -406,35 +363,59 @@
   <!-- Room Settings Modal -->
   <div class="modal-overlay" id="modal-room-settings">
     <div class="modal">
-      <h3>群聊设置</h3>
+      <h3 id="room-settings-title">群聊设置</h3>
       <div id="room-members-list" style="margin-bottom:12px"></div>
       <select id="add-member-select" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface2);color:var(--text);margin-bottom:8px"></select>
       <div class="btn-row">
         <button class="btn btn-cancel" onclick="closeModals()">关闭</button>
         <button class="btn btn-primary" onclick="addMemberToRoom()">添加成员</button>
-        <button class="btn btn-danger" onclick="deleteCurrentRoom()">删除</button>
       </div>
+      <button class="btn btn-danger" onclick="deleteCurrentRoom()" style="margin-top:10px">删除群聊</button>
     </div>
   </div>
   <script>
     let currentPage = 'chats';
     let currentRoomId = null;
+    let currentAgentId = null;
     let agents = [];
     let rooms = [];
     let pollTimer = null;
     let selectedModel = '';
+    let modelTab = 'fetch';
+
+    // Agent avatar colors
+    const AVATAR_COLORS = [
+      'linear-gradient(135deg, #667eea, #764ba2)',
+      'linear-gradient(135deg, #f093fb, #f5576c)',
+      'linear-gradient(135deg, #4facfe, #00f2fe)',
+      'linear-gradient(135deg, #43e97b, #38f9d7)',
+      'linear-gradient(135deg, #fa709a, #fee140)',
+      'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+      'linear-gradient(135deg, #fccb90, #d57eeb)',
+      'linear-gradient(135deg, #667eea, #f093fb)',
+    ];
+    // Agent SVG icons (different for each)
+    const AGENT_ICONS = [
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="9" cy="16" r="1"/><circle cx="15" cy="16" r="1"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 12 18.469a3.374 3.374 0 0 0-.986-2.386l-.548-.547z"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+    ];
+
+    function getAgentColor(idx) { return AVATAR_COLORS[idx % AVATAR_COLORS.length]; }
+    function getAgentIcon(idx) { return AGENT_ICONS[idx % AGENT_ICONS.length]; }
 
     // Theme
     function initTheme() {
       const dark = localStorage.getItem('hub-theme') === 'dark';
-      if (dark) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('theme-toggle').classList.add('on');
-      }
+      if (dark) { document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('theme-toggle').classList.add('on'); }
     }
     function toggleTheme() {
-      const el = document.documentElement;
-      const toggle = document.getElementById('theme-toggle');
+      const el = document.documentElement; const toggle = document.getElementById('theme-toggle');
       const isDark = el.getAttribute('data-theme') === 'dark';
       if (isDark) { el.removeAttribute('data-theme'); toggle.classList.remove('on'); localStorage.setItem('hub-theme', 'light'); }
       else { el.setAttribute('data-theme', 'dark'); toggle.classList.add('on'); localStorage.setItem('hub-theme', 'dark'); }
@@ -445,15 +426,17 @@
       currentPage = page;
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
-      document.querySelectorAll('.nav-item').forEach((n, i) => {
-        n.classList.toggle('active', ['chats','agents','settings'][i] === page);
-      });
+      document.querySelectorAll('.nav-item').forEach((n, i) => n.classList.toggle('active', ['chats','agents','settings'][i] === page));
+      // Close sub-views
+      document.getElementById('chat-view').classList.remove('active');
+      document.getElementById('agent-detail').classList.remove('active');
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       if (page === 'chats') loadRooms();
       if (page === 'agents') loadAgents();
       if (page === 'settings') loadConfig();
     }
 
-    // API helper
+    // API
     async function api(method, path, body) {
       const opts = { method, headers: { 'Content-Type': 'application/json' } };
       if (body) opts.body = JSON.stringify(body);
@@ -461,7 +444,7 @@
       catch(e) { return { ok: false, error: e.message }; }
     }
 
-    // Rooms
+    // ===== ROOMS =====
     async function loadRooms() {
       const data = await api('GET', '/admin/rooms');
       rooms = data.result || [];
@@ -472,27 +455,28 @@
       const empty = document.getElementById('chats-empty');
       if (!rooms.length) { el.innerHTML = ''; empty.style.display = 'flex'; return; }
       empty.style.display = 'none';
-      el.innerHTML = rooms.map(r => {
+      el.innerHTML = rooms.map((r, i) => {
         const n = (r.members || []).length;
+        const color = AVATAR_COLORS[(i + 2) % AVATAR_COLORS.length];
         return '<div class="chat-item" onclick="openChat(\''+r.id+'\')">'+
-          '<div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>'+
-          '<div class="info"><div class="name">'+r.name+'</div><div class="preview">'+n+' 个成员</div></div>'+
+          '<div class="avatar" style="background:'+color+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>'+
+          '<div class="info"><div class="name">'+escapeHtml(r.name)+'</div><div class="preview">'+n+' 个成员</div></div>'+
           '<div class="meta">'+(r.created_at||'').slice(5,10)+'</div></div>';
       }).join('');
     }
 
-    async function openChat(roomId) {
+    function openChat(roomId) {
       currentRoomId = roomId;
       const room = rooms.find(r => r.id === roomId);
       if (!room) return;
       document.getElementById('chat-title').textContent = room.name;
-      document.getElementById('chat-detail').classList.remove('hidden');
-      await refreshMessages();
+      document.getElementById('chat-view').classList.add('active');
+      refreshMessages();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(refreshMessages, 3000);
     }
     function closeChat() {
-      document.getElementById('chat-detail').classList.add('hidden');
+      document.getElementById('chat-view').classList.remove('active');
       currentRoomId = null;
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
@@ -505,11 +489,10 @@
       area.innerHTML = msgs.map(m => {
         const self = m.sender_id === 'system';
         return '<div class="msg '+(self?'self':'other')+'">'+
-          (self?'':'<div class="msg-sender">'+(m.sender_name||'?')+'</div>')+
           '<div>'+escapeHtml(m.text)+'</div>'+
           '<div class="msg-time">'+(m.created_at||'').slice(11,16)+'</div></div>';
       }).join('');
-      if (atBottom) area.scrollTop = area.scrollHeight;
+      if (atBottom || msgs.length <= 10) area.scrollTop = area.scrollHeight;
     }
     async function sendMsg() {
       const input = document.getElementById('msg-input');
@@ -521,7 +504,7 @@
     }
     function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }
 
-    // Agents
+    // ===== AGENTS =====
     async function loadAgents() {
       const data = await api('GET', '/admin/agents');
       agents = (data.result || []).filter(a => a.id !== 'system');
@@ -532,23 +515,51 @@
       const empty = document.getElementById('agents-empty');
       if (!agents.length) { el.innerHTML = ''; empty.style.display = 'flex'; return; }
       empty.style.display = 'none';
-      el.innerHTML = agents.map(a => {
-        return '<div class="agent-card" onclick="showAgentDetail(\''+a.id+'\')">'+
-          '<div class="agent-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><path d="M8 15h.01M16 15h.01"/></svg></div>'+
-          '<div class="agent-name">'+a.name+'</div>'+
-          '<div class="agent-desc">'+(a.description||'通用智能体')+'</div>'+
+      el.innerHTML = agents.map((a, i) => {
+        return '<div class="agent-card" onclick="openAgentDetail(\''+a.id+'\')">'+
+          '<div class="agent-avatar" style="background:'+getAgentColor(i)+'">'+getAgentIcon(i)+'</div>'+
+          '<div class="agent-name">'+escapeHtml(a.name)+'</div>'+
+          '<div class="agent-desc">'+escapeHtml(a.description||'通用智能体')+'</div>'+
           '<div class="agent-status"><span class="dot '+(a.status==='online'?'online':'offline')+'"></span>'+(a.status==='online'?'在线':'离线')+'</div></div>';
       }).join('');
     }
-    function showAgentDetail(id) {
+
+    function openAgentDetail(id) {
       const agent = agents.find(a => a.id === id);
       if (!agent) return;
-      if (confirm('智能体: ' + agent.name + '\n\n要删除该智能体吗？')) {
-        api('DELETE', '/admin/agents/' + id).then(() => loadAgents());
-      }
+      currentAgentId = id;
+      const idx = agents.indexOf(agent);
+      document.getElementById('agent-edit-avatar').style.background = getAgentColor(idx);
+      document.getElementById('agent-edit-avatar').innerHTML = getAgentIcon(idx);
+      document.getElementById('agent-edit-name').value = agent.name;
+      document.getElementById('agent-edit-desc').value = agent.description || '';
+      document.getElementById('agent-edit-status').value = agent.status === 'online' ? '在线' : '离线';
+      document.getElementById('agent-detail').classList.add('active');
+    }
+    function closeAgentDetail() {
+      document.getElementById('agent-detail').classList.remove('active');
+      currentAgentId = null;
+    }
+    async function saveAgent() {
+      if (!currentAgentId) return;
+      const name = document.getElementById('agent-edit-name').value.trim();
+      const desc = document.getElementById('agent-edit-desc').value.trim();
+      if (!name) { showToast('名称不能为空'); return; }
+      await api('PUT', '/admin/agents/' + currentAgentId, { name, description: desc });
+      showToast('已保存');
+      closeAgentDetail();
+      loadAgents();
+    }
+    async function deleteAgent() {
+      if (!currentAgentId) return;
+      if (!confirm('确定删除该智能体？此操作不可撤销。')) return;
+      await api('DELETE', '/admin/agents/' + currentAgentId);
+      showToast('已删除');
+      closeAgentDetail();
+      loadAgents();
     }
 
-    // Config / Settings
+    // ===== CONFIG =====
     async function loadConfig() {
       const data = await api('GET', '/admin/config');
       if (data.ok) {
@@ -559,29 +570,43 @@
     }
 
     function showModelSetup() {
-      // Pre-fill from current config
       api('GET', '/admin/config').then(data => {
         if (data.ok) {
           document.getElementById('setup-base-url').value = data.result.base_url || '';
+          document.getElementById('setup-base-url-2').value = data.result.base_url || '';
           document.getElementById('setup-api-key').value = '';
-          document.getElementById('setup-api-key').placeholder = data.result.has_key ? 'API Key (已保存，留空不修改)' : 'API Key (sk-...)';
+          document.getElementById('setup-api-key-2').value = '';
+          document.getElementById('setup-api-key').placeholder = data.result.has_key ? 'API Key (留空使用已保存的密钥)' : 'API Key (sk-...)';
+          document.getElementById('setup-api-key-2').placeholder = data.result.has_key ? 'API Key (留空使用已保存的密钥)' : 'API Key (sk-...)';
+          document.getElementById('setup-custom-model').value = data.result.model || '';
         }
       });
       document.getElementById('model-list-container').style.display = 'none';
       document.getElementById('model-fetch-status').innerHTML = '';
+      selectedModel = '';
+      switchModelTab('fetch');
       document.getElementById('modal-model-setup').classList.add('active');
+    }
+
+    function switchModelTab(tab) {
+      modelTab = tab;
+      document.getElementById('model-tab-fetch').style.display = tab === 'fetch' ? 'block' : 'none';
+      document.getElementById('model-tab-custom').style.display = tab === 'custom' ? 'block' : 'none';
+      document.querySelectorAll('#modal-model-setup .tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && tab === 'fetch') || (i === 1 && tab === 'custom')));
     }
 
     async function fetchModels() {
       const baseUrl = document.getElementById('setup-base-url').value.trim();
       const apiKey = document.getElementById('setup-api-key').value.trim();
-      if (!baseUrl) { showFetchStatus('请输入 API 地址', 'error'); return; }
-      if (!apiKey) { showFetchStatus('请输入 API Key', 'error'); return; }
 
       document.getElementById('fetch-models-btn').disabled = true;
       document.getElementById('fetch-models-btn').innerHTML = '<span class="spinner"></span> 获取中...';
 
-      const data = await api('POST', '/admin/config/models', { base_url: baseUrl, api_key: apiKey });
+      const body = {};
+      if (baseUrl) body.base_url = baseUrl;
+      if (apiKey) body.api_key = apiKey;
+
+      const data = await api('POST', '/admin/config/models', body);
 
       document.getElementById('fetch-models-btn').disabled = false;
       document.getElementById('fetch-models-btn').textContent = '获取模型列表';
@@ -590,51 +615,50 @@
         showFetchStatus('获取到 ' + data.result.length + ' 个模型', 'success');
         renderModelList(data.result);
         document.getElementById('model-list-container').style.display = 'block';
-      } else if (data.ok && data.result.length === 0) {
-        showFetchStatus('未获取到模型，请手动输入', 'error');
-        document.getElementById('model-list-container').style.display = 'block';
+      } else if (data.ok) {
+        showFetchStatus('未获取到模型，可切换到自定义模式', 'error');
       } else {
         showFetchStatus(data.error || '获取失败', 'error');
-        document.getElementById('model-list-container').style.display = 'block';
       }
     }
 
     function showFetchStatus(msg, type) {
       document.getElementById('model-fetch-status').innerHTML = '<div class="status-msg '+type+'">'+msg+'</div>';
     }
-
     function renderModelList(models) {
       const el = document.getElementById('model-list');
       el.innerHTML = models.map(m =>
-        '<div class="model-item" onclick="selectModel(\''+m.id+'\')" id="model-opt-'+m.id.replace(/[^a-zA-Z0-9]/g,'-')+'">'+
-        '<span class="check"></span><span>'+m.name+'</span></div>'
+        '<div class="model-item" onclick="selectModel(\''+m.id.replace(/'/g, "\\'")+'\')"><span class="check"></span><span>'+escapeHtml(m.name)+'</span></div>'
       ).join('');
     }
-
     function selectModel(id) {
       selectedModel = id;
-      document.querySelectorAll('.model-item').forEach(el => el.classList.remove('selected'));
-      const safe = id.replace(/[^a-zA-Z0-9]/g, '-');
-      const el = document.getElementById('model-opt-' + safe);
-      if (el) el.classList.add('selected');
-      document.getElementById('setup-custom-model').value = id;
+      document.querySelectorAll('.model-item').forEach(el => {
+        el.classList.toggle('selected', el.querySelector('span:last-child').textContent === id);
+      });
     }
 
     async function saveModelSetup() {
-      const baseUrl = document.getElementById('setup-base-url').value.trim();
-      const apiKey = document.getElementById('setup-api-key').value.trim();
-      const model = document.getElementById('setup-custom-model').value.trim() || selectedModel;
+      let baseUrl, apiKey, model;
+      if (modelTab === 'fetch') {
+        baseUrl = document.getElementById('setup-base-url').value.trim();
+        apiKey = document.getElementById('setup-api-key').value.trim();
+        model = selectedModel;
+      } else {
+        baseUrl = document.getElementById('setup-base-url-2').value.trim();
+        apiKey = document.getElementById('setup-api-key-2').value.trim();
+        model = document.getElementById('setup-custom-model').value.trim();
+      }
 
-      if (!baseUrl) { showFetchStatus('请输入 API 地址', 'error'); return; }
+      if (!baseUrl && !model) { showToast('请至少填写 API 地址或模型名称'); return; }
 
-      const body = { base_url: baseUrl, model: model };
+      const body = {};
+      if (baseUrl) body.base_url = baseUrl;
       if (apiKey) body.api_key = apiKey;
+      if (model) body.model = model;
 
-      // Derive provider name from URL
-      try {
-        const host = new URL(baseUrl).hostname.split('.')[0];
-        body.provider_name = host;
-      } catch(e) { body.provider_name = 'custom'; }
+      try { const host = new URL(baseUrl).hostname.split('.')[0]; body.provider_name = host; }
+      catch(e) { body.provider_name = 'custom'; }
 
       const data = await api('POST', '/admin/config', body);
       if (data.ok) {
@@ -642,19 +666,11 @@
         loadConfig();
         showToast('配置已保存');
       } else {
-        showFetchStatus(data.error || '保存失败', 'error');
+        showToast(data.error || '保存失败');
       }
     }
 
-    function showToast(msg) {
-      const t = document.createElement('div');
-      t.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;z-index:999;animation:slideUp 0.2s ease';
-      t.textContent = msg;
-      document.body.appendChild(t);
-      setTimeout(() => t.remove(), 2000);
-    }
-
-    // Modals
+    // ===== MODALS =====
     function showCreateRoom() { document.getElementById('modal-room').classList.add('active'); }
     function showCreateAgent() { document.getElementById('modal-agent').classList.add('active'); }
     function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); }
@@ -668,11 +684,11 @@
       closeModals(); loadRooms();
     }
     async function createAgent() {
-      const name = document.getElementById('agent-name').value.trim();
+      const name = document.getElementById('new-agent-name').value.trim();
       if (!name) return;
-      await api('POST', '/admin/agents', { name, description: document.getElementById('agent-desc').value.trim() });
-      document.getElementById('agent-name').value = '';
-      document.getElementById('agent-desc').value = '';
+      await api('POST', '/admin/agents', { name, description: document.getElementById('new-agent-desc').value.trim() });
+      document.getElementById('new-agent-name').value = '';
+      document.getElementById('new-agent-desc').value = '';
       closeModals(); loadAgents();
     }
 
@@ -681,14 +697,15 @@
       if (!currentRoomId) return;
       const room = rooms.find(r => r.id === currentRoomId);
       if (!room) return;
+      document.getElementById('room-settings-title').textContent = room.name + ' - 设置';
       const members = room.members || [];
       document.getElementById('room-members-list').innerHTML =
         '<div class="hint">成员 ('+members.length+')</div>' +
-        members.map(m => '<div style="padding:8px 0;font-size:14px;border-bottom:0.5px solid var(--border)">'+m.name+'</div>').join('');
+        members.map(m => '<div style="padding:8px 0;font-size:14px;border-bottom:0.5px solid var(--border)">'+escapeHtml(m.name)+'</div>').join('');
       const select = document.getElementById('add-member-select');
       const available = agents.filter(a => !members.find(m => m.id === a.id));
       select.innerHTML = available.length ?
-        available.map(a => '<option value="'+a.id+'">'+a.name+'</option>').join('') :
+        available.map(a => '<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>').join('') :
         '<option disabled>无可添加的智能体</option>';
       document.getElementById('modal-room-settings').classList.add('active');
     }
@@ -696,15 +713,25 @@
       const agentId = document.getElementById('add-member-select').value;
       if (!agentId || !currentRoomId) return;
       await api('POST', '/admin/rooms/' + currentRoomId + '/members', { agent_id: agentId });
-      closeModals(); loadRooms(); openChat(currentRoomId);
+      showToast('已添加');
+      closeModals(); loadRooms();
     }
     async function deleteCurrentRoom() {
       if (!confirm('确定删除该群聊？')) return;
       await api('DELETE', '/admin/rooms/' + currentRoomId);
       closeModals(); closeChat(); loadRooms();
+      showToast('已删除');
     }
 
-    function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Utils
+    function escapeHtml(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function showToast(msg) {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 2000);
+    }
 
     // Init
     initTheme();
