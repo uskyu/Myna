@@ -25,8 +25,33 @@
         <div class="msg-group" :class="{ self: group.self }">
           <div v-for="(msg, mi) in group.messages" :key="msg.id || mi" class="msg" :class="{ self: group.self, streaming: msg.streaming }">
             <div v-if="msg.showName" class="sender-name">{{ msg.sender_name }}</div>
-            <div class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
-            <div class="msg-time">{{ msg.streaming ? '生成中...' : msg.time }}</div>
+            <!-- Working bubble (tool calls in progress) -->
+            <div v-if="msg.streaming && msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded }">
+              <div class="working-header" @click="toggleToolsExpand(msg)">
+                <div class="working-spinner"></div>
+                <span class="working-label">工作中</span>
+                <span class="working-count">{{ msg.toolCalls.length }} 步</span>
+                <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </div>
+              <div v-if="msg.toolsExpanded" class="working-steps">
+                <div v-for="(tc, ti) in msg.toolCalls" :key="ti" class="tool-step" :class="{ running: tc.status === 'running', done: tc.status === 'done', error: tc.status === 'error', flash: tc.flash }">
+                  <div class="step-icon">
+                    <svg v-if="tc.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    <svg v-else-if="tc.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </div>
+                  <div class="step-body">
+                    <div class="step-name">{{ toolLabel(tc.name) }}</div>
+                    <div class="step-summary">{{ tc.summary }}</div>
+                    <div v-if="tc.result" class="step-result" :class="{ error: tc.status === 'error' }">{{ tc.result }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Text content (shown after tools or for non-tool messages) -->
+            <div v-if="msg.streaming && !msg.text && msg.toolCalls && msg.toolCalls.length" class="msg-text working-placeholder"></div>
+            <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
+            <div class="msg-time">{{ msg.streaming ? (msg.working ? '思考中...' : '生成中...') : msg.time }}</div>
           </div>
         </div>
       </template>
@@ -123,6 +148,22 @@ const mentionStartPos = ref(-1)
 
 let pollTimer = null
 
+// Tool expand state per stream
+const toolsExpandedMap = ref({})
+
+const TOOL_LABELS = {
+  run_command: '执行命令',
+  read_file: '读取文件',
+  write_file: '写入文件',
+  http_request: 'HTTP 请求',
+  search_files: '搜索文件',
+}
+function toolLabel(name) { return TOOL_LABELS[name] || name }
+function toggleToolsExpand(msg) {
+  const sid = msg.id.replace('stream-', '')
+  toolsExpandedMap.value[sid] = !msg.toolsExpanded
+}
+
 const title = computed(() => {
   if (props.type === 'dm') return props.room.agent?.name || '私聊'
   return props.room.name || '群聊'
@@ -194,6 +235,9 @@ const messageGroups = computed(() => {
       self: false,
       showName: props.type === 'group',
       streaming: true,
+      working: s.working,
+      toolCalls: s.toolCalls || [],
+      toolsExpanded: toolsExpandedMap.value[sid] !== false, // default expanded
     })
   }
   const groups = []
@@ -407,14 +451,33 @@ async function onMembersChanged() {
 
 function handleWS(msg) {
   if (msg.type === 'stream_start' && msg.room_id === props.room.id) {
-    store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '' }
+    store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '', toolCalls: [], working: true }
     typingAgent.value = null
     nextTick(scrollToBottom)
+  } else if (msg.type === 'tool_call' && store.activeStreams[msg.stream_id]) {
+    const stream = store.activeStreams[msg.stream_id]
+    stream.toolCalls.push({ name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp })
+    // Force reactivity
+    store.activeStreams = { ...store.activeStreams }
+    nextTick(scrollToBottom)
+  } else if (msg.type === 'tool_result' && store.activeStreams[msg.stream_id]) {
+    const stream = store.activeStreams[msg.stream_id]
+    const last = stream.toolCalls.findLast(t => t.name === msg.tool && t.status === 'running')
+    if (last) {
+      last.status = msg.ok ? 'done' : 'error'
+      last.result = msg.output_preview || ''
+    }
+    store.activeStreams = { ...store.activeStreams }
+    nextTick(scrollToBottom)
   } else if (msg.type === 'stream_token' && store.activeStreams[msg.stream_id]) {
-    store.activeStreams[msg.stream_id].text += msg.chunk
+    const stream = store.activeStreams[msg.stream_id]
+    stream.working = false
+    stream.text += msg.chunk
+    store.activeStreams = { ...store.activeStreams }
     nextTick(scrollToBottom)
   } else if (msg.type === 'stream_end' && store.activeStreams[msg.stream_id]) {
     delete store.activeStreams[msg.stream_id]
+    store.activeStreams = { ...store.activeStreams }
     setTimeout(fetchMessages, 300)
   } else if (msg.type === 'new_message' && msg.room_id === props.room.id) {
     fetchMessages()

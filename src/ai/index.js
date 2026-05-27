@@ -1,104 +1,18 @@
 /**
  * AI Reply Module
  * Handles LLM API calls for agent responses.
- * Supports tool use (function calling) and streaming responses.
+ * Supports tool use (function calling) with real-time WS event push.
  * Reads config from ~/.hermes/config.yaml and .env
  */
 
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { execSync } = require('child_process');
+const { TOOL_DEFINITIONS, executeTool, toolCallSummary } = require('./tools');
 
 const HERMES_HOME = process.env.HERMES_HOME || path.join(require('os').homedir(), '.hermes');
 const CONFIG_PATH = path.join(HERMES_HOME, 'config.yaml');
 const ENV_PATH = path.join(HERMES_HOME, '.env');
-
-// Available tools that agents can use
-const AGENT_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'run_command',
-      description: '在服务器上执行 shell 命令，获取系统信息、文件内容等。超时 30 秒。',
-      parameters: {
-        type: 'object',
-        properties: {
-          command: {
-            type: 'string',
-            description: '要执行的 shell 命令，如 "free -h", "df -h", "ls -la" 等'
-          }
-        },
-        required: ['command']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_file',
-      description: '读取服务器上的文件内容',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: '文件路径'
-          }
-        },
-        required: ['path']
-      }
-    }
-  }
-];
-
-// Execute a tool call safely
-function executeTool(name, args) {
-  try {
-    if (name === 'run_command') {
-      const cmd = args.command || '';
-      // Normalized blocklist — check against normalized form to catch variants
-      const normalized = cmd.replace(/\s+/g, ' ').trim().toLowerCase();
-      const blockedPatterns = [
-        /rm\s+(-[a-z]*[rf]|--recursive)\s+[\/~]/i,
-        /rm\s+[\/~]/i,
-        /\bmkfs\b/i,
-        /\bdd\s+if=/i,
-        /:\(\)\s*\{/,       // fork bomb
-        /fork\s*bomb/i,
-        />\s*\/dev\/sd/i,   // overwrite disk
-        /\bshutdown\b/i,
-        /\breboot\b/i,
-        /\binit\s+0/i,
-        /\bchmod\s+777\s+\//i,
-        /\bchown\b.*\//i,
-        /\bkill\s+-9\s+1\b/i,  // kill init
-        /\bwget\b.*\|\s*sh/i,  // pipe to shell
-        /\bcurl\b.*\|\s*(sh|bash)/i,
-        /\bnc\s+-l/i,          // netcat listener
-        /\bpython[23]?\s+-c.*import\s+os.*system/i,
-      ];
-      if (blockedPatterns.some(p => p.test(cmd)) || blockedPatterns.some(p => p.test(normalized))) {
-        return '⚠️ 该命令被安全策略阻止';
-      }
-      const output = execSync(cmd, { timeout: 30000, maxBuffer: 50 * 1024, encoding: 'utf8' });
-      return output.slice(0, 4000) || '(命令执行成功，无输出)';
-    } else if (name === 'read_file') {
-      const filePath = args.path || '';
-      // Prevent reading sensitive files
-      const sensitivePaths = ['/etc/shadow', '/etc/passwd', '/root/.ssh', '/proc/self'];
-      if (sensitivePaths.some(p => filePath.startsWith(p))) {
-        return '⚠️ 该文件路径被安全策略阻止';
-      }
-      if (!fs.existsSync(filePath)) return `文件不存在: ${filePath}`;
-      const content = fs.readFileSync(filePath, 'utf8');
-      return content.slice(0, 4000);
-    }
-    return '未知工具: ' + name;
-  } catch (e) {
-    return `执行错误: ${e.message?.slice(0, 500) || e}`;
-  }
-}
 
 function getConfig() {
   try {
@@ -125,9 +39,7 @@ function getConfig() {
 }
 
 /**
- * Stream a chat completion, calling onToken for each text chunk.
- * Returns the full accumulated text.
- * Does NOT support tool use (used for final text generation after tools).
+ * Stream a chat completion (text only, no tools).
  */
 async function streamChatCompletion(config, messages, model, onToken) {
   const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
@@ -139,8 +51,6 @@ async function streamChatCompletion(config, messages, model, onToken) {
     stream: true
   };
   if (config.topP !== undefined && config.topP !== null && config.topP !== 1) body.top_p = config.topP;
-  if (config.frequencyPenalty) body.frequency_penalty = config.frequencyPenalty;
-  if (config.presencePenalty) body.presence_penalty = config.presencePenalty;
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -192,10 +102,16 @@ async function streamChatCompletion(config, messages, model, onToken) {
 }
 
 /**
- * Non-streaming tool use loop. Returns messages array with tool results appended.
- * When model stops calling tools, returns { finalText, messages }.
+ * Tool use loop with real-time event emission.
+ * @param {Object} config - API config
+ * @param {Array} messages - conversation messages
+ * @param {string} model - model ID
+ * @param {Function} onToolCall - callback({name, args, summary}) when tool is called
+ * @param {Function} onToolResult - callback({name, result, ok}) when tool returns
+ * @param {number} maxRounds - max tool call rounds
+ * @returns {{ finalText: string|null, messages: Array }}
  */
-async function toolUseLoop(config, messages, model, maxRounds = 5) {
+async function toolUseLoop(config, messages, model, onToolCall, onToolResult, maxRounds = 8) {
   let currentMessages = [...messages];
 
   for (let round = 0; round < maxRounds; round++) {
@@ -204,12 +120,10 @@ async function toolUseLoop(config, messages, model, maxRounds = 5) {
       messages: currentMessages,
       max_tokens: config.maxTokens || 2048,
       temperature: config.temperature !== undefined ? config.temperature : 0.7,
-      tools: AGENT_TOOLS,
+      tools: TOOL_DEFINITIONS,
       tool_choice: 'auto'
     };
     if (config.topP !== undefined && config.topP !== null && config.topP !== 1) body.top_p = config.topP;
-    if (config.frequencyPenalty) body.frequency_penalty = config.frequencyPenalty;
-    if (config.presencePenalty) body.presence_penalty = config.presencePenalty;
 
     const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
     const resp = await fetch(url, {
@@ -247,19 +161,28 @@ async function toolUseLoop(config, messages, model, maxRounds = 5) {
       const fnName = tc.function?.name || '';
       let fnArgs = {};
       try { fnArgs = JSON.parse(tc.function?.arguments || '{}'); } catch {}
-      
-      console.log(`[AI] Tool: ${fnName}(${JSON.stringify(fnArgs).slice(0, 100)})`);
-      const result = executeTool(fnName, fnArgs);
-      
+
+      const summary = toolCallSummary(fnName, fnArgs);
+      console.log(`[AI] Tool: ${fnName}(${summary})`);
+
+      // Emit tool_call event
+      if (onToolCall) onToolCall({ name: fnName, args: fnArgs, summary });
+
+      // Execute tool
+      const result = await executeTool(fnName, fnArgs);
+
+      // Emit tool_result event
+      if (onToolResult) onToolResult({ name: fnName, ok: result.ok, output: result.output });
+
       currentMessages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: result
+        content: typeof result.output === 'string' ? result.output : JSON.stringify(result)
       });
     }
   }
 
-  // Exhausted rounds — return messages for final streaming call
+  // Exhausted rounds
   return { finalText: null, messages: currentMessages };
 }
 
@@ -267,14 +190,15 @@ async function toolUseLoop(config, messages, model, maxRounds = 5) {
  * Full chat completion with tool use + streaming final response.
  * @param {Object} agent - { id, name, description, model_config_id }
  * @param {Array} history - conversation history [{role, content}]
- * @param {Function} onToken - callback(chunk) for streaming tokens
- * @param {Object|null} modelConfig - override config from DB { base_url, api_key, model, max_tokens, temperature }
+ * @param {Object} callbacks - { onToken, onToolCall, onToolResult }
+ * @param {Object|null} modelConfig - override config from DB
  * @returns {string|null} - final complete response text
  */
-async function chatCompletion(agent, history, onToken = null, modelConfig = null) {
+async function chatCompletion(agent, history, callbacks = {}, modelConfig = null) {
+  const { onToken, onToolCall, onToolResult } = callbacks;
+
   let config;
   if (modelConfig) {
-    // Parse params_json for extended parameters
     let params = {};
     if (modelConfig.params_json) {
       try { params = typeof modelConfig.params_json === 'string' ? JSON.parse(modelConfig.params_json) : modelConfig.params_json; } catch(e) {}
@@ -286,9 +210,6 @@ async function chatCompletion(agent, history, onToken = null, modelConfig = null
       maxTokens: params.max_tokens || modelConfig.max_tokens || 2048,
       temperature: params.temperature !== undefined ? params.temperature : (modelConfig.temperature || 0.7),
       topP: params.top_p,
-      frequencyPenalty: params.frequency_penalty,
-      presencePenalty: params.presence_penalty,
-      contextLength: params.context_length
     };
   } else {
     config = getConfig();
@@ -299,38 +220,38 @@ async function chatCompletion(agent, history, onToken = null, modelConfig = null
   }
 
   const systemPrompt = agent.description
-    ? `你是 ${agent.name}。${agent.description}\n\n请用中文回复，保持简洁友好。你有工具可以使用，可以执行命令来获取服务器信息。回复时使用 Markdown 格式（代码块、加粗、列表等）让内容更易读。`
-    : `你是 ${agent.name}，一个智能助手。请用中文回复，保持简洁友好。你有工具可以使用。回复时使用 Markdown 格式。`;
+    ? `你是 ${agent.name}。${agent.description}\n\n你有以下工具可以使用：执行命令(run_command)、读取文件(read_file)、写入文件(write_file)、HTTP请求(http_request)、搜索文件(search_files)。\n需要时主动使用工具获取信息或执行操作。回复使用 Markdown 格式，保持简洁专业。`
+    : `你是 ${agent.name}，一个智能助手。你有工具可以使用：执行命令、读写文件、HTTP请求、搜索文件。需要时主动使用工具。回复使用 Markdown 格式，保持简洁专业。`;
 
   const messages = [
     { role: 'system', content: systemPrompt },
     ...history
   ];
 
-  // Phase 1: Tool use loop (non-streaming, because tool calls need full JSON)
-  const { finalText, messages: updatedMessages } = await toolUseLoop(config, messages, config.model);
+  // Phase 1: Tool use loop (non-streaming, with event callbacks)
+  const { finalText, messages: updatedMessages } = await toolUseLoop(
+    config, messages, config.model, onToolCall, onToolResult
+  );
 
-  // If tool loop returned text directly (no streaming needed for simple replies)
+  // If tool loop returned text directly (no tools used, simple reply)
   if (finalText && !onToken) {
     return finalText;
   }
 
-  // If we got final text but have a streaming callback, just emit it all at once
+  // If we got final text but have a streaming callback, emit it
   if (finalText && onToken) {
     onToken(finalText);
     return finalText;
   }
 
   // Phase 2: Stream the final response after tool use
-  // Add a prompt to summarize tool results
-  const streamMessages = [...updatedMessages, { role: 'user', content: '请根据以上工具执行结果，给出最终回复。' }];
-  const streamedText = await streamChatCompletion(config, streamMessages, config.model, onToken);
+  const streamedText = await streamChatCompletion(config, updatedMessages, config.model, onToken);
   return streamedText;
 }
 
 /**
  * Process a message and generate AI replies from mentioned/all agents.
- * Streams tokens to UI via WebSocket.
+ * Streams tokens + tool events to UI via WebSocket.
  */
 async function processMessage(db, wsManager, roomId, senderId, text, mentions = [], roomType = 'group', chainDepth = 0) {
   const MAX_CHAIN_DEPTH = 5;
@@ -340,18 +261,14 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
   }
 
   const members = await db.getRoomMembers(roomId);
-  
+
   let respondingAgents = [];
-  
+
   if (roomType === 'dm') {
     respondingAgents = members.filter(m => m.id !== senderId && m.id !== 'system' && m.id !== 'user');
   } else if (mentions.length > 0) {
     respondingAgents = members.filter(m => mentions.includes(m.id));
-  } else if (chainDepth === 0 && roomType === 'dm') {
-    // DM: all non-sender agents respond
-    respondingAgents = members.filter(m => m.id !== senderId && m.id !== 'system' && m.id !== 'user');
   }
-  // Group chats without @mentions: no auto-reply (agents must be explicitly mentioned)
 
   if (respondingAgents.length === 0) return;
 
@@ -360,7 +277,7 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
   if (respondingAgents.length === 0) return;
 
   const recentMessages = await db.getRoomMessages(roomId, 20);
-  
+
   for (const agent of respondingAgents) {
     const fullAgent = await db.getAgentById(agent.id);
     if (!fullAgent) continue;
@@ -379,10 +296,9 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
       });
     }
 
-    // Generate a temporary stream ID for this response
     const streamId = `stream_${Date.now()}_${agent.id.slice(0, 8)}`;
 
-    // Get agent's model config (if assigned)
+    // Get agent's model config
     let modelConfig = null;
     if (fullAgent.model_config_id) {
       modelConfig = db.getModelConfig(fullAgent.model_config_id);
@@ -391,7 +307,7 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
       modelConfig = db.getDefaultModelConfig();
     }
 
-    // Notify UI that streaming started
+    // Notify UI: stream started
     if (wsManager) {
       wsManager.notifyUI({
         type: 'stream_start',
@@ -402,20 +318,52 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
       });
     }
 
-    // Stream tokens to UI
-    const reply = await chatCompletion(fullAgent, history, (chunk) => {
-      if (wsManager) {
-        wsManager.notifyUI({
-          type: 'stream_token',
-          stream_id: streamId,
-          room_id: roomId,
-          agent_id: agent.id,
-          chunk
-        });
+    // Callbacks for real-time tool events
+    const callbacks = {
+      onToken(chunk) {
+        if (wsManager) {
+          wsManager.notifyUI({
+            type: 'stream_token',
+            stream_id: streamId,
+            room_id: roomId,
+            agent_id: agent.id,
+            chunk
+          });
+        }
+      },
+      onToolCall({ name, args, summary }) {
+        if (wsManager) {
+          wsManager.notifyUI({
+            type: 'tool_call',
+            stream_id: streamId,
+            room_id: roomId,
+            agent_id: agent.id,
+            tool: name,
+            args_summary: summary,
+            timestamp: Date.now()
+          });
+        }
+      },
+      onToolResult({ name, ok, output }) {
+        if (wsManager) {
+          wsManager.notifyUI({
+            type: 'tool_result',
+            stream_id: streamId,
+            room_id: roomId,
+            agent_id: agent.id,
+            tool: name,
+            ok,
+            output_preview: (output || '').slice(0, 200),
+            timestamp: Date.now()
+          });
+        }
       }
-    }, modelConfig);
+    };
 
-    // Notify UI that streaming ended
+    // Run AI with tool use + streaming
+    const reply = await chatCompletion(fullAgent, history, callbacks, modelConfig);
+
+    // Notify UI: stream ended
     if (wsManager) {
       wsManager.notifyUI({
         type: 'stream_end',
@@ -457,7 +405,7 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
       }
     }
 
-    // Also notify UI of the final saved message
+    // Notify UI of final saved message
     if (wsManager) {
       wsManager.notifyUI({
         type: 'new_message',
