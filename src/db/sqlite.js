@@ -144,6 +144,18 @@ class SQLiteAdapter extends DatabaseAdapter {
         FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
         FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS agent_skills (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        content TEXT DEFAULT '',
+        file_type TEXT DEFAULT 'text',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -489,6 +501,50 @@ class SQLiteAdapter extends DatabaseAdapter {
 
   getWorkflowRuns(workflowId) {
     return this.db.prepare(`SELECT id, workflow_id, thread_id, status, current_step, started_at, completed_at FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC`).all(workflowId);
+  }
+
+  // === Agent Skills ===
+  getAgentSkills(agentId) {
+    return this.db.prepare(`SELECT * FROM agent_skills WHERE agent_id = ? ORDER BY created_at ASC`).all(agentId);
+  }
+
+  getAllSkills() {
+    return this.db.prepare(`SELECT s.*, a.name as agent_name FROM agent_skills s LEFT JOIN agents a ON s.agent_id = a.id ORDER BY s.created_at DESC`).all();
+  }
+
+  getSkillById(skillId) {
+    return this.db.prepare(`SELECT * FROM agent_skills WHERE id = ?`).get(skillId);
+  }
+
+  createSkill(agentId, name, description = '', content = '', fileType = 'text') {
+    const id = uuidv4();
+    this.db.prepare(`INSERT INTO agent_skills (id, agent_id, name, description, content, file_type) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(id, agentId, name, description, content, fileType);
+    return this.db.prepare(`SELECT * FROM agent_skills WHERE id = ?`).get(id);
+  }
+
+  updateSkill(skillId, fields) {
+    const sets = [];
+    const vals = [];
+    if (fields.name !== undefined) { sets.push('name = ?'); vals.push(fields.name); }
+    if (fields.description !== undefined) { sets.push('description = ?'); vals.push(fields.description); }
+    if (fields.content !== undefined) { sets.push('content = ?'); vals.push(fields.content); }
+    if (fields.file_type !== undefined) { sets.push('file_type = ?'); vals.push(fields.file_type); }
+    sets.push("updated_at = datetime('now')");
+    if (sets.length === 0) return;
+    vals.push(skillId);
+    this.db.prepare(`UPDATE agent_skills SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    return this.db.prepare(`SELECT * FROM agent_skills WHERE id = ?`).get(skillId);
+  }
+
+  deleteSkill(skillId) {
+    this.db.prepare(`DELETE FROM agent_skills WHERE id = ?`).run(skillId);
+  }
+
+  copySkillToAgent(skillId, targetAgentId) {
+    const skill = this.getSkillById(skillId);
+    if (!skill) return null;
+    return this.createSkill(targetAgentId, skill.name, skill.description, skill.content, skill.file_type);
   }
 
   close() {

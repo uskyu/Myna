@@ -102,6 +102,11 @@ class WorkflowScheduler {
       if (config.cron) {
         cronExpression = config.cron;
       }
+      // Interval-based: every N minutes
+      else if (config.interval_minutes) {
+        const minutes = Math.max(1, Math.min(59, config.interval_minutes));
+        cronExpression = `*/${minutes} * * * *`;
+      }
       // Interval-based: every N hours -> run at minute 0 every N hours
       else if (config.interval_hours) {
         const hours = Math.max(1, Math.min(24, config.interval_hours));
@@ -197,6 +202,13 @@ class WorkflowScheduler {
    */
   _isDue(workflowId, config, now) {
     const lastRun = this.lastRunAt.get(workflowId);
+
+    // Interval-based: every N minutes
+    if (config.interval_minutes) {
+      const intervalMs = config.interval_minutes * 60 * 1000;
+      if (!lastRun) return true;
+      return (now.getTime() - lastRun.getTime()) >= intervalMs;
+    }
 
     // Interval-based: every N hours
     if (config.interval_hours) {

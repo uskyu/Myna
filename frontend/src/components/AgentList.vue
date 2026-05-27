@@ -12,31 +12,21 @@
       <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input type="text" v-model="filter" placeholder="搜索智能体...">
     </div>
-    <div class="sort-bar">
-      <div class="sort-controls">
-        <select v-model="sort">
-          <option value="name">名称排序</option>
-          <option value="status">状态排序</option>
-          <option value="newest">最新创建</option>
-        </select>
-      </div>
-    </div>
     <div class="agent-grid list-view">
       <div v-for="a in filtered" :key="a.id" class="agent-card" @click="$emit('open-detail', a)">
-        <div class="agent-avatar" :style="{ background: getAgentColor(agentIndex(a.id)) }">
-          <span v-html="getAgentIcon(agentIndex(a.id))"></span>
+        <div class="avatar-wrap">
+          <div class="agent-avatar" :style="{ background: getAgentColor(agentIndex(a.id)) }">
+            <span v-html="getAgentIcon(agentIndex(a.id))"></span>
+          </div>
+          <span class="status-dot" :class="a.status === 'online' ? 'online' : 'offline'"></span>
         </div>
         <div class="info-block">
           <div class="agent-name">{{ a.name }}</div>
           <div class="agent-desc">{{ a.description || '通用智能体' }}</div>
         </div>
-        <div class="agent-status">
-          <span class="dot" :class="a.status === 'online' ? 'online' : 'offline'"></span>
-          {{ a.status === 'online' ? '在线' : '离线' }}
-        </div>
-        <div class="card-actions">
-          <button class="btn-chat" @click.stop="startDM(a.id)">发消息</button>
-        </div>
+        <button class="btn-dm" @click.stop="startDM(a.id)" title="发消息">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
       </div>
     </div>
     <div v-if="!filtered.length" class="empty">
@@ -74,10 +64,111 @@ const filtered = computed(() => {
 async function startDM(agentId) {
   const data = await api('POST', `/admin/dm/${agentId}`)
   if (data.ok) {
-    // Navigate to chats and open DM
-    window.location.reload() // Simple approach for now
+    window.location.reload()
   }
 }
 
 onMounted(loadAgents)
 </script>
+
+<style scoped>
+.agent-grid.list-view .agent-card {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.agent-grid.list-view .agent-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.avatar-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.agent-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #fff;
+}
+
+.status-dot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-primary, #1a1a2e);
+  box-sizing: content-box;
+}
+
+.status-dot.online {
+  background: #4ade80;
+}
+
+.status-dot.offline {
+  background: #6b7280;
+}
+
+.info-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #e2e8f0);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.agent-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.btn-dm {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, #94a3b8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-dm:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+</style>

@@ -57,15 +57,45 @@
         </div>
       </div>
 
-      <!-- Sections -->
+      <!-- Skills section -->
       <div class="profile-section">
-        <h4>🛠 技能</h4>
-        <div class="hint">暂无技能</div>
+        <div class="section-head">
+          <h4>🛠 技能</h4>
+          <button class="link-btn" @click="showAddSkill = true">+ 添加</button>
+        </div>
+        <div v-if="skills.length === 0" class="hint">暂无技能，点击添加</div>
+        <div v-else class="skills-list">
+          <div v-for="skill in skills" :key="skill.id" class="skill-item">
+            <div class="skill-info">
+              <span class="skill-name">{{ skill.name }}</span>
+              <span class="skill-desc">{{ skill.description || '无描述' }}</span>
+            </div>
+            <div class="skill-actions">
+              <button class="skill-action-btn" @click="editSkill(skill)" title="编辑">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="skill-action-btn" @click="downloadSkill(skill)" title="下载">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+              <button class="skill-action-btn danger" @click="removeSkill(skill)" title="删除">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="skill-upload-row">
+          <button class="link-btn" @click="triggerUpload">📁 上传技能文件</button>
+          <input ref="skillFileInput" type="file" accept=".md,.txt,.json,.yaml,.yml" style="display:none" @change="onSkillFileUpload" />
+        </div>
       </div>
+
+      <!-- Knowledge base -->
       <div class="profile-section">
         <h4>📚 知识库</h4>
         <div class="hint">暂无知识库文件</div>
       </div>
+
+      <!-- Tools -->
       <div class="profile-section">
         <h4>⚙️ 工具</h4>
         <div class="profile-list-item">run_command — 执行系统命令</div>
@@ -78,6 +108,36 @@
     </div>
 
     <ModelsModal v-if="showModels" @close="onModelsClose" @changed="loadModels" />
+
+    <!-- Add/Edit Skill Modal -->
+    <Teleport to="body">
+      <div v-if="showAddSkill || editingSkill" class="skill-modal-overlay" @click.self="closeSkillModal">
+        <div class="skill-modal">
+          <div class="skill-modal-header">
+            <h4>{{ editingSkill ? '编辑技能' : '添加技能' }}</h4>
+            <button class="wf-close" @click="closeSkillModal">×</button>
+          </div>
+          <div class="skill-modal-body">
+            <div class="wf-field">
+              <label>名称</label>
+              <input v-model="skillForm.name" placeholder="例如：数据分析" />
+            </div>
+            <div class="wf-field">
+              <label>描述</label>
+              <input v-model="skillForm.description" placeholder="这个技能做什么？" />
+            </div>
+            <div class="wf-field">
+              <label>内容</label>
+              <textarea v-model="skillForm.content" placeholder="技能指令内容..." rows="10" class="skill-content-textarea"></textarea>
+            </div>
+          </div>
+          <div class="skill-modal-footer">
+            <button class="btn-cancel" @click="closeSkillModal">取消</button>
+            <button class="btn-save" :disabled="!skillForm.name.trim()" @click="saveSkill">保存</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -93,6 +153,13 @@ const models = ref([])
 const showModels = ref(false)
 const saving = ref(false)
 const lastSavedTag = ref('')
+
+// Skills state
+const skills = ref([])
+const showAddSkill = ref(false)
+const editingSkill = ref(null)
+const skillForm = reactive({ name: '', description: '', content: '' })
+const skillFileInput = ref(null)
 
 const form = reactive({
   name: props.agent.name,
@@ -164,11 +231,84 @@ async function startDM() {
   const data = await api('POST', `/admin/dm/${props.agent.id}`)
   if (data.ok) {
     await loadConversations()
-    // Close detail and let parent route to chat — simple fallback
     emit('close')
-    // The store/App should pick up the new dm room. Trigger reload as fallback if needed
     window.dispatchEvent(new CustomEvent('open-dm', { detail: { agentId: props.agent.id, roomId: data.result?.room_id } }))
   }
+}
+
+// === Skills ===
+async function loadSkills() {
+  const data = await api('GET', `/admin/agents/${props.agent.id}/skills`)
+  skills.value = data.result || []
+}
+
+function editSkill(skill) {
+  editingSkill.value = skill
+  skillForm.name = skill.name
+  skillForm.description = skill.description || ''
+  skillForm.content = skill.content || ''
+}
+
+function closeSkillModal() {
+  showAddSkill.value = false
+  editingSkill.value = null
+  skillForm.name = ''
+  skillForm.description = ''
+  skillForm.content = ''
+}
+
+async function saveSkill() {
+  if (!skillForm.name.trim()) return
+  if (editingSkill.value) {
+    await api('PUT', `/admin/skills/${editingSkill.value.id}`, {
+      name: skillForm.name.trim(),
+      description: skillForm.description.trim(),
+      content: skillForm.content,
+    })
+  } else {
+    await api('POST', `/admin/agents/${props.agent.id}/skills`, {
+      name: skillForm.name.trim(),
+      description: skillForm.description.trim(),
+      content: skillForm.content,
+    })
+  }
+  closeSkillModal()
+  loadSkills()
+}
+
+async function removeSkill(skill) {
+  if (!confirm(`确定删除技能「${skill.name}」？`)) return
+  await api('DELETE', `/admin/skills/${skill.id}`)
+  loadSkills()
+}
+
+function downloadSkill(skill) {
+  const blob = new Blob([skill.content || ''], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${skill.name}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function triggerUpload() {
+  skillFileInput.value?.click()
+}
+
+async function onSkillFileUpload(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  const text = await file.text()
+  const name = file.name.replace(/\.(md|txt|json|yaml|yml)$/, '')
+  await api('POST', `/admin/agents/${props.agent.id}/skills`, {
+    name,
+    description: `从文件 ${file.name} 导入`,
+    content: text,
+    file_type: file.name.split('.').pop() || 'text',
+  })
+  loadSkills()
+  e.target.value = ''
 }
 
 async function loadModels() {
@@ -181,7 +321,10 @@ function onModelsClose() {
   loadModels()
 }
 
-onMounted(loadModels)
+onMounted(() => {
+  loadModels()
+  loadSkills()
+})
 </script>
 
 <style scoped>
@@ -316,4 +459,185 @@ onMounted(loadModels)
   text-overflow: ellipsis;
   max-width: 200px;
 }
+
+/* Section head with action */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.section-head h4 { margin: 0; }
+
+/* Skills list */
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.skill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  transition: border-color 0.15s ease;
+}
+.skill-item:hover { border-color: var(--accent); }
+.skill-info { flex: 1; min-width: 0; }
+.skill-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+}
+.skill-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skill-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.skill-action-btn {
+  width: 28px; height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s ease;
+}
+.skill-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.skill-action-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+.skill-upload-row {
+  margin-top: 8px;
+}
+
+/* Skill modal */
+.skill-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+.skill-modal {
+  background: var(--bg);
+  border-radius: var(--radius-lg, 16px);
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
+}
+.skill-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.skill-modal-header h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.skill-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+.skill-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+.skill-content-textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+  line-height: 1.5;
+}
+.skill-content-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.wf-field { margin-bottom: 14px; }
+.wf-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.wf-field input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+.wf-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+.wf-close {
+  background: none; border: none; font-size: 22px; color: var(--text-dim); cursor: pointer;
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+}
+.wf-close:hover { background: var(--surface2); color: var(--text); }
+.btn-cancel {
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: var(--surface2); }
+.btn-save {
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-save:not(:disabled):hover { opacity: 0.9; }
 </style>

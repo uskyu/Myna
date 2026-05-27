@@ -566,4 +566,54 @@ router.post('/workflow-runs/:id/cancel', async (req, res) => {
   }
 });
 
+// === Agent Skills ===
+router.get('/agents/:id/skills', async (req, res) => {
+  const db = getDatabase();
+  const skills = db.getAgentSkills(req.params.id);
+  res.json({ ok: true, result: skills });
+});
+
+router.get('/skills', async (req, res) => {
+  const db = getDatabase();
+  const skills = db.getAllSkills();
+  res.json({ ok: true, result: skills });
+});
+
+router.get('/skills/:id', async (req, res) => {
+  const db = getDatabase();
+  const skill = db.getSkillById(req.params.id);
+  if (!skill) return res.status(404).json({ ok: false, error: 'Skill not found' });
+  res.json({ ok: true, result: skill });
+});
+
+router.post('/agents/:id/skills', async (req, res) => {
+  const db = getDatabase();
+  const { name, description, content, file_type } = req.body;
+  if (!name) return res.status(400).json({ ok: false, error: 'name is required' });
+  const skill = db.createSkill(req.params.id, name, description || '', content || '', file_type || 'text');
+  res.json({ ok: true, result: skill });
+});
+
+router.put('/skills/:id', async (req, res) => {
+  const db = getDatabase();
+  const { name, description, content, file_type } = req.body;
+  const skill = db.updateSkill(req.params.id, { name, description, content, file_type });
+  res.json({ ok: true, result: skill });
+});
+
+router.delete('/skills/:id', async (req, res) => {
+  const db = getDatabase();
+  db.deleteSkill(req.params.id);
+  res.json({ ok: true });
+});
+
+router.post('/skills/:id/copy', async (req, res) => {
+  const db = getDatabase();
+  const { target_agent_id } = req.body;
+  if (!target_agent_id) return res.status(400).json({ ok: false, error: 'target_agent_id is required' });
+  const skill = db.copySkillToAgent(req.params.id, target_agent_id);
+  if (!skill) return res.status(404).json({ ok: false, error: 'Source skill not found' });
+  res.json({ ok: true, result: skill });
+});
+
 module.exports = router;

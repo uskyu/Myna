@@ -152,9 +152,27 @@
 
       <!-- Plus menu popup -->
       <div v-if="showPlusMenu" class="plus-menu-popup">
-        <div class="plus-menu-item" @mousedown.prevent="onPlusUploadFile">📎 上传文件</div>
-        <div class="plus-menu-item" @mousedown.prevent="onPlusUploadImage">🖼 添加图片</div>
-        <div class="plus-menu-item" @mousedown.prevent="onPlusShortcut">⚡ 快捷指令</div>
+        <div class="plus-menu-item" @mousedown.prevent="onPlusUploadFile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <span>上传文件</span>
+        </div>
+        <div class="plus-menu-item" @mousedown.prevent="onPlusUploadImage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>添加图片</span>
+        </div>
+        <div class="plus-menu-item" @mousedown.prevent="showShortcutMenu = true; showPlusMenu = false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span>快捷指令</span>
+        </div>
+      </div>
+
+      <!-- Shortcut commands popup -->
+      <div v-if="showShortcutMenu" class="plus-menu-popup shortcut-menu">
+        <div class="shortcut-header">快捷指令</div>
+        <div class="plus-menu-item" v-for="cmd in shortcutCommands" :key="cmd.id" @mousedown.prevent="applyShortcut(cmd)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><path :d="cmd.icon"/></svg>
+          <span>{{ cmd.label }}</span>
+        </div>
       </div>
 
       <!-- Attachment preview -->
@@ -224,6 +242,16 @@ const threads = ref([])
 const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
+const showShortcutMenu = ref(false)
+
+// Shortcut commands (like TG Hermes slash commands)
+const shortcutCommands = [
+  { id: 'compress', label: '压缩上下文', icon: 'M4 14h4v4H4zM14 10h4v4h-4zM1 10h4v4H1zM8 6h4v4H8z', command: '/compact' },
+  { id: 'stop', label: '立即停止', icon: 'M6 4h4v16H6zM14 4h4v16h-4z', command: '/stop', needsAgent: true },
+  { id: 'clear', label: '清空对话', icon: 'M3 6h18M8 6V4h8v2M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6', command: '/clear' },
+  { id: 'retry', label: '重新生成', icon: 'M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15', command: '/retry' },
+  { id: 'summary', label: '总结对话', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8', command: '/summary' },
+]
 
 // Thread rename state
 const renamingThreadId = ref(null)
@@ -295,6 +323,7 @@ function togglePlusMenu() {
 }
 function closePlusMenu() {
   showPlusMenu.value = false
+  showShortcutMenu.value = false
 }
 function onPlusUploadFile() {
   showPlusMenu.value = false
@@ -304,9 +333,14 @@ function onPlusUploadImage() {
   showPlusMenu.value = false
   imageInput.value?.click()
 }
-function onPlusShortcut() {
-  showPlusMenu.value = false
-  showToast('开发中')
+function applyShortcut(cmd) {
+  showShortcutMenu.value = false
+  // Always insert command and trigger @ mention picker
+  inputText.value = cmd.command + ' @'
+  nextTick(() => {
+    inputEl.value?.focus()
+    triggerAt()
+  })
 }
 
 // === Task 4: Cancel stream ===
@@ -342,8 +376,13 @@ const mentionCandidates = computed(() => {
   } else {
     pool = store.agents
   }
+  // Add @全部 option at the top
+  const allOption = { id: '__all__', name: '全部', description: '通知所有智能体' }
   const q = mentionQuery.value.toLowerCase()
-  if (!q) return pool.slice(0, 8)
+  if (!q) return [allOption, ...pool.slice(0, 8)]
+  if ('全部'.includes(q) || 'all'.includes(q)) {
+    return [allOption, ...pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 7)]
+  }
   return pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 8)
 })
 
