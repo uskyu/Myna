@@ -36,11 +36,12 @@
           class="setting-input"
           v-model.number="roomSettings.max_chain_depth"
           @change="saveSettings"
-          min="1"
-          max="20"
+          min="0"
+          max="50"
           placeholder="5"
         >
       </div>
+      <div class="setting-hint">设为 0 表示不限制，智能体可自主规划协作深度</div>
     </div>
 
     <!-- Members -->
@@ -117,6 +118,7 @@
     <div class="info-section danger-zone">
       <h4>危险操作</h4>
       <button class="btn btn-danger" @click="clearMessages" style="width:100%;margin-bottom:8px">清空对话记录</button>
+      <button class="btn btn-danger" @click="deleteRoom" style="width:100%">删除群聊</button>
     </div>
   </div>
 </template>
@@ -126,7 +128,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api, store, getAgentColor, getAgentIcon, loadConversations } from '../store.js'
 
 const props = defineProps({ room: Object })
-const emit = defineEmits(['close', 'changed'])
+const emit = defineEmits(['close', 'changed', 'deleted'])
 
 const members = ref([])
 const saving = ref(false)
@@ -150,7 +152,7 @@ async function load() {
     if (room.settings_json) {
       try {
         const s = typeof room.settings_json === 'string' ? JSON.parse(room.settings_json) : room.settings_json
-        if (s.max_chain_depth) roomSettings.max_chain_depth = s.max_chain_depth
+        if (s.max_chain_depth !== undefined) roomSettings.max_chain_depth = s.max_chain_depth
       } catch {}
     }
   }
@@ -192,7 +194,7 @@ async function saveField() {
 }
 
 async function saveSettings() {
-  const val = Math.max(1, Math.min(20, roomSettings.max_chain_depth || 5))
+  const val = Math.max(0, Math.min(50, parseInt(roomSettings.max_chain_depth) || 0))
   roomSettings.max_chain_depth = val
   await api('PUT', `/admin/rooms/${props.room.id}`, {
     settings_json: { max_chain_depth: val }
@@ -224,6 +226,15 @@ async function clearMessages() {
   if (res && (res.ok || res.ok === undefined)) {
     emit('changed')
     emit('close')
+  }
+}
+
+async function deleteRoom() {
+  if (!confirm(`确定删除群聊「${form.name}」？所有消息和成员关系将被永久删除。`)) return
+  const res = await api('DELETE', `/admin/rooms/${props.room.id}`)
+  if (res && (res.ok || res.ok === undefined)) {
+    await loadConversations()
+    emit('deleted')
   }
 }
 
@@ -413,6 +424,11 @@ onMounted(load)
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--shadow-glow);
+}
+.setting-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 6px;
 }
 
 .hint-box {

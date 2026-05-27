@@ -16,7 +16,7 @@
 
     <!-- Group info panel (replaces messages area when active) -->
     <div v-if="type === 'group' && showSettings" class="group-info-panel">
-      <RoomInfoPanel :room="room" @changed="onMembersChanged" @close="showSettings = false" />
+      <RoomInfoPanel :room="room" @changed="onMembersChanged" @close="showSettings = false" @deleted="$emit('close')" />
     </div>
 
     <div v-else class="messages-area" ref="messagesArea" @scroll="onScroll">
