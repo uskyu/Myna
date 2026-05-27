@@ -8,11 +8,18 @@
         {{ title }}
         <span v-if="subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">{{ subtitle }}</span>
       </span>
-      <button v-if="type === 'group'" class="more-btn" @click="showSettings = true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+      <button v-if="type === 'group'" class="more-btn" :class="{ active: showSettings }" @click="showSettings = !showSettings" :title="showSettings ? '返回聊天' : '群聊信息'">
+        <svg v-if="!showSettings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="messages-area" ref="messagesArea">
+
+    <!-- Group info panel (replaces messages area when active) -->
+    <div v-if="type === 'group' && showSettings" class="group-info-panel">
+      <RoomInfoPanel :room="room" @changed="onMembersChanged" @close="showSettings = false" />
+    </div>
+
+    <div v-else class="messages-area" ref="messagesArea">
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
         <div class="msg-group" :class="{ self: group.self }">
@@ -28,33 +35,91 @@
         <div class="dots"><span></span><span></span><span></span></div>
       </div>
     </div>
-    <div class="input-bar">
-      <button class="at-btn" @click="triggerAt" title="@提及">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0V12a10 10 0 1 0-3.92 7.94"/></svg>
+    <!-- Input bar (hidden when info panel showing) -->
+    <div v-if="!(type === 'group' && showSettings)" class="input-bar">
+      <!-- Mention popup -->
+      <div v-if="showMentions && mentionCandidates.length" class="mention-popup">
+        <div
+          v-for="(c, idx) in mentionCandidates"
+          :key="c.id"
+          class="mention-item"
+          :class="{ active: idx === mentionIndex }"
+          @mousedown.prevent="selectMention(c)"
+        >
+          <div class="avatar" :style="{ background: getAgentColor(agentColorIdx(c.id)) }">
+            <span v-html="getAgentIcon(agentColorIdx(c.id))"></span>
+          </div>
+          <span class="name">{{ c.name }}</span>
+          <span class="status-dot" :class="c.status === 'online' ? 'online' : 'offline'"></span>
+        </div>
+      </div>
+
+      <!-- Attachment preview -->
+      <div v-if="attachments.length" class="attach-preview">
+        <div v-for="(a, idx) in attachments" :key="idx" class="attach-chip">
+          <img v-if="a.type === 'image'" :src="a.url">
+          <span v-else class="file-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </span>
+          <span class="name">{{ a.name }}</span>
+          <button class="remove" @click="attachments.splice(idx, 1)">×</button>
+        </div>
+      </div>
+
+      <button class="file-btn" @click="$refs.fileInput.click()" title="上传文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
       </button>
-      <textarea ref="inputEl" rows="1" placeholder="输入消息..." v-model="inputText" @keydown.enter.exact.prevent="send" @input="autoResize"></textarea>
-      <button class="send-btn" @click="send">
+      <input ref="fileInput" type="file" multiple style="display:none" @change="onFiles">
+
+      <button class="at-btn" @click="triggerAt" title="@提及">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0V12a10 10 0 1 0-3.92 7.94"/></svg>
+      </button>
+
+      <textarea
+        ref="inputEl"
+        rows="1"
+        placeholder="输入消息..."
+        v-model="inputText"
+        @keydown.enter.exact.prevent="onEnter"
+        @keydown.down.prevent="moveMention(1)"
+        @keydown.up.prevent="moveMention(-1)"
+        @keydown.tab.prevent="onTab"
+        @keydown.escape="closeMentions"
+        @input="onInput"
+      ></textarea>
+
+      <button class="send-btn" :disabled="!canSend" @click="send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </button>
     </div>
+
+    <!-- (Modal-mode RoomMembersModal removed — replaced by RoomInfoPanel inline) -->
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
-import { store, api, ws, loadConversations, escapeHtml } from '../store.js'
+import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations } from '../store.js'
+import RoomInfoPanel from './RoomInfoPanel.vue'
 
 const props = defineProps({ room: Object, type: String })
 const emit = defineEmits(['close'])
 
 const messagesArea = ref(null)
 const inputEl = ref(null)
+const fileInput = ref(null)
 const inputText = ref('')
 const messages = ref([])
 const typingAgent = ref(null)
 const showSettings = ref(false)
-const streamingMessages = ref({}) // streamId -> { text, agentName }
+const attachments = ref([])
+
+// Mention autocomplete
+const showMentions = ref(false)
+const mentionQuery = ref('')
+const mentionIndex = ref(0)
+const mentionStartPos = ref(-1)
 
 let pollTimer = null
 
@@ -67,7 +132,27 @@ const subtitle = computed(() => {
   return ''
 })
 
-// Render markdown
+const canSend = computed(() => inputText.value.trim().length > 0 || attachments.value.length > 0)
+
+const agentColorIdx = (id) => store.agents.findIndex(a => a.id === id)
+
+// Mention candidates: room members (group) or all agents (dm)
+const mentionCandidates = computed(() => {
+  let pool = []
+  if (props.type === 'group' && props.room.members) {
+    pool = props.room.members.filter(m => m.id !== 'user')
+  } else {
+    pool = store.agents
+  }
+  const q = mentionQuery.value.toLowerCase()
+  if (!q) return pool.slice(0, 8)
+  return pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 8)
+})
+
+watch(mentionCandidates, (list) => {
+  if (mentionIndex.value >= list.length) mentionIndex.value = Math.max(0, list.length - 1)
+})
+
 function renderMd(text) {
   if (!text) return ''
   try {
@@ -79,10 +164,8 @@ function renderMd(text) {
   } catch { return escapeHtml(text) }
 }
 
-// Message grouping - Vue reactivity handles diffing automatically
 const messageGroups = computed(() => {
   const allMsgs = []
-  // Existing messages from server
   messages.value.forEach(m => {
     const self = m.sender_id === 'user' || m.sender_id === 'system'
     allMsgs.push({
@@ -90,14 +173,13 @@ const messageGroups = computed(() => {
       sender_id: m.sender_id,
       sender_name: m.sender_name,
       text: m.text,
-      rendered: self ? renderMd(m.text) : renderMd(m.text),
+      rendered: renderMd(m.text),
       time: (m.created_at || '').slice(11, 16),
       date: (m.created_at || '').slice(0, 10),
       self,
       showName: !self && props.type === 'group',
     })
   })
-  // Streaming messages
   for (const sid in store.activeStreams) {
     const s = store.activeStreams[sid]
     if (s.roomId !== props.room.id) continue
@@ -114,8 +196,6 @@ const messageGroups = computed(() => {
       streaming: true,
     })
   }
-
-  // Group by sender
   const groups = []
   let prevSender = null
   let prevDate = null
@@ -134,7 +214,6 @@ const messageGroups = computed(() => {
   return groups
 })
 
-// Fetch messages
 async function fetchMessages() {
   const data = await api('GET', `/admin/rooms/${props.room.id}/messages?limit=100`)
   messages.value = data.result || []
@@ -147,44 +226,154 @@ function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight
 }
 
-// Send message
+// === Mention logic ===
+function onInput(e) {
+  autoResize(e)
+  const el = inputEl.value
+  const pos = el.selectionStart
+  const text = inputText.value
+  // Find latest @ before cursor with no space between
+  let i = pos - 1
+  let atPos = -1
+  while (i >= 0) {
+    const ch = text[i]
+    if (ch === '@') { atPos = i; break }
+    if (ch === ' ' || ch === '\n') break
+    i--
+  }
+  if (atPos === -1) {
+    showMentions.value = false
+    mentionStartPos.value = -1
+    return
+  }
+  const query = text.slice(atPos + 1, pos)
+  mentionStartPos.value = atPos
+  mentionQuery.value = query
+  showMentions.value = true
+  mentionIndex.value = 0
+}
+
+function moveMention(delta) {
+  if (!showMentions.value) return
+  const len = mentionCandidates.value.length
+  if (!len) return
+  mentionIndex.value = (mentionIndex.value + delta + len) % len
+}
+
+function selectMention(candidate) {
+  if (mentionStartPos.value < 0) return
+  const before = inputText.value.slice(0, mentionStartPos.value)
+  const after = inputText.value.slice(inputEl.value.selectionStart)
+  const insert = '@' + candidate.name + ' '
+  inputText.value = before + insert + after
+  closeMentions()
+  nextTick(() => {
+    const newPos = before.length + insert.length
+    inputEl.value.focus()
+    inputEl.value.selectionStart = inputEl.value.selectionEnd = newPos
+  })
+}
+
+function closeMentions() {
+  showMentions.value = false
+  mentionStartPos.value = -1
+}
+
+function onEnter() {
+  if (showMentions.value && mentionCandidates.value[mentionIndex.value]) {
+    selectMention(mentionCandidates.value[mentionIndex.value])
+    return
+  }
+  send()
+}
+
+function onTab() {
+  if (showMentions.value && mentionCandidates.value[mentionIndex.value]) {
+    selectMention(mentionCandidates.value[mentionIndex.value])
+  }
+}
+
+function triggerAt() {
+  const el = inputEl.value
+  if (!el) return
+  el.focus()
+  const pos = el.selectionStart || inputText.value.length
+  inputText.value = inputText.value.slice(0, pos) + '@' + inputText.value.slice(pos)
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = pos + 1
+    onInput({ target: el })
+  })
+}
+
+// === File upload ===
+async function onFiles(e) {
+  const files = Array.from(e.target.files || [])
+  for (const f of files) {
+    const fd = new FormData()
+    fd.append('file', f)
+    try {
+      const r = await fetch('/admin/upload', { method: 'POST', body: fd })
+      const data = await r.json()
+      if (data.ok) {
+        attachments.value.push({ url: data.url, type: data.type, name: data.name, size: data.size })
+      } else {
+        showToast('上传失败: ' + (data.error || '未知错误'))
+      }
+    } catch (err) {
+      showToast('上传失败: ' + err.message)
+    }
+  }
+  e.target.value = ''
+}
+
 async function send() {
   const text = inputText.value.trim()
-  if (!text) return
-  inputText.value = ''
+  const atts = attachments.value.slice()
+  if (!text && !atts.length) return
 
   if (text.startsWith('/')) {
     handleCommand(text)
+    inputText.value = ''
     return
   }
 
-  // Extract @mentions
+  // Build message body — append attachments as markdown
+  let body = text
+  for (const a of atts) {
+    if (a.type === 'image') body += `\n![${a.name}](${a.url})`
+    else body += `\n[${a.name}](${a.url})`
+  }
+
+  // Extract mentions
   const mentions = []
   const memberMap = {}
   if (props.room.members) {
     props.room.members.forEach(m => { memberMap[m.name] = m.id })
   }
   store.agents.forEach(a => { memberMap[a.name] = a.id })
-
   const mentionRegex = /@(\S+)/g
   let match
   while ((match = mentionRegex.exec(text)) !== null) {
     const id = memberMap[match[1]]
-    if (id) mentions.push(id)
+    if (id && !mentions.includes(id)) mentions.push(id)
   }
 
-  // Optimistic: add user message locally
+  inputText.value = ''
+  attachments.value = []
+  if (inputEl.value) inputEl.value.style.height = 'auto'
+
+  // Optimistic add
   messages.value.push({
-    id: Date.now(),
+    id: 'tmp-' + Date.now(),
     sender_id: 'user',
     sender_name: '我',
-    text,
+    text: body,
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
   })
   await nextTick()
   scrollToBottom()
 
-  await api('POST', `/admin/rooms/${props.room.id}/send`, { text, mentions })
+  await api('POST', `/admin/rooms/${props.room.id}/send`, { text: body, mentions })
 }
 
 async function handleCommand(text) {
@@ -197,18 +386,10 @@ async function handleCommand(text) {
   }
 }
 
-function triggerAt() {
-  const el = inputEl.value
-  if (!el) return
-  const pos = el.selectionStart
-  inputText.value = inputText.value.slice(0, pos) + '@' + inputText.value.slice(pos)
-  nextTick(() => { el.focus(); el.selectionStart = el.selectionEnd = pos + 1 })
-}
-
 function autoResize(e) {
   const el = e.target
   el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 100) + 'px'
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px'
 }
 
 function showToast(msg) {
@@ -219,7 +400,11 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2000)
 }
 
-// WebSocket handlers
+async function onMembersChanged() {
+  // refresh conversation list so room.members reflects latest
+  await loadConversations()
+}
+
 function handleWS(msg) {
   if (msg.type === 'stream_start' && msg.room_id === props.room.id) {
     store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '' }
@@ -230,7 +415,6 @@ function handleWS(msg) {
     nextTick(scrollToBottom)
   } else if (msg.type === 'stream_end' && store.activeStreams[msg.stream_id]) {
     delete store.activeStreams[msg.stream_id]
-    // Fetch final message from server
     setTimeout(fetchMessages, 300)
   } else if (msg.type === 'new_message' && msg.room_id === props.room.id) {
     fetchMessages()

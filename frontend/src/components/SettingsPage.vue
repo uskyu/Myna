@@ -28,12 +28,15 @@
         </div>
       </div>
     </div>
+
+    <ModelsModal v-if="showModels" @close="showModels = false" @changed="loadModels" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../store.js'
+import ModelsModal from './ModelsModal.vue'
 
 const isDark = ref(false)
 const showModels = ref(false)
@@ -50,9 +53,13 @@ function toggleTheme() {
   }
 }
 
-onMounted(async () => {
-  isDark.value = localStorage.getItem('hub-theme') === 'dark'
+async function loadModels() {
   const data = await api('GET', '/admin/models')
   models.value = data.result || []
+}
+
+onMounted(async () => {
+  isDark.value = localStorage.getItem('hub-theme') === 'dark'
+  await loadModels()
 })
 </script>

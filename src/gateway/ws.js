@@ -54,8 +54,9 @@ class WSManager {
       });
 
       ws.on('close', async () => {
-        this.connections.get(agent.id)?.delete(ws);
-        if (this.connections.get(agent.id)?.size === 0) {
+        const conns = this.connections.get(agent.id);
+        if (conns) conns.delete(ws);
+        if (conns && conns.size === 0) {
           this.connections.delete(agent.id);
           await db.updateAgentStatus(agent.id, 'offline');
           console.log(`[WS] Agent "${agent.name}" disconnected`);

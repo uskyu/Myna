@@ -14,22 +14,22 @@
     </div>
     <div class="sort-bar">
       <div class="sort-controls">
-        <button class="view-btn" :class="{ active: view === 'grid' }" @click="view = 'grid'">卡片</button>
-        <button class="view-btn" :class="{ active: view === 'list' }" @click="view = 'list'">列表</button>
-        <select v-model="sort" style="margin-left:auto">
+        <select v-model="sort">
           <option value="name">名称排序</option>
           <option value="status">状态排序</option>
           <option value="newest">最新创建</option>
         </select>
       </div>
     </div>
-    <div class="agent-grid" :class="{ 'list-view': view === 'list' }">
+    <div class="agent-grid list-view">
       <div v-for="a in filtered" :key="a.id" class="agent-card" @click="$emit('open-detail', a)">
         <div class="agent-avatar" :style="{ background: getAgentColor(agentIndex(a.id)) }">
           <span v-html="getAgentIcon(agentIndex(a.id))"></span>
         </div>
-        <div class="agent-name">{{ a.name }}</div>
-        <div class="agent-desc">{{ a.description || '通用智能体' }}</div>
+        <div class="info-block">
+          <div class="agent-name">{{ a.name }}</div>
+          <div class="agent-desc">{{ a.description || '通用智能体' }}</div>
+        </div>
         <div class="agent-status">
           <span class="dot" :class="a.status === 'online' ? 'online' : 'offline'"></span>
           {{ a.status === 'online' ? '在线' : '离线' }}
@@ -48,13 +48,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { store, loadAgents, api, getAgentColor, getAgentIcon } from '../store.js'
 
 const emit = defineEmits(['open-detail', 'create-agent'])
 const filter = ref('')
-const sort = ref('name')
-const view = ref(localStorage.getItem('hub-agent-view') || 'grid')
+const sort = ref(localStorage.getItem('hub-agent-sort') || 'name')
+
+watch(sort, (v) => localStorage.setItem('hub-agent-sort', v))
 
 const agentIndex = (id) => store.agents.findIndex(a => a.id === id)
 
