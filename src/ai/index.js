@@ -93,6 +93,7 @@ async function chatCompletion(agent, messages, options = {}) {
 
 /**
  * Process a message and generate AI replies from mentioned/all agents
+ * Supports chain collaboration: if agent A's reply @mentions agent B, B will also reply.
  * @param {Object} db - database instance
  * @param {Object} wsManager - WebSocket manager
  * @param {string} roomId - room where message was sent
@@ -100,8 +101,15 @@ async function chatCompletion(agent, messages, options = {}) {
  * @param {string} text - message text
  * @param {Array} mentions - array of agent IDs that were @mentioned
  * @param {string} roomType - 'group' or 'dm'
+ * @param {number} chainDepth - recursion depth for chain collaboration (max 5)
  */
-async function processMessage(db, wsManager, roomId, senderId, text, mentions = [], roomType = 'group') {
+async function processMessage(db, wsManager, roomId, senderId, text, mentions = [], roomType = 'group', chainDepth = 0) {
+  const MAX_CHAIN_DEPTH = 5; // Prevent infinite loops
+  if (chainDepth >= MAX_CHAIN_DEPTH) {
+    console.log(`[AI] Chain depth ${chainDepth} reached max, stopping.`);
+    return;
+  }
+
   const members = await db.getRoomMembers(roomId);
   
   // Determine which agents should reply
@@ -113,10 +121,11 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
   } else if (mentions.length > 0) {
     // In group, only mentioned agents reply
     respondingAgents = members.filter(m => mentions.includes(m.id));
-  } else {
-    // In group with no mentions, all agents reply (can be changed to none if preferred)
+  } else if (chainDepth === 0) {
+    // First message with no mentions in group: all agents reply
     respondingAgents = members.filter(m => m.id !== senderId && m.id !== 'system' && m.id !== 'user');
   }
+  // For chain messages (chainDepth > 0) with no mentions, don't trigger anyone
 
   if (respondingAgents.length === 0) return;
 
@@ -136,12 +145,30 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
         : m.text
     }));
 
+    // Add collaboration context if in a chain
+    if (chainDepth > 0) {
+      history.push({
+        role: 'user',
+        content: `[系统提示]: 你被 @提及了，请根据上下文回复。如果需要其他智能体协助，可以在回复中 @他们的名字。`
+      });
+    }
+
     // Call LLM
     const reply = await chatCompletion(fullAgent, history);
     if (!reply) continue;
 
     // Save agent's reply as a message
-    const message = await db.createMessage(roomId, agent.id, reply, 'markdown');
+    // Parse any @mentions in the agent's reply for chain collaboration
+    const replyMentions = [];
+    const mentionRegex = /@(\S+)/g;
+    let match;
+    const allAgents = await db.listAgents();
+    while ((match = mentionRegex.exec(reply)) !== null) {
+      const mentioned = allAgents.find(a => a.name === match[1] && a.id !== agent.id);
+      if (mentioned) replyMentions.push(mentioned.id);
+    }
+
+    const message = await db.createMessage(roomId, agent.id, reply, 'markdown', null, replyMentions);
 
     // Notify all room members via WebSocket
     for (const member of members) {
@@ -159,6 +186,14 @@ async function processMessage(db, wsManager, roomId, senderId, text, mentions = 
           wsManager.notify(member.id, { type: 'message', ...payload });
         }
       }
+    }
+
+    // Chain collaboration: if agent's reply mentions other agents, trigger them
+    if (replyMentions.length > 0 && roomType === 'group') {
+      console.log(`[AI] Chain: ${agent.name} mentioned ${replyMentions.length} agent(s), depth=${chainDepth + 1}`);
+      // Small delay to make it feel natural
+      await new Promise(r => setTimeout(r, 1000));
+      await processMessage(db, wsManager, roomId, agent.id, reply, replyMentions, roomType, chainDepth + 1);
     }
   }
 }

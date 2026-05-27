@@ -140,6 +140,7 @@ function openChat(roomId, type) {
   currentRoomId = roomId;
   currentRoomType = type || 'group';
   let title = '';
+  let subtitle = '';
   if (type === 'dm') {
     const dm = dms.find(d => d.id === roomId);
     title = dm && dm.agent ? dm.agent.name : '私聊';
@@ -147,9 +148,12 @@ function openChat(roomId, type) {
   } else {
     const room = rooms.find(r => r.id === roomId);
     title = room ? room.name : '群聊';
+    const memberCount = room && room.members ? room.members.length : 0;
+    subtitle = memberCount + ' 个成员';
     document.getElementById('chat-more-btn').style.display = '';
   }
-  document.getElementById('chat-title').textContent = title;
+  const titleEl = document.getElementById('chat-title');
+  titleEl.innerHTML = escapeHtml(title) + (subtitle ? '<span style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">' + subtitle + '</span>' : '');
   document.getElementById('chat-view').classList.add('active');
   document.getElementById('typing-indicator').classList.remove('active');
   refreshMessages();
@@ -357,6 +361,24 @@ function insertSlashCommand(cmd) {
   hideAutocomplete();
 }
 
+// Trigger @ menu from button click
+function triggerAtMenu() {
+  const input = document.getElementById('msg-input');
+  const cursorPos = input.selectionStart;
+  const text = input.value;
+  // Insert @ at cursor position
+  input.value = text.slice(0, cursorPos) + '@' + text.slice(cursorPos);
+  input.focus();
+  input.selectionStart = input.selectionEnd = cursorPos + 1;
+  // Show all room members
+  const roomMembers = getCurrentRoomMembers();
+  if (roomMembers.length > 0) {
+    showMentionAutocomplete(roomMembers);
+  } else {
+    showToast('当前群聊没有智能体成员');
+  }
+}
+
 // ===== AGENTS =====
 async function loadAgents() {
   const data = await api('GET', '/admin/agents');
@@ -552,21 +574,43 @@ async function createAgent() {
 }
 
 // Room settings
-function showRoomSettings() {
+async function showRoomSettings() {
   if (!currentRoomId) return;
+  // Refresh room data to get latest members
+  const roomData = await api('GET', '/admin/rooms');
+  rooms = (roomData.result || []).filter(r => r.type !== 'dm');
   const room = rooms.find(r => r.id === currentRoomId);
   if (!room) return;
   document.getElementById('room-settings-title').textContent = room.name + ' - 设置';
   const members = room.members || [];
   document.getElementById('room-members-list').innerHTML =
-    '<div class="hint">成员 ('+members.length+')</div>' +
-    members.map(m => '<div style="padding:8px 0;font-size:14px;border-bottom:0.5px solid var(--border)">'+escapeHtml(m.name)+'</div>').join('');
+    '<div class="hint">成员 (' + members.length + ')</div>' +
+    members.map((m, i) => {
+      const isSystem = m.id === 'user' || m.id === 'system';
+      const idx = agents.findIndex(a => a.id === m.id);
+      const color = idx >= 0 ? getAgentColor(idx) : 'var(--text-dim)';
+      return '<div style="padding:10px 0;font-size:14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:10px">' +
+        '<div style="width:28px;height:28px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" style="width:14px;height:14px"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>' +
+        '</div>' +
+        '<span style="flex:1">' + escapeHtml(m.name) + '</span>' +
+        '<span style="font-size:12px;color:var(--text-dim)">' + (m.role || 'member') + '</span>' +
+        (isSystem ? '' : '<button onclick="removeMember(\'' + m.id + '\')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:4px 8px">移除</button>') +
+      '</div>';
+    }).join('');
   const select = document.getElementById('add-member-select');
   const available = agents.filter(a => !members.find(m => m.id === a.id));
   select.innerHTML = available.length ?
-    available.map(a => '<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>').join('') :
-    '<option disabled>无可添加的智能体</option>';
+    available.map(a => '<option value="' + a.id + '">' + escapeHtml(a.name) + '</option>').join('') :
+    '<option disabled>所有智能体已在群中</option>';
   document.getElementById('modal-room-settings').classList.add('active');
+}
+
+async function removeMember(agentId) {
+  if (!currentRoomId) return;
+  await api('DELETE', '/admin/rooms/' + currentRoomId + '/members/' + agentId);
+  showToast('已移除');
+  showRoomSettings(); // Refresh the modal
 }
 
 async function addMemberToRoom() {

@@ -87,6 +87,8 @@
 
     /* Input bar with @ and / support */
     .input-bar { padding: 8px 12px; background: var(--surface); border-top: 0.5px solid var(--border); display: flex; gap: 8px; align-items: flex-end; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0)); flex-shrink: 0; position: relative; }
+    .input-bar .at-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 6px; border-radius: 8px; flex-shrink: 0; }
+    .input-bar .at-btn:active { background: var(--surface2); color: var(--accent); }
     .input-bar textarea { flex: 1; border: 1px solid var(--border); border-radius: 20px; padding: 8px 14px; font-size: 15px; background: var(--surface2); color: var(--text); resize: none; max-height: 100px; line-height: 1.4; font-family: inherit; }
     .input-bar textarea:focus { outline: none; border-color: var(--accent); }
     .input-bar .send-btn { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -233,6 +235,7 @@
           </div>
           <div class="input-bar">
             <div class="autocomplete" id="autocomplete"></div>
+            <button class="at-btn" onclick="triggerAtMenu()" title="@提及"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0V12a10 10 0 1 0-3.92 7.94"/></svg></button>
             <textarea id="msg-input" rows="1" placeholder="输入消息..." oninput="onInputChange(this)" onkeydown="onInputKeydown(event)"></textarea>
             <button class="send-btn" onclick="sendMsg()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
           </div>
