@@ -1,0 +1,58 @@
+<template>
+  <div class="page active">
+    <div class="header"><h1>设置</h1></div>
+    <div class="settings-page">
+      <div class="settings-section">
+        <div class="section-title">外观</div>
+        <div class="setting-item" @click="toggleTheme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <span class="setting-label">深色模式</span>
+          <div class="toggle" :class="{ on: isDark }"></div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="section-title">模型配置</div>
+        <div class="setting-item" @click="showModels = true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <span class="setting-label">供应商管理</span>
+          <span class="setting-value">{{ models.length }} 个配置</span>
+          <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="section-title">关于</div>
+        <div class="setting-item" style="cursor:default">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span class="setting-label">Hermes Hub</span>
+          <span class="setting-value">v0.2.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { api } from '../store.js'
+
+const isDark = ref(false)
+const showModels = ref(false)
+const models = ref([])
+
+function toggleTheme() {
+  isDark.value = !isDark.value
+  if (isDark.value) {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    localStorage.setItem('hub-theme', 'dark')
+  } else {
+    document.documentElement.removeAttribute('data-theme')
+    localStorage.setItem('hub-theme', 'light')
+  }
+}
+
+onMounted(async () => {
+  isDark.value = localStorage.getItem('hub-theme') === 'dark'
+  const data = await api('GET', '/admin/models')
+  models.value = data.result || []
+})
+</script>
