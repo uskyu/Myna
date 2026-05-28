@@ -1,5 +1,8 @@
 <template>
-  <div class="app" :class="{ 'desktop-layout': isDesktop }">
+  <!-- Login gate -->
+  <LoginPage v-if="!isAuthenticated" @authenticated="onAuthenticated" />
+
+  <div v-else class="app" :class="{ 'desktop-layout': isDesktop }">
     <!-- Desktop sidebar (icon bar) -->
     <div class="desktop-sidebar" v-if="isDesktop">
       <div class="sidebar-icon" :class="{ active: page === 'chats' }" @click="page = 'chats'" title="消息">
@@ -79,8 +82,10 @@ import SettingsPage from './components/SettingsPage.vue'
 import AdminCenter from './components/AdminCenter.vue'
 import RoomModal from './components/RoomModal.vue'
 import AgentModal from './components/AgentModal.vue'
-import { api, ws } from './store.js'
+import LoginPage from './components/LoginPage.vue'
+import { api, ws, auth, setAuthToken, clearAuth } from './store.js'
 
+const isAuthenticated = ref(false)
 const page = ref('chats')
 const currentRoom = ref(null)
 const currentRoomType = ref('group')
@@ -143,16 +148,36 @@ function onAgentCreated(agent) {
   modals.agent = false
 }
 
+function onAuthenticated() {
+  isAuthenticated.value = true
+  // Connect WS after auth
+  ws.connect()
+}
+
+async function checkAuth() {
+  if (auth.token) {
+    const res = await api('GET', '/auth/check')
+    if (res.authenticated) {
+      isAuthenticated.value = true
+      ws.connect()
+      return
+    }
+    clearAuth()
+  }
+  isAuthenticated.value = false
+}
+
 async function deleteAgent(id) {
   await api('DELETE', `/admin/agents/${id}`)
   currentAgent.value = null
 }
 
 onMounted(() => {
-  ws.connect()
   // Init theme
   const dark = localStorage.getItem('hub-theme') === 'dark'
   if (dark) document.documentElement.setAttribute('data-theme', 'dark')
+  // Check auth first, WS connects after auth
+  checkAuth()
   // Listen for back button
   window.addEventListener('popstate', onPopState)
   // Listen for resize (desktop detection)

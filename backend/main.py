@@ -23,6 +23,7 @@ from ws_manager import WSManager
 from routes.admin import router as admin_router
 from routes.gateway import router as gateway_router
 from routes.upload import router as upload_router
+from routes.auth import router as auth_router, is_authenticated
 from workflow_engine import WorkflowRunner, WorkflowScheduler
 
 # Globals
@@ -95,9 +96,38 @@ app.add_middleware(
 )
 
 # Routes
+app.include_router(auth_router, prefix="/auth")
 app.include_router(admin_router, prefix="/admin")
 app.include_router(gateway_router)
 app.include_router(upload_router)
+
+
+# Auth middleware - protect all routes except /auth/*, /health, static files, /ws
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        # Skip auth for: login/check endpoints, health, static assets, websocket upgrade
+        if (path.startswith("/auth/") or
+            path == "/health" or
+            path.startswith("/assets/") or
+            path.endswith(".js") or path.endswith(".css") or
+            path.endswith(".ico") or path.endswith(".png") or
+            path.endswith(".svg") or path.endswith(".woff") or path.endswith(".woff2") or
+            path == "/" or path == "/index.html"):
+            return await call_next(request)
+        # WebSocket auth is handled in the endpoint itself
+        if path == "/ws":
+            return await call_next(request)
+        # Check auth for API routes
+        if path.startswith("/admin/") or path.startswith("/upload"):
+            if not is_authenticated(request):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
+        return await call_next(request)
+
+app.add_middleware(AuthMiddleware)
 
 
 # WebSocket endpoint

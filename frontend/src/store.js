@@ -2,11 +2,37 @@ import { reactive, ref } from 'vue'
 
 const BASE = ''
 
+// Auth state
+export const auth = reactive({
+  token: localStorage.getItem('hub_auth_token') || '',
+  authenticated: false,
+})
+
+export function setAuthToken(token) {
+  auth.token = token
+  auth.authenticated = true
+  localStorage.setItem('hub_auth_token', token)
+}
+
+export function clearAuth() {
+  auth.token = ''
+  auth.authenticated = false
+  localStorage.removeItem('hub_auth_token')
+}
+
 export async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } }
+  if (auth.token) {
+    opts.headers['Authorization'] = `Bearer ${auth.token}`
+  }
   if (body) opts.body = JSON.stringify(body)
   try {
     const r = await fetch(BASE + path, opts)
+    if (r.status === 401 && !path.startsWith('/auth/')) {
+      // Session expired
+      clearAuth()
+      return { ok: false, error: '未登录' }
+    }
     return await r.json()
   } catch (e) {
     return { ok: false, error: e.message }
@@ -62,7 +88,8 @@ export const ws = {
   connected: ref(false),
   connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    this._ws = new WebSocket(`${proto}//${location.host}/ws?ui=1`)
+    const authParam = auth.token ? `&auth_token=${auth.token}` : ''
+    this._ws = new WebSocket(`${proto}//${location.host}/ws?ui=1${authParam}`)
     this._ws.onopen = () => {
       console.log('[WS] Connected')
       this.connected.value = true

@@ -707,8 +707,31 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id)
 
         # Self-improvement
-        if (collected_tool_calls and len(collected_tool_calls) >= (full_agent.get("self_improve_threshold") or 2)
-            and chain_depth == 0 and full_agent.get("self_improve", 1)):
+        # Check global settings as fallback for agent-level self_improve
+        _global_self_improve = True
+        _global_threshold = 2
+        try:
+            _settings_db_path2 = Path("/root/hermes-hub/db/hermes-hub.sqlite")
+            if _settings_db_path2.exists():
+                import sqlite3 as _sqlite3_2
+                _conn2 = _sqlite3_2.connect(str(_settings_db_path2))
+                _row2 = _conn2.execute("SELECT value FROM hub_settings WHERE key = 'self_improve_enabled'").fetchone()
+                if _row2:
+                    _global_self_improve = _row2[0] != '0'
+                _row3 = _conn2.execute("SELECT value FROM hub_settings WHERE key = 'self_improve_threshold'").fetchone()
+                if _row3:
+                    _global_threshold = int(_row3[0])
+                _conn2.close()
+        except:
+            pass
+
+        # Agent-level overrides global; if agent has self_improve=0, skip
+        agent_self_improve = full_agent.get("self_improve", 1)
+        effective_self_improve = bool(agent_self_improve) if agent_self_improve is not None else _global_self_improve
+        effective_threshold = full_agent.get("self_improve_threshold") or _global_threshold
+
+        if (collected_tool_calls and len(collected_tool_calls) >= effective_threshold
+            and chain_depth == 0 and effective_self_improve and _global_self_improve):
             asyncio.create_task(_self_improvement(db, ws_manager, room_id, thread_id, full_agent, collected_tool_calls, reply, model_config))
 
 

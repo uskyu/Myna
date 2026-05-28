@@ -743,9 +743,14 @@ async def copy_skill(skill_id: str, request: Request):
 async def get_settings(request: Request):
     db = get_db(request)
     settings = db.get_all_hub_settings()
+    # Never expose password hash to frontend
+    settings.pop("auth_password", None)
     # Defaults
     defaults = {
         "agent_max_rounds": "50",
+        "self_improve_enabled": "1",
+        "self_improve_threshold": "2",
+        "self_improve_path": "per_agent",
     }
     for k, v in defaults.items():
         if k not in settings:
