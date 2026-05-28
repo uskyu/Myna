@@ -41,9 +41,33 @@ class WSManager:
                 "agent_id": payload.get("agent_id"),
                 "agent_name": payload.get("agent_name"),
                 "thread_id": payload.get("thread_id"),
+                "text": "",
+                "tool_calls": [],
             }
         elif payload.get("type") == "stream_end":
             self.active_streams.pop(payload.get("stream_id", ""), None)
+        elif payload.get("type") == "stream_token":
+            stream = self.active_streams.get(payload.get("stream_id", ""))
+            if stream:
+                stream["text"] += payload.get("chunk", "")
+        elif payload.get("type") == "tool_call":
+            stream = self.active_streams.get(payload.get("stream_id", ""))
+            if stream:
+                stream["tool_calls"].append({
+                    "name": payload.get("tool"),
+                    "summary": payload.get("args_summary", ""),
+                    "status": "running",
+                    "result": None,
+                })
+        elif payload.get("type") == "tool_result":
+            stream = self.active_streams.get(payload.get("stream_id", ""))
+            if stream:
+                # Update the last matching running tool call
+                for tc in reversed(stream["tool_calls"]):
+                    if tc["name"] == payload.get("tool") and tc["status"] == "running":
+                        tc["status"] = "done" if payload.get("ok") else "error"
+                        tc["result"] = payload.get("output", "")[:200]
+                        break
 
         data = json.dumps(payload)
         dead = set()

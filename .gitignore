@@ -5,3 +5,6 @@ data/
 *.log
 db/
 __pycache__/
+cloud-data-platform-demo/
+db/*.sqlite-shm
+db/*.sqlite-wal

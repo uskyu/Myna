@@ -102,13 +102,40 @@ async def websocket_endpoint(websocket: WebSocket):
         app.state.ws_manager.add_ui(websocket)
         try:
             await websocket.send_json({"type": "connected", "client": "ui"})
-            # Send active streams for reconnection
+            # Send active streams for reconnection (with accumulated text + tool_calls)
             for stream_id, info in app.state.ws_manager.active_streams.items():
                 await websocket.send_json({
                     "type": "stream_start",
                     "stream_id": stream_id,
-                    **info
+                    **{k: v for k, v in info.items() if k not in ("text", "tool_calls")},
                 })
+                # Send accumulated text as a single token chunk
+                if info.get("text"):
+                    await websocket.send_json({
+                        "type": "stream_token",
+                        "stream_id": stream_id,
+                        "room_id": info["room_id"],
+                        "chunk": info["text"],
+                    })
+                # Send accumulated tool calls
+                for tc in info.get("tool_calls", []):
+                    await websocket.send_json({
+                        "type": "tool_call",
+                        "stream_id": stream_id,
+                        "room_id": info["room_id"],
+                        "agent_id": info["agent_id"],
+                        "tool": tc["name"],
+                        "args_summary": tc.get("summary", ""),
+                    })
+                    if tc["status"] != "running":
+                        await websocket.send_json({
+                            "type": "tool_result",
+                            "stream_id": stream_id,
+                            "room_id": info["room_id"],
+                            "tool": tc["name"],
+                            "ok": tc["status"] == "done",
+                            "output": tc.get("result", ""),
+                        })
             while True:
                 await websocket.receive_text()
         except WebSocketDisconnect:

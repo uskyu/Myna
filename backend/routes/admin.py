@@ -495,6 +495,7 @@ async def create_thread(room_id: str, request: Request):
     return {"ok": True, "result": thread}
 
 
+@router.patch("/threads/{thread_id}")
 @router.put("/threads/{thread_id}")
 async def update_thread(thread_id: str, request: Request):
     db = get_db(request)
