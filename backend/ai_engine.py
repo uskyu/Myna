@@ -190,8 +190,19 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
         prompt += f"\n\n[已装载技能]\n{skill_text}"
 
     if room_type == "group" and other_agents:
-        agent_list = "、".join([f"@{a['name']}（{a.get('description') or '通用智能体'}）" for a in other_agents[:8]])
-        prompt += f"\n\n[群聊环境] 可协作智能体：{agent_list}。需要时在回复中 @他们。"
+        agent_list = "\n".join([f"  - @{a['name']}：{a.get('description') or '通用智能体'}" for a in other_agents[:8]])
+        prompt += f"""
+
+[群聊协作机制]
+当前群聊中的其他智能体：
+{agent_list}
+
+协作规则：
+1. 当任务超出你的职责范围时，直接在回复中用 @名字 请求对方协助
+2. @提及格式：直接写 @名字（不要加粗、不要加引号、不要加括号），例如：@程序开发 请帮我修复这个bug
+3. 被其他智能体@时，你必须响应并执行请求
+4. 完成协作任务后，@回请求方告知结果
+5. 不要自己尝试做不属于你职责的事情，交给专业的智能体处理"""
 
     return prompt
 
@@ -625,9 +636,12 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         metadata = {"tool_calls": collected_tool_calls} if collected_tool_calls else None
 
         reply_mentions = []
-        for m in re.finditer(r"@(\S+)", reply):
-            mentioned = next((a for a in all_agents if a["name"] == m.group(1) and a["id"] != agent["id"]), None)
-            if mentioned:
+        # Strip markdown formatting around @mentions: **@name**, *@name*, `@name`, etc.
+        clean_reply = re.sub(r'[*_`~|]', '', reply)
+        for m in re.finditer(r"@(\S+)", clean_reply):
+            mention_name = m.group(1).rstrip(".,;:!?，。；：！？")
+            mentioned = next((a for a in all_agents if a["name"] == mention_name and a["id"] != agent["id"]), None)
+            if mentioned and mentioned["id"] not in reply_mentions:
                 reply_mentions.append(mentioned["id"])
 
         message = db.create_message(room_id, agent["id"], reply, "markdown", None, reply_mentions, metadata, thread_id)

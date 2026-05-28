@@ -2,8 +2,12 @@
 WebSocket connection manager for UI clients and agent connections.
 """
 import json
+import time
 import asyncio
 from fastapi import WebSocket
+
+# Stream timeout: 5 minutes without activity = auto-cleanup
+STREAM_TIMEOUT_SECONDS = 300
 
 
 class WSManager:
@@ -11,6 +15,7 @@ class WSManager:
         self.ui_connections: set[WebSocket] = set()
         self.agent_connections: dict[str, set[WebSocket]] = {}  # agent_id -> set of ws
         self.active_streams: dict[str, dict] = {}  # stream_id -> info
+        self._stream_last_activity: dict[str, float] = {}  # stream_id -> timestamp
 
     def add_ui(self, ws: WebSocket):
         self.ui_connections.add(ws)
@@ -44,12 +49,15 @@ class WSManager:
                 "text": "",
                 "tool_calls": [],
             }
+            self._stream_last_activity[payload["stream_id"]] = time.time()
         elif payload.get("type") == "stream_end":
             self.active_streams.pop(payload.get("stream_id", ""), None)
+            self._stream_last_activity.pop(payload.get("stream_id", ""), None)
         elif payload.get("type") == "stream_token":
             stream = self.active_streams.get(payload.get("stream_id", ""))
             if stream:
                 stream["text"] += payload.get("chunk", "")
+                self._stream_last_activity[payload.get("stream_id", "")] = time.time()
         elif payload.get("type") == "tool_call":
             stream = self.active_streams.get(payload.get("stream_id", ""))
             if stream:
@@ -59,6 +67,7 @@ class WSManager:
                     "status": "running",
                     "result": None,
                 })
+                self._stream_last_activity[payload.get("stream_id", "")] = time.time()
         elif payload.get("type") == "tool_result":
             stream = self.active_streams.get(payload.get("stream_id", ""))
             if stream:
@@ -68,6 +77,7 @@ class WSManager:
                         tc["status"] = "done" if payload.get("ok") else "error"
                         tc["result"] = payload.get("output", "")[:200]
                         break
+                self._stream_last_activity[payload.get("stream_id", "")] = time.time()
 
         data = json.dumps(payload)
         dead = set()
@@ -102,3 +112,23 @@ class WSManager:
                 loop.run_until_complete(self.notify_ui(payload))
         except RuntimeError:
             pass
+
+    async def cleanup_stale_streams(self):
+        """Remove streams that have been inactive for too long. Called periodically."""
+        now = time.time()
+        stale = [
+            sid for sid, last in self._stream_last_activity.items()
+            if now - last > STREAM_TIMEOUT_SECONDS
+        ]
+        for sid in stale:
+            info = self.active_streams.pop(sid, None)
+            self._stream_last_activity.pop(sid, None)
+            if info:
+                print(f"[WS] Cleaning up stale stream {sid} (agent={info.get('agent_name')}, inactive {int(now - (self._stream_last_activity.get(sid) or now))}s)")
+                await self.notify_ui({
+                    "type": "stream_end",
+                    "stream_id": sid,
+                    "room_id": info.get("room_id"),
+                    "agent_id": info.get("agent_id"),
+                    "timeout": True,
+                })

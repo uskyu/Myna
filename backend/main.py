@@ -64,10 +64,22 @@ async def lifespan(app: FastAPI):
 ║  Engine:    Hermes Agent (direct)        ║
 ╚══════════════════════════════════════════╝
     """)
-    
+
+    # Start stream cleanup task
+    async def _stream_cleanup_loop():
+        while True:
+            await asyncio.sleep(60)  # Check every minute
+            try:
+                await ws_manager.cleanup_stale_streams()
+            except Exception as e:
+                print(f"[WS] Stream cleanup error: {e}")
+
+    cleanup_task = asyncio.create_task(_stream_cleanup_loop())
+
     yield
     
     # Shutdown
+    cleanup_task.cancel()
     workflow_scheduler.stop()
     db.close()
 

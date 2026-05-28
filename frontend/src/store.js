@@ -99,7 +99,10 @@ export const ws = {
 
 // Global WS handler: manages activeStreams and unread counts at store level
 function _globalWSHandler(msg) {
-  if (msg.type === 'stream_start') {
+  if (msg.type === 'connected') {
+    // Server reconnect: clear stale streams — server will replay active ones immediately after
+    store.activeStreams = {}
+  } else if (msg.type === 'stream_start') {
     store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '', toolCalls: [], working: true }
     store.activeStreams = { ...store.activeStreams }
   } else if (msg.type === 'stream_end') {
