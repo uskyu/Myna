@@ -65,7 +65,7 @@
       </div>
     </div>
 
-    <ModelsModal v-if="showModels" @close="showModels = false" @changed="loadModels" />
+    <ModelsModal v-if="showModels" @close="showModels = false" @changed="onModelsChanged" />
 
     <!-- Change password modal -->
     <div v-if="showChangePwd" class="modal-overlay" @click.self="showChangePwd = false">
@@ -157,6 +157,11 @@ async function doCheckUpdate() {
 async function loadModels() {
   const data = await api('GET', '/admin/models')
   models.value = data.result || []
+}
+
+async function onModelsChanged() {
+  await loadModels()
+  showModels.value = false
 }
 
 onMounted(async () => {

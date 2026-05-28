@@ -169,7 +169,7 @@
       </div>
     </div>
 
-    <ModelsModal v-if="showModels" @close="onModelsClose" @changed="loadModels" />
+    <ModelsModal v-if="showModels" @close="onModelsClose" @changed="onModelsChanged" />
 
     <!-- Skill Picker Modal (select from global library) -->
     <Teleport to="body">
@@ -356,6 +356,11 @@ async function loadModels() {
 function onModelsClose() {
   showModels.value = false
   loadModels()
+}
+
+async function onModelsChanged() {
+  await loadModels()
+  showModels.value = false
 }
 
 onMounted(() => {

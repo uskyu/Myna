@@ -384,8 +384,6 @@ async function saveModel() {
     editingModel.value = false
     await load()
     emit('changed')
-    // 保存成功后关闭整个弹窗
-    emit('close')
   } else {
     alert('保存失败：' + (res.error || '未知错误'))
   }
