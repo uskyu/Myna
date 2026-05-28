@@ -43,6 +43,53 @@ def get_agent_profile_dir(agent_id: str) -> Path:
     return profile_dir
 
 
+def _ensure_hub_agent_config(profile_dir: Path, base_url: str, api_key: str, model: str):
+    """Ensure the hub agent profile has a config.yaml with vision/auxiliary provider configured."""
+    import yaml
+    config_path = profile_dir / "config.yaml"
+    env_path = profile_dir / ".env"
+
+    # Only write if config doesn't exist or is outdated
+    needs_update = False
+    if not config_path.exists():
+        needs_update = True
+    else:
+        try:
+            existing = yaml.safe_load(config_path.read_text()) or {}
+            # Check if base_url changed
+            prov = existing.get("providers", {}).get("hub", {})
+            if prov.get("base_url") != base_url:
+                needs_update = True
+        except:
+            needs_update = True
+
+    if needs_update:
+        config = {
+            "model": {
+                "provider": "custom:hub",
+                "default": model,
+            },
+            "providers": {
+                "hub": {
+                    "base_url": base_url,
+                    "key_env": "HUB_API_KEY",
+                }
+            },
+            "approvals": {
+                "mode": "off",
+            },
+            "auxiliary": {
+                "provider": "custom:hub",
+            },
+        }
+        config_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
+
+    # Write .env with API key
+    env_content = f"HUB_API_KEY={api_key}\n"
+    if not env_path.exists() or env_path.read_text().strip() != env_content.strip():
+        env_path.write_text(env_content)
+
+
 def get_hermes_config():
     """Read Hermes config for API credentials."""
     import yaml
@@ -187,6 +234,12 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                 # memory, skills, sessions directory
                 profile_dir = get_agent_profile_dir(agent.get("id", "default"))
                 token = set_hermes_home_override(str(profile_dir))
+                # Ensure hub agents have a config that disables approval prompts
+                # and configures vision provider (they run autonomously, no human to approve)
+                _ensure_hub_agent_config(profile_dir, base_url, api_key, model)
+                # Enable YOLO mode for hub agents (no approval prompts)
+                old_yolo = os.environ.get("HERMES_YOLO_MODE")
+                os.environ["HERMES_YOLO_MODE"] = "1"
                 try:
                     agent_instance = AIAgent(
                         base_url=base_url,
@@ -210,6 +263,10 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                     return result.get("final_response", "") if isinstance(result, dict) else str(result)
                 finally:
                     reset_hermes_home_override(token)
+                    if old_yolo is None:
+                        os.environ.pop("HERMES_YOLO_MODE", None)
+                    else:
+                        os.environ["HERMES_YOLO_MODE"] = old_yolo
 
             final_text = await loop.run_in_executor(_executor, _run_hermes_sync)
 

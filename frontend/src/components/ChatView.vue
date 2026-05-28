@@ -307,12 +307,8 @@ function toggleToolsExpand(msg) {
 function getToolsExpanded(sid, isStreaming) {
   // If user has manually toggled, respect that
   if (toolsExpandedMap.value[sid] !== undefined) return toolsExpandedMap.value[sid]
-  // Otherwise use chatSettings
-  const mode = chatSettings.toolCallDisplay
-  if (mode === 'expanded') return true
-  if (mode === 'collapsed') return false
-  // 'collapsed-after-complete': expanded while streaming, collapsed after
-  return isStreaming
+  // Default: always collapsed (user can click to expand)
+  return false
 }
 
 function onSettingsChange(val) {
