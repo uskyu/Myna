@@ -20,6 +20,24 @@
         </div>
       </div>
       <div class="settings-section">
+        <div class="section-title">系统性能</div>
+        <div class="setting-item" style="cursor:default">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span class="setting-label">Agent 并发数</span>
+          <div class="inline-input">
+            <input type="number" v-model.number="perfSettings.agent_concurrency" min="1" max="100" @change="savePerfSettings" class="mini-input">
+          </div>
+        </div>
+        <div class="setting-item" style="cursor:default">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <span class="setting-label">单次最大轮数</span>
+          <div class="inline-input">
+            <input type="number" v-model.number="perfSettings.agent_max_rounds" min="1" max="500" @change="savePerfSettings" class="mini-input">
+          </div>
+        </div>
+        <p class="setting-hint">并发数 = 同时能跑多少个 Agent（重启后生效）；轮数 = 单次对话最多调用几轮 API</p>
+      </div>
+      <div class="settings-section">
         <div class="section-title">安全</div>
         <div class="setting-item" @click="showChangePwd = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -88,7 +106,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
 
@@ -96,6 +114,7 @@ const isDark = ref(false)
 const showModels = ref(false)
 const showChangePwd = ref(false)
 const models = ref([])
+const perfSettings = reactive({ agent_concurrency: 10, agent_max_rounds: 50 })
 
 const currentPwd = ref('')
 const newPwd = ref('')
@@ -164,9 +183,25 @@ async function onModelsChanged() {
   showModels.value = false
 }
 
+async function loadPerfSettings() {
+  const data = await api('GET', '/admin/settings')
+  if (data.ok && data.result) {
+    perfSettings.agent_concurrency = parseInt(data.result.agent_concurrency) || 10
+    perfSettings.agent_max_rounds = parseInt(data.result.agent_max_rounds) || 50
+  }
+}
+
+async function savePerfSettings() {
+  await api('PUT', '/admin/settings', {
+    agent_concurrency: String(perfSettings.agent_concurrency || 10),
+    agent_max_rounds: String(perfSettings.agent_max_rounds || 50),
+  })
+}
+
 onMounted(async () => {
   isDark.value = localStorage.getItem('hub-theme') === 'dark'
   await loadModels()
+  await loadPerfSettings()
 })
 </script>
 
@@ -256,5 +291,35 @@ onMounted(async () => {
 .update-item {
   background: rgba(217, 119, 6, 0.06);
   border-radius: 8px;
+}
+.inline-input {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.mini-input {
+  width: 72px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border, #e0e0e0);
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: center;
+  background: var(--surface, #fff);
+  color: var(--text, #1a1a1a);
+}
+.mini-input:focus {
+  outline: none;
+  border-color: var(--accent, #2d6a4f);
+}
+[data-theme="dark"] .mini-input {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e5e5e5;
+}
+.setting-hint {
+  font-size: 12px;
+  color: var(--text-dim, #999);
+  margin: 4px 0 0 0;
+  padding: 0 4px;
+  line-height: 1.5;
 }
 </style>

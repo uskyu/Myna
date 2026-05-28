@@ -748,6 +748,7 @@ async def get_settings(request: Request):
     # Defaults
     defaults = {
         "agent_max_rounds": "50",
+        "agent_concurrency": "10",
         "self_improve_enabled": "1",
         "self_improve_threshold": "2",
         "self_improve_path": "per_agent",
