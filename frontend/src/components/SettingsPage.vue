@@ -35,11 +35,11 @@
         <div class="section-title">智能体执行</div>
         <div class="setting-item" style="cursor:default;flex-wrap:wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span class="setting-label">执行超时</span>
-          <span class="setting-desc">智能体单次执行的最大时长，超时自动终止</span>
+          <span class="setting-label">最大执行轮数</span>
+          <span class="setting-desc">智能体单次响应的最大 API 调用轮数（每轮可执行多个工具），到达后自动停止</span>
           <div class="timeout-options">
-            <label v-for="opt in timeoutOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.agent_timeout === opt.value }">
-              <input type="radio" name="timeout" :value="opt.value" :checked="hubSettings.agent_timeout === opt.value" @change="onTimeoutChange(opt.value)">
+            <label v-for="opt in roundOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.agent_max_rounds === opt.value }">
+              <input type="radio" name="rounds" :value="opt.value" :checked="hubSettings.agent_max_rounds === opt.value" @change="onRoundsChange(opt.value)">
               <span>{{ opt.label }}</span>
             </label>
           </div>
@@ -77,14 +77,14 @@ const isDark = ref(false)
 const showModels = ref(false)
 const models = ref([])
 const hubSettings = reactive({
-  agent_timeout: '300',
+  agent_max_rounds: '50',
 })
 
-const timeoutOptions = [
-  { label: '2 分钟', value: '120' },
-  { label: '5 分钟', value: '300' },
-  { label: '10 分钟', value: '600' },
-  { label: '15 分钟', value: '900' },
+const roundOptions = [
+  { label: '15 轮', value: '15' },
+  { label: '30 轮', value: '30' },
+  { label: '50 轮（推荐）', value: '50' },
+  { label: '90 轮', value: '90' },
   { label: '无限制', value: '0' },
 ]
 
@@ -104,9 +104,9 @@ function onToolDisplayChange(val) {
   saveChatSettings()
 }
 
-async function onTimeoutChange(val) {
-  hubSettings.agent_timeout = val
-  await api('PUT', '/admin/settings', { agent_timeout: val })
+async function onRoundsChange(val) {
+  hubSettings.agent_max_rounds = val
+  await api('PUT', '/admin/settings', { agent_max_rounds: val })
 }
 
 async function loadModels() {

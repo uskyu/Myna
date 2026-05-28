@@ -358,12 +358,29 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                     set_approval_callback(_hub_approval_callback)
 
                 try:
+                    # Get max_iterations from hub settings (budget = max API call rounds)
+                    max_iters = 50
+                    try:
+                        import yaml
+                        _settings_db_path = Path("/root/hermes-hub/db/hermes-hub.sqlite")
+                        if _settings_db_path.exists():
+                            import sqlite3
+                            _conn = sqlite3.connect(str(_settings_db_path))
+                            _row = _conn.execute("SELECT value FROM hub_settings WHERE key = 'agent_max_rounds'").fetchone()
+                            if _row and int(_row[0]) > 0:
+                                max_iters = int(_row[0])
+                            elif _row and int(_row[0]) == 0:
+                                max_iters = 200  # "unlimited" = 200 rounds
+                            _conn.close()
+                    except:
+                        pass
+
                     agent_instance = AIAgent(
                         base_url=base_url,
                         api_key=api_key,
                         api_mode=api_mode,
                         model=model,
-                        max_iterations=15,
+                        max_iterations=max_iters,
                         quiet_mode=True,
                         platform="hermes-hub",
                         skip_context_files=True,
@@ -644,29 +661,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         callbacks = {"on_token": on_token, "on_tool_call": on_tool_call, "on_tool_result": on_tool_result, "on_approval_request": on_approval_request}
 
         try:
-            # Get timeout from hub settings
-            timeout_seconds = 300  # default 5 min
-            try:
-                from db import Database
-                _db_path = Path("/root/hermes-hub/db/hermes-hub.sqlite")
-                if _db_path.exists():
-                    _tmp_db = Database(str(_db_path))
-                    _timeout_val = _tmp_db.get_hub_setting("agent_timeout", "300")
-                    timeout_seconds = int(_timeout_val)
-            except:
-                pass
-
-            reply = await asyncio.wait_for(
-                run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks),
-                timeout=timeout_seconds if timeout_seconds > 0 else None
-            )
-        except asyncio.TimeoutError:
-            print(f"[AI] TIMEOUT for {agent.get('name')} after {timeout_seconds}s")
-            # Use whatever text was streamed so far
-            stream_info = ws_manager.active_streams.get(stream_id)
-            reply = (stream_info.get("text", "") if stream_info else "") or None
-            if not reply:
-                reply = f"⚠️ 执行超时（{timeout_seconds}秒），任务未完成。"
+            reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks)
         except Exception as e:
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()

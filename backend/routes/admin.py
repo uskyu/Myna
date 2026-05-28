@@ -745,7 +745,7 @@ async def get_settings(request: Request):
     settings = db.get_all_hub_settings()
     # Defaults
     defaults = {
-        "agent_timeout": "300",  # 5 minutes
+        "agent_max_rounds": "50",
     }
     for k, v in defaults.items():
         if k not in settings:
