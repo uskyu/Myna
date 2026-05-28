@@ -118,16 +118,22 @@ class WorkflowRunner:
         # Wait for reply
         if step.get("wait_for_reply", True):
             start = asyncio.get_event_loop().time()
-            timeout = 120
+            # Dynamic timeout: base 300s + extra for complex tasks
+            timeout = max(300, step.get("timeout", 600))
+            initial_msg_count = len(self.db.get_thread_messages(thread_id, 100))
             while asyncio.get_event_loop().time() - start < timeout:
                 state = self.active_runs.get(run_id)
                 if state and state["cancelled"]:
                     return
-                msgs = self.db.get_thread_messages(thread_id, 5)
-                if msgs and msgs[-1]["sender_id"] == step["agent_id"]:
-                    return
-                await asyncio.sleep(0.5)
-            raise TimeoutError(f"等待 @{agent_name} 回复超时")
+                # Check if the target agent has replied (any new message from them)
+                msgs = self.db.get_thread_messages(thread_id, 100)
+                if len(msgs) > initial_msg_count:
+                    # Find any message from the target agent after our prompt
+                    for msg in msgs[initial_msg_count:]:
+                        if msg["sender_id"] == step["agent_id"]:
+                            return
+                await asyncio.sleep(2)
+            raise TimeoutError(f"等待 @{agent_name} 回复超时（{timeout}秒）")
 
     def cancel(self, run_id: str):
         state = self.active_runs.get(run_id)

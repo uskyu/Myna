@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" width="800" height="520">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2d6a4f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#40916c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#d97706;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#818cf8;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="520" fill="#faf9f7" rx="12"/>
+  
+  <!-- Title -->
+  <text x="400" y="35" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="700" fill="#1a1a1a">Agent 链式协作流程</text>
+  
+  <!-- User box -->
+  <rect x="280" y="55" width="240" height="50" rx="8" fill="url(#grad1)" filter="url(#shadow)"/>
+  <text x="400" y="77" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="white" font-weight="600">👤 用户发出指令</text>
+  <text x="400" y="95" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="rgba(255,255,255,0.85)">"创建官网，做完让测试员测试"</text>
+  
+  <!-- Arrow 1 -->
+  <path d="M400 105 L400 130" stroke="#2d6a4f" stroke-width="2" fill="none" marker-end="url(#arrowGreen)"/>
+  <defs><marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d6a4f"/></marker></defs>
+  
+  <!-- Agent A box -->
+  <rect x="100" y="135" width="600" height="110" rx="10" fill="white" stroke="#e5e7eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="100" y="135" width="600" height="30" rx="10" fill="url(#grad1)" />
+  <rect x="100" y="155" width="600" height="10" fill="url(#grad1)" />
+  <text x="130" y="155" font-family="system-ui, sans-serif" font-size="13" fill="white" font-weight="600">🤖 程序开发 (Agent A)</text>
+  
+  <!-- Tool calls -->
+  <rect x="120" y="175" width="560" height="28" rx="5" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="140" y="194" font-family="system-ui, sans-serif" font-size="11" fill="#166534">🔧 工具调用 8 步：删除旧项目 → 创建目录 → 写 HTML/CSS/JS → 启动服务</text>
+  
+  <!-- Result text -->
+  <text x="130" y="228" font-family="system-ui, sans-serif" font-size="11" fill="#4b5563">✅ 完成后自动 @程序测试员 并附上测试清单</text>
+  
+  <!-- Arrow 2 -->
+  <path d="M400 245 L400 275" stroke="#d97706" stroke-width="2" fill="none" marker-end="url(#arrowOrange)"/>
+  <defs><marker id="arrowOrange" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#d97706"/></marker></defs>
+  <rect x="340" y="252" width="120" height="20" rx="10" fill="#fef3c7"/>
+  <text x="400" y="266" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#92400e" font-weight="600">@提及自动触发</text>
+  
+  <!-- Agent B box -->
+  <rect x="100" y="280" width="600" height="110" rx="10" fill="white" stroke="#e5e7eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="100" y="280" width="600" height="30" rx="10" fill="url(#grad2)" />
+  <rect x="100" y="300" width="600" height="10" fill="url(#grad2)" />
+  <text x="130" y="300" font-family="system-ui, sans-serif" font-size="13" fill="white" font-weight="600">🧪 程序测试员 (Agent B)</text>
+  
+  <!-- Tool calls B -->
+  <rect x="120" y="320" width="560" height="28" rx="5" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+  <text x="140" y="339" font-family="system-ui, sans-serif" font-size="11" fill="#92400e">🔧 工具调用 12 步：访问页面 → 截图 → 检查响应式 → 验证交互 → 输出报告</text>
+  
+  <!-- Result text B -->
+  <text x="130" y="373" font-family="system-ui, sans-serif" font-size="11" fill="#4b5563">🐛 发现问题自动 @程序开发 反馈修复建议</text>
+  
+  <!-- Arrow 3 (loop back) -->
+  <path d="M400 390 L400 410 L750 410 L750 190 L700 190" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#arrowPurple)"/>
+  <defs><marker id="arrowPurple" markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto"><path d="M8,0 L0,4 L8,8" fill="#6366f1"/></marker></defs>
+  <rect x="710" y="285" width="70" height="20" rx="10" fill="#eef2ff"/>
+  <text x="745" y="299" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#4338ca" font-weight="600">🔄 循环</text>
+  
+  <!-- Bottom summary -->
+  <rect x="150" y="440" width="500" height="60" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="400" y="465" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#1e293b" font-weight="600">💡 你只需要说一句话</text>
+  <text x="400" y="485" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">多个智能体自动分工、接力、反馈、迭代，直到任务完成</text>
+</svg>
