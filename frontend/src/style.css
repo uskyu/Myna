@@ -2255,3 +2255,63 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .approval-btn.approve-all:hover {
   background: var(--accent-soft);
 }
+
+/* === File card (agent-sent files) === */
+.file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border, #e5e5e5);
+  border-radius: 10px;
+  background: var(--surface, #f8f8f8);
+  text-decoration: none;
+  color: var(--text, #1a1a1a);
+  margin: 6px 0;
+  max-width: 320px;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.file-card:hover {
+  border-color: var(--accent, #2d6a4f);
+  background: var(--accent-soft, rgba(45,106,79,0.06));
+}
+.file-card-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.file-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.file-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-card-meta {
+  font-size: 11px;
+  color: var(--text-dim, #999);
+}
+.file-card-dl {
+  font-size: 16px;
+  color: var(--accent, #2d6a4f);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.file-card:hover .file-card-dl {
+  opacity: 1;
+}
+[data-theme="dark"] .file-card {
+  background: #2a2a2a;
+  border-color: #444;
+}
+[data-theme="dark"] .file-card:hover {
+  border-color: var(--accent);
+  background: rgba(45,106,79,0.15);
+}

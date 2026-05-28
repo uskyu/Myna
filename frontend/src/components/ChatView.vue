@@ -444,9 +444,15 @@ function renderMd(text) {
         return `![image](${mediaUrl})`
       } else if (['mp4', 'webm'].includes(ext)) {
         return `<video src="${mediaUrl}" controls style="max-width:100%;border-radius:8px"></video>`
+      } else if (ext === 'pdf') {
+        const fileName = filePath.split('/').pop()
+        return `<a href="${mediaUrl}" target="_blank" class="file-card"><span class="file-card-icon">📄</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">PDF 文档 · 点击预览</span></span></a>`
       } else {
         const fileName = filePath.split('/').pop()
-        return `📎 [${fileName}](${mediaUrl})`
+        const downloadUrl = `${mediaUrl}?download=1`
+        const icons = { zip: '🗜️', tar: '🗜️', gz: '🗜️', '7z': '🗜️', rar: '🗜️', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', txt: '📃', md: '📃', json: '📋', csv: '📊', sql: '🗃️' }
+        const icon = icons[ext] || '📎'
+        return `<a href="${downloadUrl}" download="${fileName}" class="file-card"><span class="file-card-icon">${icon}</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">${ext.toUpperCase()} 文件 · 点击下载</span></span><span class="file-card-dl">⬇</span></a>`
       }
     })
 
