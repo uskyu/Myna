@@ -9,33 +9,79 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 [![Vue 3](https://img.shields.io/badge/Vue-3-brightgreen.svg)](https://vuejs.org)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](docker-compose.yml)
 
 </div>
 
 ---
 
-## 截图
+## 核心能力：Agent 链式协作
 
-| 登录 | 聊天协作 |
-|:---:|:---:|
-| ![登录](docs/screenshots/login.png) | ![聊天](docs/screenshots/chat.png) |
+Myna 的核心不是"又一个 ChatGPT 套壳"——而是**多个 AI 智能体在同一个房间里自动接力完成任务**。
 
-| 管理中心 | 设置 |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        用户发出指令                               │
+│         "创建一个企业官网，做完让测试员去测试"                       │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🤖 程序开发（Agent A）                                          │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ 🔧 工具调用 8 步                                         │    │
+│  │ • 删除旧项目 → 创建目录 → 写 HTML/CSS/JS → 启动服务      │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│  完成后自动 @程序测试员 并附上测试清单                             │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ @提及触发
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🧪 程序测试员（Agent B）                                        │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ 🔧 工具调用 12 步                                        │    │
+│  │ • 访问页面 → 截图 → 检查响应式 → 验证交互 → 输出报告      │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│  发现问题自动 @程序开发 反馈修复建议                               │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ @提及触发
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🤖 程序开发（Agent A）                                          │
+│  根据测试反馈自动修复 → 再次 @程序测试员 验证                      │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+                          🔄 循环直到通过
+```
+
+**一句话总结：你只需要说一句话，多个智能体自动分工、接力、反馈、迭代，直到任务完成。**
+
+---
+
+## 实际效果
+
+| 链式协作：开发 → 测试 → 修复 | 自主进化：自动提取技能 |
 |:---:|:---:|
-| ![管理中心](docs/screenshots/admin.png) | ![设置](docs/screenshots/settings.png) |
+| ![链式协作](docs/screenshots/chain-workflow.png) | ![自主进化](docs/screenshots/self-improve.png) |
+
+| 链式对话触发 | 管理中心 |
+|:---:|:---:|
+| ![链式对话](docs/screenshots/chain-chat.png) | ![管理中心](docs/screenshots/admin.png) |
 
 ---
 
 ## 功能特性
 
-- **多智能体群聊协作** — @提及触发 chain 调用，智能体之间自动接力
-- **自主进化学习** — 工具使用后自动提取技能，越用越聪明
-- **Hermes Agent 引擎** — 完整 tools / memory / skills / delegation 能力
-- **密码保护** — 公网部署安全，默认密码 + 自助改密
-- **审批机制** — auto / confirm / manual 三档执行模式
-- **实时流式输出** — WebSocket 推送，打字机效果
-- **自动更新检查** — 从 GitHub Releases 检测新版本
-- **桌面 + 移动端适配** — 响应式布局，双端体验一致
+- **🔗 Agent 链式协作** — @提及自动触发下一个智能体，无限接力
+- **🧠 自主进化学习** — 多步操作后自动提取技能，去重 + 质量过滤，越用越聪明
+- **🛠 完整工具能力** — 终端命令、文件读写、HTTP 请求、代码搜索
+- **⚡ Hermes Agent 引擎** — tools / memory / skills / delegation 全套
+- **🔒 密码保护** — 公网部署安全，JWT 会话 + 自助改密
+- **✅ 审批机制** — auto / confirm / manual 三档执行模式
+- **📡 实时流式输出** — WebSocket 推送，工具调用过程可视化
+- **🐳 Docker 一键部署** — MySQL + 后端，`docker compose up -d` 搞定
+- **📱 桌面 + 移动端** — 响应式布局，双端体验一致
 
 ---
 
@@ -76,7 +122,7 @@ PORT=3456 python3 main.py
 | AI 引擎 | [Hermes Agent](https://github.com/NousResearch/hermes-agent) |
 | 通信 | WebSocket (实时流式) |
 | 认证 | Session Token + SHA-256 |
-| 部署 | Docker Compose |
+| 部署 | Docker Compose + GHCR |
 
 ---
 
@@ -85,14 +131,15 @@ PORT=3456 python3 main.py
 ```
 myna/
 ├── backend/          # FastAPI 后端
-│   ├── main.py       # 入口 + WebSocket + 中间件
-│   ├── ai_engine.py  # Hermes Agent 集成
-│   ├── db.py         # SQLite 数据层
+│   ├── main.py       # 入口 + WebSocket + Auth 中间件
+│   ├── ai_engine.py  # Hermes Agent + 链式调用 + 自主进化
+│   ├── db.py         # SQLite / MySQL 双引擎适配
 │   └── routes/       # API 路由
 ├── frontend/         # Vue 3 源码
 │   └── src/
 ├── src/web/public/   # 预构建前端产物
-├── db/               # SQLite 数据文件
+├── docker-compose.yml
+├── Dockerfile
 └── docs/             # 文档 + 截图
 ```
 
