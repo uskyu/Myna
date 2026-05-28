@@ -241,7 +241,7 @@ const form = reactive({
   model_config_id: props.agent.model_config_id || '',
   status: props.agent.status || 'online',
   execution_mode: props.agent.execution_mode || 'auto',
-  self_improve: props.agent.self_improve !== undefined ? !!props.agent.self_improve : true,
+  self_improve: props.agent.self_improve !== undefined ? !!props.agent.self_improve : false,
   self_improve_threshold: props.agent.self_improve_threshold || 2,
 })
 
