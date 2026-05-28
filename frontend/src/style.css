@@ -662,6 +662,15 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   color: var(--accent);
   opacity: 1;
 }
+.msg-action-btn.retry-btn {
+  color: var(--amber, #d97706);
+  opacity: 0.7;
+}
+.msg-action-btn.retry-btn:hover {
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--amber, #d97706);
+  opacity: 1;
+}
 .msg-group.self .msg .msg-action-btn {
   color: rgba(255, 255, 255, 0.6);
 }
@@ -790,6 +799,19 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .msg .msg-text strong { font-weight: 700; }
 .msg .msg-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.msg-group.self .msg .msg-text a { color: #bbf7d0; text-decoration: underline; text-underline-offset: 2px; }
+.msg .msg-text .at-mention {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.msg-group.self .msg .msg-text .at-mention {
+  color: #bbf7d0;
+  background: rgba(255, 255, 255, 0.15);
+}
 .msg .msg-text .table-wrapper {
   overflow-x: auto;
   margin: 10px 0;

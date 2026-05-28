@@ -62,13 +62,16 @@
             <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
             <div class="msg-meta-row">
               <span class="msg-time">{{ msg.streaming ? (msg.working ? '思考中...' : '生成中...') : msg.time }}</span>
-              <!-- Message actions (edit/delete/mention) — always visible for non-streaming -->
+              <!-- Message actions (edit/delete/mention/retry) — always visible for non-streaming -->
               <span v-if="!msg.streaming && !String(msg.id).startsWith('tmp-')" class="msg-actions">
                 <button class="msg-action-btn danger" @click.stop="deleteMsg(msg)" title="删除">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
                 <button class="msg-action-btn" @click.stop="startEditMsg(msg)" title="编辑">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="msg-action-btn retry-btn" @click.stop="retryMsg(msg)" title="重试">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
                 </button>
                 <button v-if="!group.self && msg.sender_name" class="msg-action-btn mention-btn" @click.stop="onMentionClick(msg)" title="@提及">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>
@@ -251,6 +254,7 @@
         @keydown.tab.prevent="onTab"
         @keydown.escape="closeMentions"
         @input="onInput"
+        @paste="onPaste"
       ></textarea>
 
       <button class="send-btn" :disabled="!canSend" @click="send">
@@ -463,6 +467,8 @@ function renderMd(text) {
       codeBlocks.push(match)
       return `__CODE_BLOCK_${codeBlocks.length - 1}__`
     })
+    // Highlight @mentions (outside code blocks)
+    processed = processed.replace(/@(\S+?)(?=[.,;:!?\s，。；：！？]|$)/g, '<span class="at-mention">@$1</span>')
     // Escape HTML tags outside code blocks (prevent layout breakage)
     processed = processed.replace(/<(script|style|link|meta|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, (match) => {
       return '```html\n' + match + '\n```'
@@ -650,6 +656,39 @@ async function deleteMsg(msg) {
   messages.value = messages.value.filter(m => m.id !== msg.id)
 }
 
+async function retryMsg(msg) {
+  // For user messages: delete and re-send the same text
+  // For AI messages: delete the AI response and re-send the last user message before it
+  if (msg.sender_id === 'user') {
+    const text = msg.text
+    await api('DELETE', `/admin/messages/${msg.id}`)
+    messages.value = messages.value.filter(m => m.id !== msg.id)
+    // Re-send
+    inputText.value = text
+    await nextTick()
+    send()
+  } else {
+    // Find the last user message before this AI message
+    const idx = messages.value.findIndex(m => m.id === msg.id)
+    let userMsg = null
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages.value[i].sender_id === 'user') {
+        userMsg = messages.value[i]
+        break
+      }
+    }
+    // Delete the AI message
+    await api('DELETE', `/admin/messages/${msg.id}`)
+    messages.value = messages.value.filter(m => m.id !== msg.id)
+    // Re-send the user message (or just re-trigger with @agent)
+    if (userMsg) {
+      inputText.value = userMsg.text
+      await nextTick()
+      send()
+    }
+  }
+}
+
 // Auto-update thread title on first message
 async function autoUpdateThreadTitle(text) {
   if (!activeThreadId.value) return
@@ -770,6 +809,36 @@ function triggerAt() {
 }
 
 // === File upload ===
+async function onPaste(e) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  const files = []
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+  }
+  if (!files.length) return
+  // Prevent default paste of image as text
+  e.preventDefault()
+  for (const f of files) {
+    const fd = new FormData()
+    fd.append('file', f, f.name || `paste-${Date.now()}.${f.type.split('/')[1] || 'png'}`)
+    try {
+      const r = await fetch('/admin/upload', { method: 'POST', body: fd })
+      const data = await r.json()
+      if (data.ok) {
+        attachments.value.push({ url: data.url, type: data.type, name: data.name, size: data.size })
+      } else {
+        showToast('粘贴上传失败: ' + (data.error || '未知错误'))
+      }
+    } catch (err) {
+      showToast('粘贴上传失败: ' + err.message)
+    }
+  }
+}
+
 async function onFiles(e) {
   const files = Array.from(e.target.files || [])
   for (const f of files) {
@@ -891,6 +960,14 @@ function showToast(msg) {
 async function onMembersChanged() {
   // refresh conversation list so room.members reflects latest
   await loadConversations()
+  // Also refresh room members directly for mention candidates
+  try {
+    const data = await api('GET', '/admin/rooms')
+    const updated = (data.result || []).find(r => r.id === props.room.id)
+    if (updated && updated.members) {
+      props.room.members = updated.members
+    }
+  } catch {}
 }
 
 async function respondApproval(decision) {
@@ -976,5 +1053,10 @@ onUnmounted(() => {
 watch(() => props.room.id, (newId) => {
   clearUnread(newId)
   currentRoomId.value = newId
+  showSettings.value = false
+  activeThreadId.value = null
+  messages.value = []
+  fetchMessages()
+  fetchThreads()
 })
 </script>
