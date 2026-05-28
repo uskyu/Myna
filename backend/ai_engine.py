@@ -25,7 +25,25 @@ except ImportError:
     print("[AI] WARNING: Hermes Agent not importable, falling back to direct API calls")
 
 # Thread pool for running sync Hermes Agent calls
-_executor = ThreadPoolExecutor(max_workers=16)
+# Default 10, configurable via hub_settings 'agent_concurrency'
+def _get_concurrency_limit():
+    try:
+        import sqlite3
+        from pathlib import Path
+        db_path = Path(__file__).parent.parent / "db" / "myna.sqlite"
+        if not db_path.exists():
+            db_path = Path(__file__).parent.parent / "db" / "hermes-hub.sqlite"
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path))
+            row = conn.execute("SELECT value FROM hub_settings WHERE key = 'agent_concurrency'").fetchone()
+            conn.close()
+            if row and int(row[0]) > 0:
+                return int(row[0])
+    except:
+        pass
+    return 10
+
+_executor = ThreadPoolExecutor(max_workers=_get_concurrency_limit())
 
 # Pending approval requests: approval_id -> callback(decision)
 _pending_approvals: dict = {}
