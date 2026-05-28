@@ -27,7 +27,7 @@ from routes.auth import router as auth_router, is_authenticated
 from workflow_engine import WorkflowRunner, WorkflowScheduler
 
 # Globals
-db: Database = None
+db = None
 ws_manager: WSManager = None
 workflow_runner: WorkflowRunner = None
 workflow_scheduler: WorkflowScheduler = None

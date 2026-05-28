@@ -22,7 +22,7 @@ services:
       retries: 5
 
   myna:
-    build: .
+    image: ghcr.io/uskyu/myna:latest
     container_name: myna-app
     restart: unless-stopped
     ports:

@@ -673,6 +673,9 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         await ws_manager.notify_ui({"type": "stream_end", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"]})
 
+        # Give async callbacks time to complete (they're scheduled via run_coroutine_threadsafe)
+        await asyncio.sleep(0.5)
+
         if not reply and not collected_tool_calls:
             continue
 
@@ -707,21 +710,16 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id)
 
         # Self-improvement
-        # Check global settings as fallback for agent-level self_improve
+        # Use the passed db object directly (no hardcoded sqlite path)
         _global_self_improve = True
         _global_threshold = 2
         try:
-            _settings_db_path2 = Path("/root/hermes-hub/db/myna.sqlite")
-            if _settings_db_path2.exists():
-                import sqlite3 as _sqlite3_2
-                _conn2 = _sqlite3_2.connect(str(_settings_db_path2))
-                _row2 = _conn2.execute("SELECT value FROM hub_settings WHERE key = 'self_improve_enabled'").fetchone()
-                if _row2:
-                    _global_self_improve = _row2[0] != '0'
-                _row3 = _conn2.execute("SELECT value FROM hub_settings WHERE key = 'self_improve_threshold'").fetchone()
-                if _row3:
-                    _global_threshold = int(_row3[0])
-                _conn2.close()
+            _si_val = db.get_hub_setting("self_improve_enabled")
+            if _si_val is not None:
+                _global_self_improve = _si_val != '0'
+            _th_val = db.get_hub_setting("self_improve_threshold")
+            if _th_val is not None:
+                _global_threshold = int(_th_val)
         except:
             pass
 
@@ -732,16 +730,27 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         if (collected_tool_calls and len(collected_tool_calls) >= effective_threshold
             and chain_depth == 0 and effective_self_improve and _global_self_improve):
+            print(f"[AI] 🧠 Triggering self-improvement for {full_agent.get('name')}: {len(collected_tool_calls)} tool calls >= threshold {effective_threshold}")
             asyncio.create_task(_self_improvement(db, ws_manager, room_id, thread_id, full_agent, collected_tool_calls, reply, model_config))
+        elif collected_tool_calls:
+            print(f"[AI] 🧠 Self-improvement skipped for {full_agent.get('name')}: {len(collected_tool_calls)} tool calls, threshold={effective_threshold}, enabled={effective_self_improve}, global={_global_self_improve}, chain={chain_depth}")
+        else:
+            print(f"[AI] 🧠 No tool calls collected for {full_agent.get('name')} (self_improve={effective_self_improve})")
 
 
 async def _self_improvement(db, ws_manager, room_id, thread_id, agent, tool_calls, last_reply, model_config):
-    """Background self-improvement."""
+    """Background self-improvement: extract skills from tool usage."""
     try:
-        tool_summary = "\n".join([f"{t['name']}: {t.get('summary', '')} -> {t['status']}" for t in tool_calls])
+        tool_summary = "\n".join([f"- {t['name']}: {t.get('summary', '')} (结果: {t['status']}, {(t.get('result') or '')[:100]})" for t in tool_calls])
         review_msgs = [
-            {"role": "system", "content": "分析工具使用记录，判断是否有值得保存的技能。有则输出JSON：{\"save\": true, \"skill_name\": \"名称\", \"skill_description\": \"描述\", \"skill_content\": \"内容\"}，无则输出{\"save\": false}。只输出JSON。"},
-            {"role": "user", "content": f"智能体: {agent['name']}\n工具使用:\n{tool_summary}\n\n回复摘要: {last_reply[:500]}"}
+            {"role": "system", "content": """你是技能提取器。根据智能体的工具使用记录，提取一个可复用的技能。
+
+规则：
+1. 必须提取一个技能，不允许说"不值得保存"
+2. 技能名称要简洁明确（如"Python文件读写"、"API数据抓取"、"文本摘要生成"）
+3. 技能内容要包含具体步骤和关键参数，让下次遇到类似任务时能直接复用
+4. 只输出JSON，格式：{"skill_name": "名称", "skill_description": "一句话描述", "skill_content": "详细步骤和要点"}"""},
+            {"role": "user", "content": f"智能体: {agent['name']}\n\n工具使用记录:\n{tool_summary}\n\n最终回复摘要: {last_reply[:800]}"}
         ]
 
         cfg = model_config or {}
@@ -751,25 +760,39 @@ async def _self_improvement(db, ws_manager, room_id, thread_id, agent, tool_call
 
         result = await direct_api_call(base_url, api_key_val, model_val, review_msgs[0]["content"], [review_msgs[1]], 1024, 0.3, {})
         if not result:
+            print(f"[AI] Self-improvement: no response from API for {agent['name']}")
             return
 
         json_match = re.search(r"\{[\s\S]*\}", result)
         if not json_match:
+            print(f"[AI] Self-improvement: no JSON in response for {agent['name']}: {result[:200]}")
             return
 
         parsed = json.loads(json_match.group())
-        if not parsed.get("save") or not parsed.get("skill_name"):
+        skill_name = parsed.get("skill_name", "").strip()
+        if not skill_name:
+            print(f"[AI] Self-improvement: empty skill_name for {agent['name']}")
             return
 
-        db.create_skill(agent["id"], parsed["skill_name"], parsed.get("skill_description", ""), parsed.get("skill_content", ""), "learned")
-        print(f"[AI] 💾 Self-improvement: saved skill \"{parsed['skill_name']}\" for {agent['name']}")
+        # Save skill to database
+        db.create_skill(
+            agent["id"],
+            skill_name,
+            parsed.get("skill_description", ""),
+            parsed.get("skill_content", ""),
+            "learned"
+        )
+        print(f"[AI] 💾 Self-improvement: saved skill \"{skill_name}\" for {agent['name']}")
 
+        # Notify UI
         db.ensure_system_agents()
-        review_msg = f"💾 **Self-improvement**: 已学习新技能「{parsed['skill_name']}」— {parsed.get('skill_description', '')}"
+        review_msg = f"💾 **已学习新技能**「{skill_name}」— {parsed.get('skill_description', '')}"
         message = db.create_message(room_id, "system", review_msg, "markdown", None, [], None, thread_id)
         await ws_manager.notify_ui({"type": "new_message", "room_id": room_id, "thread_id": thread_id, "message": {"id": message["id"], "room_id": room_id, "sender_id": "system", "sender_name": "系统", "text": review_msg, "thread_id": thread_id, "created_at": datetime.now().isoformat()}})
     except Exception as e:
         print(f"[AI] Self-improvement error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # === API for frontend: get engine status ===

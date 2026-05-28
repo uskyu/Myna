@@ -59,16 +59,6 @@
                 </label>
               </div>
             </div>
-            <div class="config-item">
-              <span class="config-label">学习路径</span>
-              <span class="config-desc">智能体学到的技能保存位置（未单独设置时使用此全局配置）</span>
-              <div class="config-options">
-                <label v-for="opt in learnPathOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.self_improve_path === opt.value }">
-                  <input type="radio" name="learn-path" :value="opt.value" :checked="hubSettings.self_improve_path === opt.value" @change="onLearnPathChange(opt.value)">
-                  <span>{{ opt.label }}</span>
-                </label>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -215,7 +205,6 @@ const hubSettings = reactive({
   agent_max_rounds: '50',
   self_improve_enabled: '1',
   self_improve_threshold: '2',
-  self_improve_path: 'per_agent',
 })
 
 const toolDisplayOptions = [
@@ -237,12 +226,6 @@ const thresholdOptions = [
   { label: '3 次', value: '3' },
   { label: '5 次', value: '5' },
   { label: '8 次', value: '8' },
-]
-
-const learnPathOptions = [
-  { label: '各自独立', value: 'per_agent' },
-  { label: '共享技能库', value: 'shared' },
-  { label: '独立 + 共享', value: 'both' },
 ]
 
 const agents = computed(() => store.agents.filter(a => a.id !== 'user' && a.id !== 'system'))
@@ -278,11 +261,6 @@ async function toggleSelfImprove() {
 async function onThresholdChange(val) {
   hubSettings.self_improve_threshold = val
   await api('PUT', '/admin/settings', { self_improve_threshold: val })
-}
-
-async function onLearnPathChange(val) {
-  hubSettings.self_improve_path = val
-  await api('PUT', '/admin/settings', { self_improve_path: val })
 }
 
 async function loadAllSkills() {
