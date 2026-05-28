@@ -66,8 +66,8 @@ class BaseDatabase:
         api_key = uuid.uuid4().hex + uuid.uuid4().hex
         ph = self._placeholder()
         self.execute(
-            f"INSERT INTO agents (id, name, api_key, description) VALUES ({ph}, {ph}, {ph}, {ph})",
-            (id, name, api_key, description)
+            f"INSERT INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+            (id, name, api_key, description, "online")
         )
         self.commit()
         return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online"}
@@ -719,6 +719,9 @@ class SQLiteDatabase(BaseDatabase):
                 FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
             );
         """)
+        # Migration: fix old schema where status DEFAULT was 'offline'
+        # Update any existing offline agents to online (they should be online by default)
+        self.conn.execute("UPDATE agents SET status = 'online' WHERE status = 'offline'")
         self.conn.commit()
 
 
