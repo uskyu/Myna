@@ -96,7 +96,7 @@ export async function checkForUpdate() {
     if (!res.ok) return
     const data = await res.json()
     const remote = (data.tag_name || '').replace(/^v/, '')
-    const current = updateInfo.currentVersion || '0.3.0'
+    const current = (updateInfo.currentVersion || '0.3.0').replace(/^v/, '')
     if (remote && remote !== current) {
       updateInfo.available = true
       updateInfo.latestVersion = 'v' + remote
