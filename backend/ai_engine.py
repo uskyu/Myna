@@ -236,6 +236,16 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
     prompt += "\n\n回复使用 Markdown 格式，保持简洁专业。直接执行用户的指令。"
 
+    # Context management rules
+    prompt += """
+
+[上下文管理 — 防止退化]
+1. 如果你发现自己在重复相同的操作或遇到相同的错误，立即停下来分析根因，换一种方法。
+2. 处理大文件时，不要一次性读取整个文件再写回。用 patch/搜索替换，或分段处理。
+3. 如果任务涉及多个大文件的修改，分步完成：先处理一个文件并确认成功，再处理下一个。
+4. write_file 时必须提供 content 参数。如果文件内容太大无法一次写入，改用 execute_code 或 terminal 来写入。
+5. 如果你感觉到自己的输出质量在下降（参数丢失、重复错误），主动告诉用户"我的上下文快满了，建议开新对话继续"。"""
+
     # Inject skills
     if skills:
         skill_text = "\n".join([f"- {s['name']}: {s.get('content', '')[:200]}" for s in skills[:5]])
@@ -302,11 +312,22 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
             # Collect events from Hermes callbacks (called from thread)
             tool_events = []
             loop = asyncio.get_event_loop()
+            # Tool loop detection: track consecutive identical failures
+            _last_failures = []  # list of (name, error_output) tuples
+            _MAX_IDENTICAL_FAILURES = 3
 
             def _tool_start(tool_call_id, name, args):
                 # Check cancellation before each tool call
                 if cancel_event and cancel_event.is_set():
                     raise InterruptedError("Stream cancelled by user")
+                # Check for tool loop: if we've seen N identical failures, abort
+                if len(_last_failures) >= _MAX_IDENTICAL_FAILURES:
+                    last_set = set(_last_failures[-_MAX_IDENTICAL_FAILURES:])
+                    if len(last_set) == 1:
+                        raise InterruptedError(
+                            f"Tool loop detected: {name} failed {_MAX_IDENTICAL_FAILURES} times with same error. "
+                            f"Stopping to prevent infinite loop."
+                        )
                 summary = _tool_summary(name, args if isinstance(args, dict) else {})
                 tool_events.append({"type": "start", "name": name, "summary": summary, "id": tool_call_id})
                 if on_tool_call:
@@ -319,6 +340,18 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                 output = str(result)[:200] if result else ""
                 ok = not (output.startswith("Error") or output.startswith("error"))
                 tool_events.append({"type": "complete", "name": name, "ok": ok, "output": output, "id": tool_call_id})
+                # Track failures for loop detection
+                if not ok:
+                    _last_failures.append((name, output[:80]))
+                    # Immediate abort on context-pressure symptoms (dropped args)
+                    if "missing required field" in output.lower() or "no code provided" in output.lower():
+                        # This is a clear sign of context exhaustion — abort immediately
+                        raise InterruptedError(
+                            f"Context pressure detected: {name} called with missing arguments. "
+                            f"上下文已满，无法继续执行。请开新对话重试。"
+                        )
+                else:
+                    _last_failures.clear()  # Reset on success
                 if on_tool_result:
                     asyncio.run_coroutine_threadsafe(
                         on_tool_result({"name": name, "ok": ok, "output": output}),
@@ -463,6 +496,8 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
 
             return final_text or None
 
+        except InterruptedError:
+            raise  # Propagate cancellation/loop detection — don't fallback
         except Exception as e:
             print(f"[AI] Hermes Agent error: {e}")
             traceback.print_exc()
@@ -750,9 +785,22 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         try:
             reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks, cancel_event)
-        except InterruptedError:
-            # User cancelled — not an error
-            reply = None
+        except InterruptedError as ie:
+            # Could be user cancel OR context pressure / tool loop detection
+            err_msg = str(ie)
+            if "Context pressure" in err_msg or "Tool loop" in err_msg:
+                # Context exhaustion — give user a meaningful message
+                reply = f"⚠️ {err_msg}\n\n已完成的步骤已保存，请开新对话继续未完成的任务。"
+                await ws_manager.notify_ui({
+                    "type": "stream_error",
+                    "stream_id": stream_id,
+                    "room_id": room_id,
+                    "agent_id": agent["id"],
+                    "error": err_msg[:200],
+                })
+            else:
+                # Normal user cancel
+                reply = None
         except Exception as e:
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()

@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     port = int(os.environ.get("PORT", "3456"))
     print(f"""
 ╔══════════════════════════════════════════╗
-║           Myna v0.3.0                   ║
+║           Myna v0.5.0                   ║
 ╠══════════════════════════════════════════╣
 ║  Web UI:    http://localhost:{port}        ║
 ║  Gateway:   http://localhost:{port}/bot*   ║
