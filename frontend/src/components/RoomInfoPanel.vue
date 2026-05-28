@@ -57,6 +57,41 @@
       <div class="setting-hint">智能体能看到的最近消息条数。设为 0 表示使用全局设置</div>
     </div>
 
+    <!-- Collaboration Guide -->
+    <div class="info-section">
+      <div class="section-head">
+        <h4>📋 协作指导</h4>
+        <button class="btn-sm" @click="showGuideEditor = !showGuideEditor">{{ showGuideEditor ? '收起' : '编辑' }}</button>
+      </div>
+      <div v-if="!showGuideEditor && !roomSettings.collaboration_guide" class="hint-box">
+        <p>未配置协作指导。设置后智能体会按照指定流程协作。</p>
+        <p class="hint-sub">例如：开发完成后 @测试员 测试，测试完反馈问题再 @开发 修复。</p>
+      </div>
+      <div v-if="!showGuideEditor && roomSettings.collaboration_guide" class="guide-preview">
+        <div v-for="(step, idx) in parsedGuide" :key="idx" class="guide-step">
+          <span class="guide-step-num">{{ idx + 1 }}</span>
+          <span class="guide-step-agent" v-if="step.agent">@{{ step.agent }}</span>
+          <span class="guide-step-text">{{ step.action }}</span>
+        </div>
+      </div>
+      <div v-if="showGuideEditor" class="guide-editor">
+        <div class="guide-editor-hint">每行一个步骤，格式：@智能体名 做什么事</div>
+        <div v-for="(step, idx) in guideSteps" :key="idx" class="guide-step-edit">
+          <span class="guide-step-num">{{ idx + 1 }}</span>
+          <select class="guide-agent-select" v-model="guideSteps[idx].agent">
+            <option value="">（不指定）</option>
+            <option v-for="m in members" :key="m.id" :value="m.name">{{ m.name }}</option>
+          </select>
+          <input class="guide-action-input" v-model="guideSteps[idx].action" placeholder="执行什么任务...">
+          <button class="guide-step-remove" @click="guideSteps.splice(idx, 1)" title="删除">×</button>
+        </div>
+        <div class="guide-editor-actions">
+          <button class="btn-sm" @click="guideSteps.push({ agent: '', action: '' })">+ 添加步骤</button>
+          <button class="btn-sm primary" @click="saveGuide">保存指导</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Room Skills -->
     <div class="info-section">
       <div class="section-head">
@@ -106,6 +141,7 @@
     <div class="info-section">
       <div class="section-head">
         <h4>成员 <span class="muted">({{ members.length }})</span></h4>
+        <button v-if="available.length" class="btn-sm" @click="showMemberPicker = true">+ 添加</button>
       </div>
       <div class="member-list">
         <div v-for="m in members" :key="m.id" class="member-row">
@@ -125,23 +161,31 @@
         </div>
       </div>
 
-      <div v-if="available.length" class="add-member-block">
-        <div class="section-mini">添加智能体</div>
-        <div class="member-list">
-          <div v-for="a in available" :key="a.id" class="member-row clickable" @click="addMember(a)">
-            <div class="member-avatar" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
-              <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
-            </div>
-            <div class="member-info">
-              <div class="member-name">{{ a.name }}</div>
-              <div class="member-status">
-                <span class="dot" :class="a.status === 'online' ? 'online' : 'offline'"></span>
-                {{ a.description || '通用智能体' }}
+      <!-- Member picker modal -->
+      <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="showMemberPicker = false">
+        <div class="skill-picker-modal">
+          <div class="skill-picker-header">
+            <h4>添加智能体到群聊</h4>
+            <button class="close-btn" @click="showMemberPicker = false">×</button>
+          </div>
+          <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
+          <div v-else class="skill-picker-list">
+            <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
+              <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
+                <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
               </div>
+              <div class="skill-picker-info">
+                <span class="skill-picker-name">{{ a.name }}</span>
+                <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
+              </div>
+              <button class="icon-btn add">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
             </div>
-            <button class="icon-btn add">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
+          </div>
+          <div class="skill-picker-footer">
+            <span></span>
+            <button class="btn-sm primary" @click="showMemberPicker = false">完成</button>
           </div>
         </div>
       </div>
@@ -242,6 +286,9 @@ const historyRuns = ref([])
 const roomSkills = ref([])
 const allSkills = ref([])
 const showSkillPicker = ref(false)
+const showMemberPicker = ref(false)
+const showGuideEditor = ref(false)
+const guideSteps = ref([])
 const form = reactive({
   name: props.room.name || '',
   description: props.room.description || '',
@@ -249,6 +296,7 @@ const form = reactive({
 const roomSettings = reactive({
   max_chain_depth: 5,
   context_messages_limit: 0,
+  collaboration_guide: '',
 })
 
 async function load() {
@@ -264,6 +312,17 @@ async function load() {
         const s = typeof room.settings_json === 'string' ? JSON.parse(room.settings_json) : room.settings_json
         if (s.max_chain_depth !== undefined) roomSettings.max_chain_depth = s.max_chain_depth
         if (s.context_messages_limit !== undefined) roomSettings.context_messages_limit = s.context_messages_limit
+        if (s.collaboration_guide !== undefined) {
+          roomSettings.collaboration_guide = s.collaboration_guide
+          // Parse guide into steps for editor
+          if (s.collaboration_guide) {
+            try {
+              guideSteps.value = JSON.parse(s.collaboration_guide)
+            } catch {
+              guideSteps.value = []
+            }
+          }
+        }
       } catch {}
     }
   }
@@ -344,7 +403,11 @@ async function saveSettings() {
   const ctxVal = Math.max(0, Math.min(200, parseInt(roomSettings.context_messages_limit) || 0))
   roomSettings.context_messages_limit = ctxVal
   await api('PUT', `/admin/rooms/${props.room.id}`, {
-    settings_json: { max_chain_depth: chainVal, context_messages_limit: ctxVal }
+    settings_json: {
+      max_chain_depth: chainVal,
+      context_messages_limit: ctxVal,
+      collaboration_guide: roomSettings.collaboration_guide,
+    }
   })
 }
 
@@ -355,6 +418,23 @@ async function addMember(a) {
     await loadConversations()
     emit('changed')
   }
+}
+
+// === Collaboration Guide ===
+const parsedGuide = computed(() => {
+  if (!roomSettings.collaboration_guide) return []
+  try {
+    return JSON.parse(roomSettings.collaboration_guide)
+  } catch { return [] }
+})
+
+async function saveGuide() {
+  // Filter out empty steps
+  const validSteps = guideSteps.value.filter(s => s.agent || s.action)
+  guideSteps.value = validSteps
+  roomSettings.collaboration_guide = validSteps.length ? JSON.stringify(validSteps) : ''
+  await saveSettings()
+  showGuideEditor.value = false
 }
 
 async function removeMember(m) {
@@ -835,4 +915,56 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
 }
 .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-dim); }
 .close-btn:hover { color: var(--text); }
+
+/* Collaboration Guide */
+.guide-preview {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--border);
+}
+.guide-step {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+}
+.guide-step-num {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+  color: #fff; font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.guide-step-agent {
+  color: var(--accent); font-weight: 500; white-space: nowrap;
+}
+.guide-step-text { color: var(--text-2); }
+
+.guide-editor { display: flex; flex-direction: column; gap: 8px; }
+.guide-editor-hint { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.guide-step-edit {
+  display: flex; align-items: center; gap: 6px;
+}
+.guide-agent-select {
+  padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-2); color: var(--text);
+  min-width: 100px; max-width: 120px;
+}
+.guide-action-input {
+  flex: 1; padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-2); color: var(--text);
+}
+.guide-action-input:focus, .guide-agent-select:focus {
+  outline: none; border-color: var(--accent);
+}
+.guide-step-remove {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 16px; padding: 0 4px; line-height: 1;
+}
+.guide-step-remove:hover { color: var(--danger); }
+.guide-editor-actions {
+  display: flex; justify-content: space-between; margin-top: 6px;
+}
+
+/* Member avatar small variant for picker */
+.member-avatar.small {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.member-avatar.small span { width: 16px; height: 16px; }
+.member-avatar.small :deep(svg) { width: 16px; height: 16px; }
 </style>

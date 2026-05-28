@@ -192,7 +192,7 @@ def get_model_config_for_agent(db, agent: dict) -> dict | None:
     return config
 
 
-def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, skills: list = None) -> str:
+def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, skills: list = None, room_settings: dict = None) -> str:
     """Build system prompt for an agent."""
     tools_desc = """你拥有 Hermes Agent 引擎的完整能力：
 - 执行系统命令（本地/SSH远程）
@@ -265,6 +265,27 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 3. 被其他智能体@时，你必须响应并执行请求
 4. 完成协作任务后，@回请求方告知结果
 5. 不要自己尝试做不属于你职责的事情，交给专业的智能体处理"""
+
+    # Inject collaboration guide if configured
+    room_settings = room_settings or {}
+    guide_json = room_settings.get("collaboration_guide", "")
+    if guide_json:
+        try:
+            steps = json.loads(guide_json) if isinstance(guide_json, str) else guide_json
+            if steps:
+                guide_text = "\n".join([
+                    f"  {i+1}. {'@' + s['agent'] + ' ' if s.get('agent') else ''}{s.get('action', '')}"
+                    for i, s in enumerate(steps)
+                ])
+                prompt += f"""
+
+[协作流程指导 — 必须遵守]
+本群聊已配置协作流程，完成你的工作后必须按以下流程推进：
+{guide_text}
+
+重要：完成你负责的步骤后，必须 @下一步的负责人并说明情况。不要忘记！"""
+        except:
+            pass
 
     return prompt
 
@@ -735,7 +756,8 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         other_agents = [a for a in all_agents if a["id"] != agent["id"] and a["id"] != "user" and a.get("status") == "online"]
         system_prompt = build_system_prompt(full_agent, room_type,
                                             other_agents if room_type == "group" else None,
-                                            agent_skills)
+                                            agent_skills,
+                                            room_settings)
 
         model_config = get_model_config_for_agent(db, full_agent)
         stream_id = f"stream_{int(datetime.now().timestamp() * 1000)}_{agent['id'][:8]}"
