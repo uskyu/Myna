@@ -1,0 +1,197 @@
+"""
+Hermes Hub - Python Backend
+Multi-agent collaboration platform powered by Hermes Agent.
+"""
+import os
+import sys
+import asyncio
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+# Add hermes-agent to path for direct import
+HERMES_AGENT_PATH = Path("/root/hermes")
+if HERMES_AGENT_PATH.exists():
+    sys.path.insert(0, str(HERMES_AGENT_PATH))
+
+from db import Database
+from ws_manager import WSManager
+from routes.admin import router as admin_router
+from routes.gateway import router as gateway_router
+from routes.upload import router as upload_router
+from workflow_engine import WorkflowRunner, WorkflowScheduler
+
+# Globals
+db: Database = None
+ws_manager: WSManager = None
+workflow_runner: WorkflowRunner = None
+workflow_scheduler: WorkflowScheduler = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global db, ws_manager, workflow_runner, workflow_scheduler
+    
+    # Startup
+    data_dir = Path(__file__).parent.parent / "db"
+    data_dir.mkdir(exist_ok=True)
+    
+    db = Database(str(data_dir / "hermes-hub.sqlite"))
+    ws_manager = WSManager()
+    workflow_runner = WorkflowRunner(db, ws_manager)
+    workflow_scheduler = WorkflowScheduler(db, workflow_runner)
+    workflow_scheduler.start()
+    
+    # Store in app state
+    app.state.db = db
+    app.state.ws_manager = ws_manager
+    app.state.workflow_runner = workflow_runner
+    app.state.workflow_scheduler = workflow_scheduler
+    
+    port = int(os.environ.get("PORT", "3456"))
+    print(f"""
+╔══════════════════════════════════════════╗
+║        hermes-hub v0.2.0 (Python)       ║
+╠══════════════════════════════════════════╣
+║  Web UI:    http://localhost:{port}        ║
+║  Gateway:   http://localhost:{port}/bot*   ║
+║  WebSocket: ws://localhost:{port}/ws       ║
+║  Admin API: http://localhost:{port}/admin  ║
+║  Engine:    Hermes Agent (direct)        ║
+╚══════════════════════════════════════════╝
+    """)
+    
+    yield
+    
+    # Shutdown
+    workflow_scheduler.stop()
+    db.close()
+
+
+app = FastAPI(title="Hermes Hub", version="0.2.0", lifespan=lifespan)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Routes
+app.include_router(admin_router, prefix="/admin")
+app.include_router(gateway_router)
+app.include_router(upload_router)
+
+
+# WebSocket endpoint
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    params = websocket.query_params
+    is_ui = params.get("ui") == "1"
+    api_key = params.get("api_key")
+    
+    if is_ui:
+        app.state.ws_manager.add_ui(websocket)
+        try:
+            await websocket.send_json({"type": "connected", "client": "ui"})
+            # Send active streams for reconnection
+            for stream_id, info in app.state.ws_manager.active_streams.items():
+                await websocket.send_json({
+                    "type": "stream_start",
+                    "stream_id": stream_id,
+                    **info
+                })
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            app.state.ws_manager.remove_ui(websocket)
+    elif api_key:
+        agent = app.state.db.get_agent_by_key(api_key)
+        if not agent:
+            await websocket.close(code=4001, reason="Invalid api_key")
+            return
+        app.state.ws_manager.add_agent(agent["id"], websocket)
+        app.state.db.update_agent_status(agent["id"], "online")
+        try:
+            rooms = app.state.db.get_agent_rooms(agent["id"])
+            await websocket.send_json({
+                "type": "connected",
+                "agent": {"id": agent["id"], "name": agent["name"]},
+                "rooms": rooms
+            })
+            while True:
+                data = await websocket.receive_json()
+                await handle_agent_ws_message(app, agent, data)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            app.state.ws_manager.remove_agent(agent["id"], websocket)
+            app.state.db.update_agent_status(agent["id"], "offline")
+    else:
+        await websocket.close(code=4001, reason="api_key or ui=1 required")
+
+
+async def handle_agent_ws_message(app, agent, msg):
+    """Handle messages from agent WebSocket connections."""
+    db = app.state.db
+    ws_manager = app.state.ws_manager
+    
+    if msg.get("type") == "sendMessage":
+        room_id = msg.get("room_id")
+        text = msg.get("text")
+        if not room_id or not text:
+            return
+        rooms = db.get_agent_rooms(agent["id"])
+        if not any(r["id"] == room_id for r in rooms):
+            return
+        message = db.create_message(room_id, agent["id"], text, msg.get("parse_mode", "markdown"),
+                                     msg.get("reply_to_message_id"), msg.get("mentions", []))
+        members = db.get_room_members(room_id)
+        for member in members:
+            if member["id"] != agent["id"]:
+                payload = {
+                    "type": "message",
+                    "message_id": message["id"],
+                    "room_id": room_id,
+                    "from": {"id": agent["id"], "name": agent["name"]},
+                    "text": text,
+                    "parse_mode": msg.get("parse_mode", "markdown"),
+                    "date": message.get("created_at", "")
+                }
+                db.push_update(member["id"], "message", payload)
+                await ws_manager.notify_agent(member["id"], payload)
+
+
+# Health check
+@app.get("/health")
+async def health():
+    agents = app.state.db.list_agents()
+    rooms = app.state.db.list_rooms()
+    return {
+        "status": "ok",
+        "agents": len(agents),
+        "rooms": len(rooms),
+        "online": len(app.state.ws_manager.get_online_agents()),
+        "engine": "hermes-agent"
+    }
+
+
+# Serve frontend static files
+frontend_dist = Path(__file__).parent.parent / "src" / "web" / "public"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "3456"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

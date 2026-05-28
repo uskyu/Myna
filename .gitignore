@@ -4,3 +4,4 @@ db/*.sqlite
 data/
 *.log
 db/
+__pycache__/
