@@ -2,26 +2,62 @@
   <div class="page admin-center">
     <div class="page-header">
       <h2>管理中心</h2>
-      <span class="page-subtitle">引擎状态 · 技能库 · 智能体管理</span>
+      <span class="page-subtitle">智能体配置 · 技能库</span>
     </div>
 
-    <!-- Engine Status Panel -->
-    <div class="admin-section engine-panel">
+    <!-- Agent execution settings -->
+    <div class="admin-section config-panel">
       <div class="section-title-row">
-        <h3>⚡ 引擎状态</h3>
-        <span class="badge" :class="engineStatus.hermes_available ? 'badge-green' : 'badge-amber'">
-          {{ engineStatus.hermes_available ? 'Hermes Agent' : 'Direct API' }}
-        </span>
+        <h3>⚙ 智能体执行</h3>
       </div>
-      <div class="engine-info" v-if="engineStatus.engine">
-        <div class="engine-row">
-          <span class="engine-label">引擎</span>
-          <span class="engine-value">{{ engineStatus.engine }}</span>
+      <div class="config-items">
+        <div class="config-item">
+          <span class="config-label">工具调用显示</span>
+          <div class="config-options">
+            <label v-for="opt in toolDisplayOptions" :key="opt.value" class="radio-option" :class="{ active: chatSettings.toolCallDisplay === opt.value }">
+              <input type="radio" name="tool-display" :value="opt.value" :checked="chatSettings.toolCallDisplay === opt.value" @change="onToolDisplayChange(opt.value)">
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
         </div>
-        <div class="engine-row">
-          <span class="engine-label">能力</span>
-          <div class="engine-caps">
-            <span v-for="cap in engineStatus.capabilities" :key="cap" class="cap-tag">{{ capLabels[cap] || cap }}</span>
+        <div class="config-item">
+          <span class="config-label">最大执行轮数</span>
+          <span class="config-desc">单次响应的最大 API 调用轮数，到达后自动停止</span>
+          <div class="config-options">
+            <label v-for="opt in roundOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.agent_max_rounds === opt.value }">
+              <input type="radio" name="rounds" :value="opt.value" :checked="hubSettings.agent_max_rounds === opt.value" @change="onRoundsChange(opt.value)">
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Self-improvement settings -->
+    <div class="admin-section config-panel">
+      <div class="section-title-row">
+        <h3>🧠 自主进化</h3>
+        <div class="toggle" :class="{ on: hubSettings.self_improve_enabled === '1' }" @click="toggleSelfImprove"></div>
+      </div>
+      <div class="config-items" v-if="hubSettings.self_improve_enabled === '1'">
+        <div class="config-item">
+          <span class="config-label">触发阈值</span>
+          <span class="config-desc">工具调用次数达到此值后触发学习分析</span>
+          <div class="config-options">
+            <label v-for="opt in thresholdOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.self_improve_threshold === opt.value }">
+              <input type="radio" name="threshold" :value="opt.value" :checked="hubSettings.self_improve_threshold === opt.value" @change="onThresholdChange(opt.value)">
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="config-item">
+          <span class="config-label">学习路径</span>
+          <span class="config-desc">智能体学到的技能保存位置（未单独设置时使用此全局配置）</span>
+          <div class="config-options">
+            <label v-for="opt in learnPathOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.self_improve_path === opt.value }">
+              <input type="radio" name="learn-path" :value="opt.value" :checked="hubSettings.self_improve_path === opt.value" @change="onLearnPathChange(opt.value)">
+              <span>{{ opt.label }}</span>
+            </label>
           </div>
         </div>
       </div>
@@ -153,7 +189,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { api, store } from '../store.js'
+import { api, store, chatSettings, saveChatSettings } from '../store.js'
 
 const allSkills = ref([])
 const viewingSkill = ref(null)
@@ -161,18 +197,39 @@ const copyingSkill = ref(null)
 const showCreateSkill = ref(false)
 const skillFileInput = ref(null)
 const createForm = reactive({ name: '', description: '', content: '', agent_id: '' })
-const engineStatus = ref({})
-const capLabels = {
-  tool_use: '工具调用',
-  memory: '持久记忆',
-  skills: '技能学习',
-  delegation: '子代理',
-  cron: '定时任务',
-  web_browse: '网页浏览',
-  file_ops: '文件操作',
-  terminal: '终端命令',
-  http_requests: 'HTTP请求',
-}
+const hubSettings = reactive({
+  agent_max_rounds: '50',
+  self_improve_enabled: '1',
+  self_improve_threshold: '2',
+  self_improve_path: 'per_agent',
+})
+
+const toolDisplayOptions = [
+  { label: '展开', value: 'expanded' },
+  { label: '折叠', value: 'collapsed' },
+  { label: '完成后折叠', value: 'collapsed-after-complete' },
+]
+
+const roundOptions = [
+  { label: '15 轮', value: '15' },
+  { label: '30 轮', value: '30' },
+  { label: '50 轮（推荐）', value: '50' },
+  { label: '90 轮', value: '90' },
+  { label: '无限制', value: '0' },
+]
+
+const thresholdOptions = [
+  { label: '2 次', value: '2' },
+  { label: '3 次', value: '3' },
+  { label: '5 次', value: '5' },
+  { label: '8 次', value: '8' },
+]
+
+const learnPathOptions = [
+  { label: '各自独立', value: 'per_agent' },
+  { label: '共享技能库', value: 'shared' },
+  { label: '独立 + 共享', value: 'both' },
+]
 
 const agents = computed(() => store.agents.filter(a => a.id !== 'user' && a.id !== 'system'))
 
@@ -188,9 +245,42 @@ const skillGroups = computed(() => {
   return Object.values(map)
 })
 
+function onToolDisplayChange(val) {
+  chatSettings.toolCallDisplay = val
+  saveChatSettings()
+}
+
+async function onRoundsChange(val) {
+  hubSettings.agent_max_rounds = val
+  await api('PUT', '/admin/settings', { agent_max_rounds: val })
+}
+
+async function toggleSelfImprove() {
+  const newVal = hubSettings.self_improve_enabled === '1' ? '0' : '1'
+  hubSettings.self_improve_enabled = newVal
+  await api('PUT', '/admin/settings', { self_improve_enabled: newVal })
+}
+
+async function onThresholdChange(val) {
+  hubSettings.self_improve_threshold = val
+  await api('PUT', '/admin/settings', { self_improve_threshold: val })
+}
+
+async function onLearnPathChange(val) {
+  hubSettings.self_improve_path = val
+  await api('PUT', '/admin/settings', { self_improve_path: val })
+}
+
 async function loadAllSkills() {
   const data = await api('GET', '/admin/skills')
   allSkills.value = data.result || []
+}
+
+async function loadHubSettings() {
+  try {
+    const data = await api('GET', '/admin/settings')
+    if (data.result) Object.assign(hubSettings, data.result)
+  } catch {}
 }
 
 function viewSkill(skill) {
@@ -246,7 +336,6 @@ function triggerUpload() {
 async function onSkillFileUpload(e) {
   const files = Array.from(e.target.files || [])
   if (!files.length) return
-  // Use first agent as default owner, or prompt
   const defaultAgent = agents.value[0]
   if (!defaultAgent) { alert('请先创建一个智能体'); return }
   for (const file of files) {
@@ -265,7 +354,7 @@ async function onSkillFileUpload(e) {
 
 onMounted(() => {
   loadAllSkills()
-  api('GET', '/admin/engine/status').then(d => { if (d.ok) engineStatus.value = d.result })
+  loadHubSettings()
 })
 </script>
 
@@ -290,44 +379,82 @@ onMounted(() => {
   margin-bottom: 32px;
 }
 
-/* Engine Panel */
-.engine-panel {
+/* Engine Panel -> Config Panel */
+.config-panel {
   background: var(--bg-card);
   border-radius: 12px;
   padding: 16px 20px;
   border: 1px solid var(--border);
 }
-.engine-info {
+.config-items {
   margin-top: 12px;
-}
-.engine-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  gap: 16px;
 }
-.engine-label {
-  font-size: 12px;
-  color: var(--text-dim);
-  min-width: 40px;
+.config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.engine-value {
+.config-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text);
 }
-.engine-caps {
+.config-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.config-options {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 4px;
 }
-.cap-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--accent-bg, rgba(45, 106, 79, 0.1));
+.config-options .radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+.config-options .radio-option input { display: none; }
+.config-options .radio-option.active {
+  background: var(--accent-soft, rgba(45,106,79,0.1));
+  border-color: var(--accent);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
+}
+.toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: #ccc;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+}
+.toggle.on {
+  background: var(--accent, #2d6a4f);
+}
+.toggle.on::after {
+  transform: translateX(18px);
 }
 .badge-green {
   background: rgba(45, 106, 79, 0.15) !important;
