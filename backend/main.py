@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
     db.close()
 
 
-app = FastAPI(title="Myna", version="0.3.7", lifespan=lifespan)
+app = FastAPI(title="Myna", version="0.3.8", lifespan=lifespan)
 
 # CORS
 app.add_middleware(

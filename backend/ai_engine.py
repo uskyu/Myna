@@ -80,6 +80,7 @@ def get_agent_profile_dir(agent_id: str) -> Path:
     (profile_dir / "skills").mkdir(exist_ok=True)
     (profile_dir / "sessions").mkdir(exist_ok=True)
     (profile_dir / "logs").mkdir(exist_ok=True)
+    (profile_dir / "workspace").mkdir(exist_ok=True)
     return profile_dir
 
 
@@ -220,7 +221,9 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
 [发送文件/图片给用户]
 当你需要发送截图、生成的文件给用户时，在回复文本中包含 MEDIA:/绝对路径
-例如：MEDIA:/root/.hermes/profiles/hub-xxx/cache/screenshots/xxx.png
+例如：MEDIA:/root/.hermes/profiles/hub-xxx/workspace/output.zip
+所有生成的文件（打包、导出、下载等）必须保存在当前工作目录下（即你的 workspace），
+这样文件会被持久化保存，不会因为系统重启而丢失。
 前端会自动渲染为内联图片或文件下载链接。"""
 
     base = agent.get("description", "")
@@ -325,6 +328,12 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                 # memory, skills, sessions directory
                 profile_dir = get_agent_profile_dir(agent.get("id", "default"))
                 token = set_hermes_home_override(str(profile_dir))
+
+                # Set agent workspace as default cwd (persisted via volume)
+                workspace_dir = profile_dir / "workspace"
+                workspace_dir.mkdir(exist_ok=True)
+                old_terminal_cwd = os.environ.get("TERMINAL_CWD")
+                os.environ["TERMINAL_CWD"] = str(workspace_dir)
 
                 # Determine execution mode from agent config
                 exec_mode = agent.get("execution_mode", "auto")
@@ -432,6 +441,11 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                         os.environ.pop("HERMES_YOLO_MODE", None)
                     else:
                         os.environ["HERMES_YOLO_MODE"] = old_yolo
+                    # Restore TERMINAL_CWD
+                    if old_terminal_cwd is None:
+                        os.environ.pop("TERMINAL_CWD", None)
+                    else:
+                        os.environ["TERMINAL_CWD"] = old_terminal_cwd
                     # Clear approval callback
                     if exec_mode == "confirm":
                         from tools.terminal_tool import set_approval_callback

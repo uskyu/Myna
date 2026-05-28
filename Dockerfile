@@ -26,6 +26,10 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 COPY backend/ ./backend/
 COPY src/web/public/ ./src/web/public/
 
+# Version (injected at build time by CI)
+ARG MYNA_VERSION=dev
+ENV MYNA_VERSION=${MYNA_VERSION}
+
 # Create data directories
 RUN mkdir -p /app/data /app/db /root/.hermes/profiles
 

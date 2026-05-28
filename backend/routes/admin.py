@@ -806,7 +806,7 @@ async def serve_media(path: str, download: str = None):
 
 import subprocess
 
-MYNA_VERSION = "0.3.7"
+MYNA_VERSION = os.environ.get("MYNA_VERSION", "0.3.8")
 
 @router.get("/system/version")
 async def get_system_version():
