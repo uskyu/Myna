@@ -41,19 +41,26 @@
 
 ## 快速开始
 
+### 方式一：Docker Compose（推荐）
+
 ```bash
-# 克隆
 git clone https://github.com/uskyu/myna.git
 cd myna
-
-# 启动后端
-cd backend
-pip install -r requirements.txt  # 首次
-PORT=3456 python3 main.py
-
-# 前端已预构建，直接访问
-# http://localhost:3456
+docker compose up -d
 ```
+
+自动拉起 MySQL 8.0 + Myna 后端，访问 `http://localhost:3456`
+
+### 方式二：本地运行（SQLite）
+
+```bash
+git clone https://github.com/uskyu/myna.git
+cd myna/backend
+pip install -r requirements.txt
+PORT=3456 python3 main.py
+```
+
+前端已预构建，直接访问 `http://localhost:3456`
 
 **默认密码：** `admin123`（登录后可在设置中修改）
 
@@ -63,11 +70,13 @@ PORT=3456 python3 main.py
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Python 3.11 + FastAPI + SQLite |
+| 后端 | Python 3.11 + FastAPI |
 | 前端 | Vue 3 + Vite |
+| 数据库 | SQLite (默认) / MySQL 8.0 (Docker) |
 | AI 引擎 | [Hermes Agent](https://github.com/NousResearch/hermes-agent) |
 | 通信 | WebSocket (实时流式) |
 | 认证 | Session Token + SHA-256 |
+| 部署 | Docker Compose |
 
 ---
 

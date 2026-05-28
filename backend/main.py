@@ -18,7 +18,7 @@ HERMES_AGENT_PATH = Path("/root/hermes")
 if HERMES_AGENT_PATH.exists():
     sys.path.insert(0, str(HERMES_AGENT_PATH))
 
-from db import Database
+from db import get_database
 from ws_manager import WSManager
 from routes.admin import router as admin_router
 from routes.gateway import router as gateway_router
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     data_dir = Path(__file__).parent.parent / "db"
     data_dir.mkdir(exist_ok=True)
     
-    db = Database(str(data_dir / "myna.sqlite"))
+    db = get_database(str(data_dir / "myna.sqlite"))
     ws_manager = WSManager()
     workflow_runner = WorkflowRunner(db, ws_manager)
     workflow_scheduler = WorkflowScheduler(db, workflow_runner)

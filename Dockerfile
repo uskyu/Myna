@@ -1,22 +1,21 @@
-FROM node:20-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci --production 2>/dev/null || npm install --production
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir pymysql cryptography
 
-# Copy source
-COPY src/ ./src/
-COPY .env.example ./.env.example
+# Copy application
+COPY backend/ ./backend/
+COPY src/web/public/ ./src/web/public/
 
 # Create data directory
-RUN mkdir -p /app/db
+RUN mkdir -p /app/data /app/db
 
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV DATA_DIR=/app/db
+WORKDIR /app/backend
 
-EXPOSE 3000
+EXPOSE 3456
 
-CMD ["node", "src/index.js"]
+CMD ["python3", "main.py"]

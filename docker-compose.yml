@@ -1,17 +1,46 @@
+version: "3.8"
+
 services:
-  hermes-hub:
-    image: ghcr.io/uskyu/hermes-hub:latest
-    container_name: hermes-hub
+  mysql:
+    image: mysql:8.0
+    container_name: myna-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: myna_root_2024
+      MYSQL_DATABASE: myna
+      MYSQL_USER: myna
+      MYSQL_PASSWORD: myna
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  myna:
+    build: .
+    container_name: myna-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    volumes:
-      - ./data:/app/db
-      - /var/run/docker.sock:/var/run/docker.sock
+      - "3456:3456"
     environment:
-      - PORT=3000
-      - SECRET_KEY=change-me-to-a-random-string
-      - DATA_DIR=/app/db
-      - HUB_URL=http://host.docker.internal:3000
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - PORT=3456
+      - DB_TYPE=mysql
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=myna
+      - MYSQL_PASSWORD=myna
+      - MYSQL_DATABASE=myna
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/data
+
+volumes:
+  mysql_data:
+  app_data:

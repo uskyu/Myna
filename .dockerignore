@@ -1,7 +1,10 @@
+# Docker
+.git
+.gitignore
+db/
 node_modules/
-db/*.sqlite
+frontend/node_modules/
+__pycache__
+*.pyc
 .env
-data/
-*.log
-.git/
-.github/
+docs/
