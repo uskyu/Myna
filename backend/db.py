@@ -70,7 +70,7 @@ class BaseDatabase:
             (id, name, api_key, description)
         )
         self.commit()
-        return {"id": id, "name": name, "api_key": api_key, "description": description}
+        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online"}
 
     def get_agent_by_key(self, api_key: str):
         ph = self._placeholder()
