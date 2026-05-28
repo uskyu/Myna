@@ -42,6 +42,19 @@
         >
       </div>
       <div class="setting-hint">设为 0 表示不限制，智能体可自主规划协作深度</div>
+      <div class="setting-row" style="margin-top:10px">
+        <label class="setting-label">上下文消息数</label>
+        <input
+          type="number"
+          class="setting-input"
+          v-model.number="roomSettings.context_messages_limit"
+          @change="saveSettings"
+          min="0"
+          max="200"
+          placeholder="全局默认"
+        >
+      </div>
+      <div class="setting-hint">智能体能看到的最近消息条数。设为 0 表示使用全局设置</div>
     </div>
 
     <!-- Members -->
@@ -187,6 +200,7 @@ const form = reactive({
 })
 const roomSettings = reactive({
   max_chain_depth: 5,
+  context_messages_limit: 0,
 })
 
 async function load() {
@@ -201,6 +215,7 @@ async function load() {
       try {
         const s = typeof room.settings_json === 'string' ? JSON.parse(room.settings_json) : room.settings_json
         if (s.max_chain_depth !== undefined) roomSettings.max_chain_depth = s.max_chain_depth
+        if (s.context_messages_limit !== undefined) roomSettings.context_messages_limit = s.context_messages_limit
       } catch {}
     }
   }
@@ -242,10 +257,12 @@ async function saveField() {
 }
 
 async function saveSettings() {
-  const val = Math.max(0, Math.min(50, parseInt(roomSettings.max_chain_depth) || 0))
-  roomSettings.max_chain_depth = val
+  const chainVal = Math.max(0, Math.min(50, parseInt(roomSettings.max_chain_depth) || 0))
+  roomSettings.max_chain_depth = chainVal
+  const ctxVal = Math.max(0, Math.min(200, parseInt(roomSettings.context_messages_limit) || 0))
+  roomSettings.context_messages_limit = ctxVal
   await api('PUT', `/admin/rooms/${props.room.id}`, {
-    settings_json: { max_chain_depth: val }
+    settings_json: { max_chain_depth: chainVal, context_messages_limit: ctxVal }
   })
 }
 

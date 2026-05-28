@@ -35,7 +35,14 @@
             <input type="number" v-model.number="perfSettings.agent_max_rounds" min="1" max="500" @change="savePerfSettings" class="mini-input">
           </div>
         </div>
-        <p class="setting-hint">并发数 = 同时能跑多少个 Agent（重启后生效）；轮数 = 单次对话最多调用几轮 API</p>
+        <div class="setting-item" style="cursor:default">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="setting-label">上下文消息数</span>
+          <div class="inline-input">
+            <input type="number" v-model.number="perfSettings.context_messages_limit" min="1" max="200" @change="savePerfSettings" class="mini-input">
+          </div>
+        </div>
+        <p class="setting-hint">并发数 = 同时能跑多少个 Agent（重启后生效）；轮数 = 单次对话最多调用几轮 API；上下文消息数 = 智能体能看到的最近消息条数（房间可单独覆盖）</p>
       </div>
       <div class="settings-section">
         <div class="section-title">安全</div>
@@ -119,7 +126,7 @@ const isDark = ref(false)
 const showModels = ref(false)
 const showChangePwd = ref(false)
 const models = ref([])
-const perfSettings = reactive({ agent_concurrency: 10, agent_max_rounds: 50 })
+const perfSettings = reactive({ agent_concurrency: 10, agent_max_rounds: 50, context_messages_limit: 20 })
 
 const currentPwd = ref('')
 const newPwd = ref('')
@@ -199,6 +206,7 @@ async function loadPerfSettings() {
   if (data.ok && data.result) {
     perfSettings.agent_concurrency = parseInt(data.result.agent_concurrency) || 10
     perfSettings.agent_max_rounds = parseInt(data.result.agent_max_rounds) || 50
+    perfSettings.context_messages_limit = parseInt(data.result.context_messages_limit) || 20
   }
 }
 
@@ -206,6 +214,7 @@ async function savePerfSettings() {
   await api('PUT', '/admin/settings', {
     agent_concurrency: String(perfSettings.agent_concurrency || 10),
     agent_max_rounds: String(perfSettings.agent_max_rounds || 50),
+    context_messages_limit: String(perfSettings.context_messages_limit || 20),
   })
 }
 

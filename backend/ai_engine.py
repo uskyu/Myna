@@ -635,7 +635,19 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     if not responding_agents:
         return
 
-    recent_messages = db.get_thread_messages(thread_id, 20) if thread_id else db.get_room_messages(room_id, 20)
+    # Determine context window size: room-level > global > default(20)
+    context_limit = room_settings.get("context_messages_limit")
+    if not context_limit or int(context_limit) <= 0:
+        try:
+            global_limit = db.get_hub_setting("context_messages_limit")
+            context_limit = int(global_limit) if global_limit else 20
+        except:
+            context_limit = 20
+    else:
+        context_limit = int(context_limit)
+    context_limit = max(1, min(200, context_limit))  # clamp 1-200
+
+    recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
 
     for agent in responding_agents:
         full_agent = db.get_agent_by_id(agent["id"])
