@@ -119,38 +119,46 @@
       <!-- Hermes Engine Capabilities -->
       <div class="profile-section">
         <h4>🚀 Hermes 引擎能力</h4>
-        <div class="hermes-caps-grid">
-          <div class="hermes-cap-item active">
+        <div class="hermes-caps-list">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">🔧</span>
             <span class="cap-name">工具调用</span>
+            <span class="cap-desc">函数调用、结构化输出</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">💾</span>
             <span class="cap-name">持久记忆</span>
+            <span class="cap-desc">跨会话记忆存储</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">📚</span>
             <span class="cap-name">技能学习</span>
+            <span class="cap-desc">自动提取可复用流程</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">🌐</span>
             <span class="cap-name">网页浏览</span>
+            <span class="cap-desc">搜索、抓取、交互</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">💻</span>
             <span class="cap-name">终端命令</span>
+            <span class="cap-desc">Shell 执行、脚本运行</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">📡</span>
-            <span class="cap-name">HTTP请求</span>
+            <span class="cap-name">HTTP 请求</span>
+            <span class="cap-desc">API 调用、Webhook</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">🤝</span>
             <span class="cap-name">多智能体协作</span>
+            <span class="cap-desc">任务委派、并行执行</span>
           </div>
-          <div class="hermes-cap-item active">
+          <div class="hermes-cap-row active">
             <span class="cap-icon">⏰</span>
             <span class="cap-name">工作流调度</span>
+            <span class="cap-desc">定时任务、事件触发</span>
           </div>
         </div>
         <div class="hint" style="margin-top:8px">由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间</div>
@@ -735,34 +743,46 @@ onMounted(() => {
   box-shadow: var(--shadow-glow);
 }
 
-/* Hermes capabilities grid */
-.hermes-caps-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+/* Hermes capabilities list */
+.hermes-caps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
 }
-.hermes-cap-item {
+.hermes-cap-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  font-size: 12px;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
   opacity: 0.4;
+  border-bottom: 1px solid var(--border);
 }
-.hermes-cap-item.active {
+.hermes-cap-row:last-child {
+  border-bottom: none;
+}
+.hermes-cap-row.active {
   opacity: 1;
-  border-color: var(--accent);
-  background: rgba(45, 106, 79, 0.06);
+  background: rgba(45, 106, 79, 0.03);
 }
-.cap-icon {
-  font-size: 14px;
+.hermes-cap-row .cap-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
 }
-.cap-name {
-  font-weight: 500;
+.hermes-cap-row .cap-name {
+  font-weight: 600;
   color: var(--text);
+  min-width: 90px;
+}
+.hermes-cap-row .cap-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: auto;
 }
 </style>
