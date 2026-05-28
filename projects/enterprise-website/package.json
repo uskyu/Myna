@@ -1,0 +1,16 @@
+{
+  "name": "enterprise-website",
+  "version": "1.0.0",
+  "description": "企业官网 Demo",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "test": "node test-ui.cjs"
+  },
+  "keywords": ["enterprise", "website", "demo"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}

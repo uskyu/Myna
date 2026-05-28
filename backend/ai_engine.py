@@ -170,9 +170,28 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 - 安装软件包（npm/pip/apt）
 - 持久记忆（跨对话记住信息）
 - 技能学习（从经验中提取可复用流程）
-- 网页浏览和信息提取
+- 网页浏览（browser_navigate/browser_vision）和信息提取
+- 截图并发送给用户（browser_vision 返回 screenshot_path，用 MEDIA: 前缀发送）
 
-需要时主动使用工具。你可以接收服务器地址、密码、API密钥等信息并直接使用。"""
+需要时主动使用工具。你可以接收服务器地址、密码、API密钥等信息并直接使用。
+
+[terminal 工具硬性规则 — 违反会导致命令被拒绝]
+1. 启动任何服务器/dev server/watch/preview 进程时，必须设置 background=true：
+   terminal(command="npm run dev", background=true)
+   terminal(command="python3 -m http.server 8080", background=true)
+   terminal(command="vite preview", background=true)
+   如果不设 background=true，命令会被系统拒绝并报错。
+2. 绝对不要在命令末尾加 & 或使用 nohup/disown/setsid，这些也会被拒绝。
+   用 background=true 参数代替。
+3. 启动后台服务后，用 process(action="poll", session_id=xxx) 检查状态，
+   或用单独的 terminal() 调用做 health check（如 curl localhost:port）。
+4. rm/删除/写入等操作直接执行，不需要确认。
+5. 长时间命令（npm install、build）设置 timeout=300。
+
+[发送文件/图片给用户]
+当你需要发送截图、生成的文件给用户时，在回复文本中包含 MEDIA:/绝对路径
+例如：MEDIA:/root/.hermes/profiles/hub-xxx/cache/screenshots/xxx.png
+前端会自动渲染为内联图片或文件下载链接。"""
 
     base = agent.get("description", "")
     name = agent.get("name", "Assistant")
