@@ -658,20 +658,32 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
             reply = await asyncio.wait_for(
                 run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks),
-                timeout=timeout_seconds
+                timeout=timeout_seconds if timeout_seconds > 0 else None
             )
         except asyncio.TimeoutError:
             print(f"[AI] TIMEOUT for {agent.get('name')} after {timeout_seconds}s")
-            reply = None
+            # Use whatever text was streamed so far
+            stream_info = ws_manager.active_streams.get(stream_id)
+            reply = (stream_info.get("text", "") if stream_info else "") or None
+            if not reply:
+                reply = f"⚠️ 执行超时（{timeout_seconds}秒），任务未完成。"
         except Exception as e:
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()
-            reply = None
+            # Use whatever text was streamed so far
+            stream_info = ws_manager.active_streams.get(stream_id)
+            reply = (stream_info.get("text", "") if stream_info else "") or None
+            if not reply:
+                reply = f"⚠️ 执行出错：{str(e)[:100]}"
 
         await ws_manager.notify_ui({"type": "stream_end", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"]})
 
-        if not reply:
+        if not reply and not collected_tool_calls:
             continue
+
+        # If reply is empty but we have tool calls, save a minimal message
+        if not reply and collected_tool_calls:
+            reply = "（工具执行完成）"
 
         metadata = {"tool_calls": collected_tool_calls} if collected_tool_calls else None
 
