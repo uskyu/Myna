@@ -1075,25 +1075,13 @@ function handleWS(msg) {
     typingAgent.value = null
     nextTick(scrollToBottomIfNeeded)
   } else if (msg.type === 'tool_call' && store.activeStreams[msg.stream_id]) {
-    const stream = store.activeStreams[msg.stream_id]
-    stream.toolCalls.push({ name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp })
-    // Force reactivity
-    store.activeStreams = { ...store.activeStreams }
+    // Tool calls are now handled globally in store.js — just scroll
     nextTick(scrollToBottomIfNeeded)
   } else if (msg.type === 'tool_result' && store.activeStreams[msg.stream_id]) {
-    const stream = store.activeStreams[msg.stream_id]
-    const last = stream.toolCalls.findLast(t => t.name === msg.tool && t.status === 'running')
-    if (last) {
-      last.status = msg.ok ? 'done' : 'error'
-      last.result = msg.output_preview || ''
-    }
-    store.activeStreams = { ...store.activeStreams }
+    // Tool results are now handled globally in store.js — just scroll
     nextTick(scrollToBottomIfNeeded)
   } else if (msg.type === 'stream_token' && store.activeStreams[msg.stream_id]) {
-    const stream = store.activeStreams[msg.stream_id]
-    stream.working = false
-    stream.text += msg.chunk
-    store.activeStreams = { ...store.activeStreams }
+    // Stream tokens are now handled globally in store.js — just scroll
     nextTick(scrollToBottomIfNeeded)
   } else if (msg.type === 'stream_end' && msg.room_id === props.room.id) {
     // activeStreams cleanup is handled globally; just refresh messages

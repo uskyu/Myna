@@ -750,9 +750,20 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         try:
             reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks, cancel_event)
+        except InterruptedError:
+            # User cancelled — not an error
+            reply = None
         except Exception as e:
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()
+            # Notify UI about the error so it's visible
+            await ws_manager.notify_ui({
+                "type": "stream_error",
+                "stream_id": stream_id,
+                "room_id": room_id,
+                "agent_id": agent["id"],
+                "error": str(e)[:200],
+            })
             # Use whatever text was streamed so far
             stream_info = ws_manager.active_streams.get(stream_id)
             reply = (stream_info.get("text", "") if stream_info else "") or None

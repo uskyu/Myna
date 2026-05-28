@@ -214,6 +214,39 @@ function _globalWSHandler(msg) {
     if (msg.room_id && msg.room_id !== currentRoomId.value) {
       store.unreadCounts[msg.room_id] = (store.unreadCounts[msg.room_id] || 0) + 1
     }
+  } else if (msg.type === 'tool_call') {
+    // Handle tool_call at store level so reconnecting clients get them regardless of which ChatView is mounted
+    const stream = store.activeStreams[msg.stream_id]
+    if (stream) {
+      stream.toolCalls.push({ name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp })
+      store.activeStreams = { ...store.activeStreams }
+    }
+  } else if (msg.type === 'tool_result') {
+    // Handle tool_result at store level for same reason
+    const stream = store.activeStreams[msg.stream_id]
+    if (stream) {
+      const last = stream.toolCalls.findLast(t => t.name === msg.tool && t.status === 'running')
+      if (last) {
+        last.status = msg.ok ? 'done' : 'error'
+        last.result = msg.output_preview || msg.output || ''
+      }
+      store.activeStreams = { ...store.activeStreams }
+    }
+  } else if (msg.type === 'stream_token') {
+    const stream = store.activeStreams[msg.stream_id]
+    if (stream) {
+      stream.working = false
+      stream.text += msg.chunk
+      store.activeStreams = { ...store.activeStreams }
+    }
+  } else if (msg.type === 'stream_error') {
+    // Agent encountered an error — mark it in the stream so UI can show it
+    const stream = store.activeStreams[msg.stream_id]
+    if (stream) {
+      stream.error = msg.error
+      stream.working = false
+      store.activeStreams = { ...store.activeStreams }
+    }
   } else if (msg.type === 'new_message') {
     // Increment unread if not the current room
     if (msg.room_id && msg.room_id !== currentRoomId.value) {

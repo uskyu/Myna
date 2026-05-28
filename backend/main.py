@@ -188,15 +188,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         "agent_id": info["agent_id"],
                         "tool": tc["name"],
                         "args_summary": tc.get("summary", ""),
+                        "timestamp": 0,
                     })
                     if tc["status"] != "running":
                         await websocket.send_json({
                             "type": "tool_result",
                             "stream_id": stream_id,
                             "room_id": info["room_id"],
+                            "agent_id": info["agent_id"],
                             "tool": tc["name"],
                             "ok": tc["status"] == "done",
-                            "output": tc.get("result", ""),
+                            "output_preview": tc.get("result", ""),
                         })
             while True:
                 raw = await websocket.receive_text()
