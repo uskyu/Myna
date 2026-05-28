@@ -622,7 +622,25 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         callbacks = {"on_token": on_token, "on_tool_call": on_tool_call, "on_tool_result": on_tool_result, "on_approval_request": on_approval_request}
 
         try:
-            reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks)
+            # Get timeout from hub settings
+            timeout_seconds = 300  # default 5 min
+            try:
+                from db import Database
+                _db_path = Path("/root/hermes-hub/db/hermes-hub.sqlite")
+                if _db_path.exists():
+                    _tmp_db = Database(str(_db_path))
+                    _timeout_val = _tmp_db.get_hub_setting("agent_timeout", "300")
+                    timeout_seconds = int(_timeout_val)
+            except:
+                pass
+
+            reply = await asyncio.wait_for(
+                run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks),
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            print(f"[AI] TIMEOUT for {agent.get('name')} after {timeout_seconds}s")
+            reply = None
         except Exception as e:
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()

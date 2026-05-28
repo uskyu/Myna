@@ -32,6 +32,20 @@
         </div>
       </div>
       <div class="settings-section">
+        <div class="section-title">智能体执行</div>
+        <div class="setting-item" style="cursor:default;flex-wrap:wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span class="setting-label">执行超时</span>
+          <span class="setting-desc">智能体单次执行的最大时长，超时自动终止</span>
+          <div class="timeout-options">
+            <label v-for="opt in timeoutOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.agent_timeout === opt.value }">
+              <input type="radio" name="timeout" :value="opt.value" :checked="hubSettings.agent_timeout === opt.value" @change="onTimeoutChange(opt.value)">
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
         <div class="section-title">模型配置</div>
         <div class="setting-item" @click="showModels = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
@@ -55,13 +69,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { api, chatSettings, saveChatSettings } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
 
 const isDark = ref(false)
 const showModels = ref(false)
 const models = ref([])
+const hubSettings = reactive({
+  agent_timeout: '300',
+})
+
+const timeoutOptions = [
+  { label: '2 分钟', value: '120' },
+  { label: '5 分钟', value: '300' },
+  { label: '10 分钟', value: '600' },
+  { label: '15 分钟', value: '900' },
+  { label: '无限制', value: '0' },
+]
 
 function toggleTheme() {
   isDark.value = !isDark.value
@@ -79,13 +104,28 @@ function onToolDisplayChange(val) {
   saveChatSettings()
 }
 
+async function onTimeoutChange(val) {
+  hubSettings.agent_timeout = val
+  await api('PUT', '/admin/settings', { agent_timeout: val })
+}
+
 async function loadModels() {
   const data = await api('GET', '/admin/models')
   models.value = data.result || []
 }
 
+async function loadHubSettings() {
+  try {
+    const data = await api('GET', '/admin/settings')
+    if (data.result) {
+      Object.assign(hubSettings, data.result)
+    }
+  } catch {}
+}
+
 onMounted(async () => {
   isDark.value = localStorage.getItem('hub-theme') === 'dark'
   await loadModels()
+  await loadHubSettings()
 })
 </script>

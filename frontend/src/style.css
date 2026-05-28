@@ -1409,6 +1409,21 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   margin-top: 8px;
   padding-left: 26px;
 }
+.timeout-options {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 26px;
+}
+.setting-desc {
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-left: 26px;
+  margin-top: 2px;
+}
 .radio-option {
   display: flex;
   align-items: center;

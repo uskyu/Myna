@@ -432,9 +432,21 @@ function renderMd(text) {
   if (!text) return ''
   try {
     marked.setOptions({ breaks: true, gfm: true })
-    // Escape raw HTML tags in the source to prevent DOM injection
-    // But preserve code blocks (``` ... ```) which should show HTML as-is
-    let processed = text
+
+    // Convert MEDIA:/path/to/file to displayable content
+    let processed = text.replace(/MEDIA:(\/[^\s\n]+)/g, (match, filePath) => {
+      const ext = filePath.split('.').pop().toLowerCase()
+      const mediaUrl = `/admin/media${filePath}`
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+        return `![image](${mediaUrl})`
+      } else if (['mp4', 'webm'].includes(ext)) {
+        return `<video src="${mediaUrl}" controls style="max-width:100%;border-radius:8px"></video>`
+      } else {
+        const fileName = filePath.split('/').pop()
+        return `📎 [${fileName}](${mediaUrl})`
+      }
+    })
+
     // Temporarily protect code blocks
     const codeBlocks = []
     processed = processed.replace(/```[\s\S]*?```/g, (match) => {

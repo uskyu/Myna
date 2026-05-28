@@ -135,6 +135,12 @@ class Database:
                 FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS hub_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+
             CREATE TABLE IF NOT EXISTS agent_skills (
                 id TEXT PRIMARY KEY,
                 agent_id TEXT NOT NULL,
@@ -587,6 +593,23 @@ class Database:
             VALUES ('system', '系统', '__system__', '系统消息', 'online')
         """)
         self.conn.commit()
+
+    # === Hub Settings ===
+
+    def get_hub_setting(self, key: str, default=None):
+        row = self.conn.execute("SELECT value FROM hub_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_hub_setting(self, key: str, value: str):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO hub_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+            (key, value)
+        )
+        self.conn.commit()
+
+    def get_all_hub_settings(self) -> dict:
+        rows = self.conn.execute("SELECT key, value FROM hub_settings").fetchall()
+        return {r["key"]: r["value"] for r in rows}
 
     def close(self):
         self.conn.close()
