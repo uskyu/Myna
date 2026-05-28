@@ -72,18 +72,32 @@ export const store = reactive({
 export const updateInfo = reactive({
   available: false,
   latestVersion: '',
+  currentVersion: '',
   checked: false,
+  isDocker: false,
+  updating: false,
 })
-
-const CURRENT_VERSION = '0.3.0'
 
 export async function checkForUpdate() {
   try {
+    // Get current version from backend
+    const token = localStorage.getItem('myna_token')
+    const sysRes = await fetch('/admin/system/version', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+    if (sysRes.ok) {
+      const sysData = await sysRes.json()
+      updateInfo.currentVersion = sysData.version
+      updateInfo.isDocker = sysData.docker
+    }
+
+    // Check GitHub for latest
     const res = await fetch('https://api.github.com/repos/uskyu/myna/releases/latest')
     if (!res.ok) return
     const data = await res.json()
     const remote = (data.tag_name || '').replace(/^v/, '')
-    if (remote && remote !== CURRENT_VERSION) {
+    const current = updateInfo.currentVersion || '0.3.0'
+    if (remote && remote !== current) {
       updateInfo.available = true
       updateInfo.latestVersion = 'v' + remote
     } else {
@@ -92,6 +106,30 @@ export async function checkForUpdate() {
     updateInfo.checked = true
   } catch {
     // Silent fail
+  }
+}
+
+export async function doUpdate() {
+  updateInfo.updating = true
+  try {
+    const token = localStorage.getItem('myna_token')
+    const res = await fetch('/admin/system/update', {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+    const data = await res.json()
+    if (data.ok && !data.manual) {
+      // Container will restart, wait and reload
+      setTimeout(() => { window.location.reload() }, 8000)
+    } else if (data.manual) {
+      alert('请在宿主机执行: docker compose pull && docker compose up -d')
+    } else {
+      alert('更新失败: ' + (data.error || '未知错误'))
+    }
+  } catch (e) {
+    alert('更新请求失败: ' + e.message)
+  } finally {
+    updateInfo.updating = false
   }
 }
 

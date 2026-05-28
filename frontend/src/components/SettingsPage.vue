@@ -54,10 +54,15 @@
         <div class="setting-item" style="cursor:default">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           <span class="setting-label">Myna</span>
-          <span class="setting-value">v0.3.0</span>
+          <span class="setting-value">v{{ updateInfo.currentVersion || '0.3.7' }}</span>
           <span v-if="updateInfo.available" class="update-dot"></span>
         </div>
-        <a v-if="updateInfo.available" class="setting-item update-item" :href="'https://github.com/uskyu/myna/releases'" target="_blank" style="text-decoration:none;color:inherit">
+        <div v-if="updateInfo.available && updateInfo.isDocker" class="setting-item update-item" @click="handleUpdate" style="cursor:pointer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          <span class="setting-label">{{ updateInfo.updating ? '更新中...' : '一键更新' }}</span>
+          <span class="setting-value" style="color:#d97706">{{ updateInfo.latestVersion }}</span>
+        </div>
+        <a v-else-if="updateInfo.available" class="setting-item update-item" :href="'https://github.com/uskyu/myna/releases'" target="_blank" style="text-decoration:none;color:inherit">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
           <span class="setting-label">发现新版本</span>
           <span class="setting-value" style="color:#d97706">{{ updateInfo.latestVersion }}</span>
@@ -107,7 +112,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate } from '../store.js'
+import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate, doUpdate } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
 
 const isDark = ref(false)
@@ -171,6 +176,12 @@ async function doCheckUpdate() {
   checkingUpdate.value = true
   await checkForUpdate()
   checkingUpdate.value = false
+}
+
+async function handleUpdate() {
+  if (updateInfo.updating) return
+  if (!confirm(`确认更新到 ${updateInfo.latestVersion}？容器将重启。`)) return
+  await doUpdate()
 }
 
 async function loadModels() {

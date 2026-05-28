@@ -437,7 +437,8 @@ function renderMd(text) {
     marked.setOptions({ breaks: true, gfm: true })
 
     // Convert MEDIA:/path/to/file to displayable content
-    let processed = text.replace(/MEDIA:(\/[^\s\n]+)/g, (match, filePath) => {
+    // Supports: MEDIA:/path, MEDIA:`/path`, **MEDIA:** `/path`
+    let processed = text.replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
       const ext = filePath.split('.').pop().toLowerCase()
       const mediaUrl = `/admin/media${filePath}`
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {

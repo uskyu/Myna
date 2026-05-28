@@ -11,6 +11,7 @@ services:
     volumes:
       - app_data:/app/db
       - hermes_profiles:/root/.hermes/profiles
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   app_data:

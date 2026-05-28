@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
     db.close()
 
 
-app = FastAPI(title="Myna", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Myna", version="0.3.7", lifespan=lifespan)
 
 # CORS
 app.add_middleware(
@@ -126,6 +126,7 @@ class AuthMiddleware:
             path == "/health" or
             path.startswith("/assets/") or
             path.startswith("/admin/media/") or
+            path == "/admin/system/version" or
             path.startswith("/uploads/") or
             path.endswith(".js") or path.endswith(".css") or
             path.endswith(".ico") or path.endswith(".png") or
