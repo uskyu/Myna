@@ -636,6 +636,15 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   background: rgba(220, 38, 38, 0.1);
   color: #dc2626;
 }
+.msg-action-btn.mention-btn {
+  color: var(--accent);
+  opacity: 0.7;
+}
+.msg-action-btn.mention-btn:hover {
+  background: rgba(45, 106, 79, 0.1);
+  color: var(--accent);
+  opacity: 1;
+}
 .msg-group.self .msg .msg-action-btn {
   color: rgba(255, 255, 255, 0.6);
 }

@@ -521,9 +521,12 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     """
     mentions = mentions or []
 
+    # Chain depth limit: only applies to agent-to-agent chains, NOT user messages
+    # Default max_chain = 5 if not configured (prevents infinite loops)
     room_settings = db.get_room_settings(room_id)
-    max_chain = room_settings.get("max_chain_depth", 0)
-    if max_chain > 0 and chain_depth >= max_chain:
+    max_chain = room_settings.get("max_chain_depth", 5)
+    if sender_id != "user" and max_chain > 0 and chain_depth >= max_chain:
+        print(f"[AI] Chain depth limit reached ({chain_depth}/{max_chain}) in room {room_id}")
         return
 
     members = db.get_room_members(room_id)
