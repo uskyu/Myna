@@ -10,10 +10,15 @@
       <div class="section-title-row">
         <h3>🛠 全局技能库</h3>
         <span class="badge">{{ allSkills.length }}</span>
+        <div class="section-actions">
+          <button class="link-btn" @click="showCreateSkill = true">+ 创建</button>
+          <button class="link-btn" @click="triggerUpload">📁 上传</button>
+          <input ref="skillFileInput" type="file" accept=".md,.txt,.json,.yaml,.yml" style="display:none" @change="onSkillFileUpload" multiple />
+        </div>
       </div>
 
       <div v-if="allSkills.length === 0" class="empty-state">
-        <p>暂无技能，在智能体详情页添加</p>
+        <p>暂无技能，点击上方按钮创建或上传</p>
       </div>
 
       <!-- Group by agent -->
@@ -38,6 +43,9 @@
               </button>
               <button class="skill-card-btn" @click="downloadSkill(skill)" title="下载">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+              <button class="skill-card-btn danger" @click="deleteSkill(skill)" title="删除">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
           </div>
@@ -82,16 +90,55 @@
         </div>
       </div>
     </Teleport>
+    <!-- Create Skill Modal -->
+    <Teleport to="body">
+      <div v-if="showCreateSkill" class="skill-view-overlay" @click.self="showCreateSkill = false">
+        <div class="skill-view-modal">
+          <div class="skill-view-header">
+            <h4>创建技能</h4>
+            <button class="close-btn" @click="showCreateSkill = false">×</button>
+          </div>
+          <div class="create-skill-body">
+            <div class="create-field">
+              <label>名称</label>
+              <input v-model="createForm.name" placeholder="例如：数据分析" />
+            </div>
+            <div class="create-field">
+              <label>描述</label>
+              <input v-model="createForm.description" placeholder="这个技能做什么？" />
+            </div>
+            <div class="create-field">
+              <label>归属智能体</label>
+              <select v-model="createForm.agent_id">
+                <option value="">选择智能体</option>
+                <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
+              </select>
+            </div>
+            <div class="create-field">
+              <label>内容</label>
+              <textarea v-model="createForm.content" placeholder="技能指令内容..." rows="10"></textarea>
+            </div>
+          </div>
+          <div class="create-skill-footer">
+            <button class="btn-cancel" @click="showCreateSkill = false">取消</button>
+            <button class="btn-save" :disabled="!createForm.name.trim() || !createForm.agent_id" @click="doCreateSkill">保存</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { api, store } from '../store.js'
 
 const allSkills = ref([])
 const viewingSkill = ref(null)
 const copyingSkill = ref(null)
+const showCreateSkill = ref(false)
+const skillFileInput = ref(null)
+const createForm = reactive({ name: '', description: '', content: '', agent_id: '' })
 
 const agents = computed(() => store.agents.filter(a => a.id !== 'user' && a.id !== 'system'))
 
@@ -135,6 +182,51 @@ function downloadSkill(skill) {
   a.download = `${skill.name}.md`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+async function deleteSkill(skill) {
+  if (!confirm(`确定删除技能「${skill.name}」？`)) return
+  await api('DELETE', `/admin/skills/${skill.id}`)
+  loadAllSkills()
+}
+
+async function doCreateSkill() {
+  if (!createForm.name.trim() || !createForm.agent_id) return
+  await api('POST', `/admin/agents/${createForm.agent_id}/skills`, {
+    name: createForm.name.trim(),
+    description: createForm.description.trim(),
+    content: createForm.content,
+  })
+  showCreateSkill.value = false
+  createForm.name = ''
+  createForm.description = ''
+  createForm.content = ''
+  createForm.agent_id = ''
+  loadAllSkills()
+}
+
+function triggerUpload() {
+  skillFileInput.value?.click()
+}
+
+async function onSkillFileUpload(e) {
+  const files = Array.from(e.target.files || [])
+  if (!files.length) return
+  // Use first agent as default owner, or prompt
+  const defaultAgent = agents.value[0]
+  if (!defaultAgent) { alert('请先创建一个智能体'); return }
+  for (const file of files) {
+    const text = await file.text()
+    const name = file.name.replace(/\.(md|txt|json|yaml|yml)$/, '')
+    await api('POST', `/admin/agents/${defaultAgent.id}/skills`, {
+      name,
+      description: `从文件 ${file.name} 导入`,
+      content: text,
+      file_type: file.name.split('.').pop() || 'text',
+    })
+  }
+  loadAllSkills()
+  e.target.value = ''
 }
 
 onMounted(loadAllSkills)
@@ -354,4 +446,98 @@ onMounted(loadAllSkills)
   padding: 2px 8px;
   border-radius: 999px;
 }
+
+/* Section actions */
+.section-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Create skill form */
+.create-skill-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+.create-field {
+  margin-bottom: 14px;
+}
+.create-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.create-field input,
+.create-field select,
+.create-field textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+.create-field textarea {
+  min-height: 180px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.create-field input:focus,
+.create-field select:focus,
+.create-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.create-skill-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+.btn-cancel {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: var(--surface2); }
+.btn-save {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius, 8px);
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-save:not(:disabled):hover { opacity: 0.9; }
+.link-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: all 0.15s ease;
+}
+.link-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.skill-card-btn.danger:hover { border-color: var(--danger, #e53e3e); color: var(--danger, #e53e3e); }
 </style>

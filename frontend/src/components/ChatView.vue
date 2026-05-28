@@ -726,8 +726,30 @@ async function send() {
   const mentionRegex = /@(\S+)/g
   let match
   while ((match = mentionRegex.exec(text)) !== null) {
-    const id = memberMap[match[1]]
-    if (id && !mentions.includes(id)) mentions.push(id)
+    const name = match[1]
+    // Handle @全部 — add all members
+    if (name === '全部' || name === 'all') {
+      if (props.room.members) {
+        props.room.members.forEach(m => {
+          if (m.id !== 'user' && m.id !== 'system' && !mentions.includes(m.id)) mentions.push(m.id)
+        })
+      }
+    } else {
+      const id = memberMap[name]
+      if (id && !mentions.includes(id)) mentions.push(id)
+    }
+  }
+
+  // Default mention: if no explicit @, send to last agent that replied
+  if (mentions.length === 0 && props.type !== 'dm') {
+    const lastAgentMsg = [...messages.value].reverse().find(m => m.sender_id && m.sender_id !== 'user' && m.sender_id !== 'system')
+    if (lastAgentMsg) {
+      mentions.push(lastAgentMsg.sender_id)
+    } else if (props.room.members?.length) {
+      // Fallback: first non-user member
+      const first = props.room.members.find(m => m.id !== 'user' && m.id !== 'system')
+      if (first) mentions.push(first.id)
+    }
   }
 
   inputText.value = ''

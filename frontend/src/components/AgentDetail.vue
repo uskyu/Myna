@@ -61,9 +61,9 @@
       <div class="profile-section">
         <div class="section-head">
           <h4>🛠 技能</h4>
-          <button class="link-btn" @click="showAddSkill = true">+ 添加</button>
+          <button class="link-btn" @click="showSkillPicker = true">+ 装载技能</button>
         </div>
-        <div v-if="skills.length === 0" class="hint">暂无技能，点击添加</div>
+        <div v-if="skills.length === 0" class="hint">暂无技能，从技能库中选择装载</div>
         <div v-else class="skills-list">
           <div v-for="skill in skills" :key="skill.id" class="skill-item">
             <div class="skill-info">
@@ -71,21 +71,14 @@
               <span class="skill-desc">{{ skill.description || '无描述' }}</span>
             </div>
             <div class="skill-actions">
-              <button class="skill-action-btn" @click="editSkill(skill)" title="编辑">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <button class="skill-action-btn" @click="editSkill(skill)" title="查看">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
-              <button class="skill-action-btn" @click="downloadSkill(skill)" title="下载">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </button>
-              <button class="skill-action-btn danger" @click="removeSkill(skill)" title="删除">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <button class="skill-action-btn danger" @click="removeSkill(skill)" title="卸载">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
           </div>
-        </div>
-        <div class="skill-upload-row">
-          <button class="link-btn" @click="triggerUpload">📁 上传技能文件</button>
-          <input ref="skillFileInput" type="file" accept=".md,.txt,.json,.yaml,.yml" style="display:none" @change="onSkillFileUpload" />
         </div>
       </div>
 
@@ -109,31 +102,44 @@
 
     <ModelsModal v-if="showModels" @close="onModelsClose" @changed="loadModels" />
 
-    <!-- Add/Edit Skill Modal -->
+    <!-- Skill Picker Modal (select from global library) -->
     <Teleport to="body">
-      <div v-if="showAddSkill || editingSkill" class="skill-modal-overlay" @click.self="closeSkillModal">
+      <div v-if="showSkillPicker" class="skill-modal-overlay" @click.self="showSkillPicker = false">
         <div class="skill-modal">
           <div class="skill-modal-header">
-            <h4>{{ editingSkill ? '编辑技能' : '添加技能' }}</h4>
-            <button class="wf-close" @click="closeSkillModal">×</button>
+            <h4>从技能库装载</h4>
+            <button class="wf-close" @click="showSkillPicker = false">×</button>
           </div>
           <div class="skill-modal-body">
-            <div class="wf-field">
-              <label>名称</label>
-              <input v-model="skillForm.name" placeholder="例如：数据分析" />
+            <div v-if="globalSkills.length === 0" class="hint" style="padding:20px;text-align:center">
+              技能库为空，请先在管理中心创建技能
             </div>
-            <div class="wf-field">
-              <label>描述</label>
-              <input v-model="skillForm.description" placeholder="这个技能做什么？" />
-            </div>
-            <div class="wf-field">
-              <label>内容</label>
-              <textarea v-model="skillForm.content" placeholder="技能指令内容..." rows="10" class="skill-content-textarea"></textarea>
+            <div v-else class="picker-list">
+              <div v-for="skill in globalSkills" :key="skill.id" class="picker-item" :class="{ loaded: isSkillLoaded(skill.id) }">
+                <div class="skill-info">
+                  <span class="skill-name">{{ skill.name }}</span>
+                  <span class="skill-desc">{{ skill.description || '无描述' }}</span>
+                  <span v-if="skill.agent_name" class="skill-origin">来自: {{ skill.agent_name }}</span>
+                </div>
+                <button v-if="!isSkillLoaded(skill.id)" class="link-btn" @click="loadSkillFromLibrary(skill)">装载</button>
+                <span v-else class="loaded-tag">已装载</span>
+              </div>
             </div>
           </div>
-          <div class="skill-modal-footer">
-            <button class="btn-cancel" @click="closeSkillModal">取消</button>
-            <button class="btn-save" :disabled="!skillForm.name.trim()" @click="saveSkill">保存</button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- View Skill Content Modal -->
+    <Teleport to="body">
+      <div v-if="editingSkill" class="skill-modal-overlay" @click.self="editingSkill = null">
+        <div class="skill-modal">
+          <div class="skill-modal-header">
+            <h4>{{ editingSkill.name }}</h4>
+            <button class="wf-close" @click="editingSkill = null">×</button>
+          </div>
+          <div class="skill-modal-body">
+            <pre class="skill-content-view">{{ editingSkill.content || '(空)' }}</pre>
           </div>
         </div>
       </div>
@@ -156,10 +162,9 @@ const lastSavedTag = ref('')
 
 // Skills state
 const skills = ref([])
-const showAddSkill = ref(false)
+const showSkillPicker = ref(false)
 const editingSkill = ref(null)
-const skillForm = reactive({ name: '', description: '', content: '' })
-const skillFileInput = ref(null)
+const globalSkills = ref([])
 
 const form = reactive({
   name: props.agent.name,
@@ -242,73 +247,30 @@ async function loadSkills() {
   skills.value = data.result || []
 }
 
+async function loadGlobalSkills() {
+  const data = await api('GET', '/admin/skills')
+  globalSkills.value = data.result || []
+}
+
+function isSkillLoaded(skillId) {
+  return skills.value.some(s => s.id === skillId || s.name === globalSkills.value.find(g => g.id === skillId)?.name)
+}
+
 function editSkill(skill) {
   editingSkill.value = skill
-  skillForm.name = skill.name
-  skillForm.description = skill.description || ''
-  skillForm.content = skill.content || ''
 }
 
-function closeSkillModal() {
-  showAddSkill.value = false
-  editingSkill.value = null
-  skillForm.name = ''
-  skillForm.description = ''
-  skillForm.content = ''
-}
-
-async function saveSkill() {
-  if (!skillForm.name.trim()) return
-  if (editingSkill.value) {
-    await api('PUT', `/admin/skills/${editingSkill.value.id}`, {
-      name: skillForm.name.trim(),
-      description: skillForm.description.trim(),
-      content: skillForm.content,
-    })
-  } else {
-    await api('POST', `/admin/agents/${props.agent.id}/skills`, {
-      name: skillForm.name.trim(),
-      description: skillForm.description.trim(),
-      content: skillForm.content,
-    })
-  }
-  closeSkillModal()
+async function loadSkillFromLibrary(skill) {
+  // Copy skill to this agent
+  await api('POST', `/admin/skills/${skill.id}/copy`, { target_agent_id: props.agent.id })
   loadSkills()
+  loadGlobalSkills()
 }
 
 async function removeSkill(skill) {
-  if (!confirm(`确定删除技能「${skill.name}」？`)) return
+  if (!confirm(`确定卸载技能「${skill.name}」？`)) return
   await api('DELETE', `/admin/skills/${skill.id}`)
   loadSkills()
-}
-
-function downloadSkill(skill) {
-  const blob = new Blob([skill.content || ''], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${skill.name}.md`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function triggerUpload() {
-  skillFileInput.value?.click()
-}
-
-async function onSkillFileUpload(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const text = await file.text()
-  const name = file.name.replace(/\.(md|txt|json|yaml|yml)$/, '')
-  await api('POST', `/admin/agents/${props.agent.id}/skills`, {
-    name,
-    description: `从文件 ${file.name} 导入`,
-    content: text,
-    file_type: file.name.split('.').pop() || 'text',
-  })
-  loadSkills()
-  e.target.value = ''
 }
 
 async function loadModels() {
@@ -324,6 +286,7 @@ function onModelsClose() {
 onMounted(() => {
   loadModels()
   loadSkills()
+  loadGlobalSkills()
 })
 </script>
 
@@ -522,8 +485,47 @@ onMounted(() => {
 .skill-action-btn:hover { border-color: var(--accent); color: var(--accent); }
 .skill-action-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 
-.skill-upload-row {
-  margin-top: 8px;
+/* Skill picker list */
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  transition: border-color 0.15s ease;
+}
+.picker-item:hover { border-color: var(--accent); }
+.picker-item.loaded { opacity: 0.6; }
+.skill-origin {
+  font-size: 10px;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 2px;
+}
+.loaded-tag {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+/* Skill content view */
+.skill-content-view {
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--text);
 }
 
 /* Skill modal */
