@@ -121,10 +121,12 @@ class AuthMiddleware:
             return
 
         path = scope["path"]
-        # Skip auth for: login/check endpoints, health, static assets, websocket upgrade
+        # Skip auth for: login/check endpoints, health, static assets, websocket upgrade, media files, uploads
         if (path.startswith("/auth/") or
             path == "/health" or
             path.startswith("/assets/") or
+            path.startswith("/admin/media/") or
+            path.startswith("/uploads/") or
             path.endswith(".js") or path.endswith(".css") or
             path.endswith(".ico") or path.endswith(".png") or
             path.endswith(".svg") or path.endswith(".woff") or path.endswith(".woff2") or
