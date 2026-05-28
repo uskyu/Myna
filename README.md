@@ -101,9 +101,11 @@ myna/
 
 ### 商业授权
 
-如果 AGPL-3.0 的条款不适合你的使用场景（例如闭源商业部署、SaaS 集成等），可以联系作者获取**商业许可豁免**：
+如果 AGPL-3.0 的条款不适合你的使用场景（例如闭源商业部署、SaaS 集成等），扫码添加微信联系作者：
 
-📧 联系方式：通过 [GitHub Issues](https://github.com/uskyu/myna/issues) 或仓库主页联系
+<div align="center">
+  <img src="docs/wechat-qr.jpg" width="200" alt="微信联系作者" />
+</div>
 
 ---
 
