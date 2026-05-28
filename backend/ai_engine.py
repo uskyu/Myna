@@ -25,7 +25,7 @@ except ImportError:
     print("[AI] WARNING: Hermes Agent not importable, falling back to direct API calls")
 
 # Thread pool for running sync Hermes Agent calls
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=16)
 
 # Pending approval requests: approval_id -> callback(decision)
 _pending_approvals: dict = {}
