@@ -49,6 +49,85 @@ _executor = ThreadPoolExecutor(max_workers=_get_concurrency_limit())
 _pending_approvals: dict = {}
 
 
+def _estimate_tokens(text: str) -> int:
+    """粗略估算 token 数（中文按字符数，英文按单词数 * 1.3）"""
+    chinese_chars = len([c for c in text if '\u4e00' <= c <= '\u9fff'])
+    other_chars = len(text) - chinese_chars
+    return chinese_chars + int(other_chars / 4 * 1.3)
+
+
+def _compress_history(history: list, keep_recent: int = 5, model_context_limit: int = 128000) -> list:
+    """
+    智能压缩对话历史，防止上下文爆炸。
+    
+    策略：
+    1. 保留最近 keep_recent 轮完整对话
+    2. 把更早的消息压缩成摘要
+    3. 如果总 token 数仍超过 60% 上下文限制，进一步压缩
+    
+    Args:
+        history: 原始对话历史 [{"role": "user/assistant", "content": "..."}]
+        keep_recent: 保留最近几轮完整对话
+        model_context_limit: 模型上下文限制（默认 128k）
+    
+    Returns:
+        压缩后的 history
+    """
+    if not history or len(history) <= keep_recent:
+        return history
+    
+    # 估算总 token 数
+    total_tokens = sum(_estimate_tokens(m["content"]) for m in history)
+    threshold = int(model_context_limit * 0.6)  # 60% 阈值
+    
+    if total_tokens < threshold:
+        return history  # 不需要压缩
+    
+    print(f"[AI] Context压缩触发: {len(history)}条消息, 约{total_tokens}tokens (阈值{threshold}), 保留最近{keep_recent}轮")
+    
+    # 保留最近 N 轮
+    recent = history[-keep_recent:]
+    old = history[:-keep_recent]
+    
+    # 压缩旧消息：提取关键信息
+    compressed_items = []
+    for msg in old:
+        content = msg["content"]
+        # 提取文件路径
+        files = re.findall(r'(?:^|\s)([/~][\w\-./]+\.\w+)', content)
+        # 提取命令
+        commands = re.findall(r'`([^`]{10,100})`', content)
+        # 提取关键决策词
+        decisions = re.findall(r'(已完成|已修改|已创建|已删除|已部署|成功|失败|错误)', content)
+        
+        summary_parts = []
+        if files:
+            summary_parts.append(f"文件: {', '.join(set(files[:3]))}")
+        if commands:
+            summary_parts.append(f"命令: {commands[0][:50]}")
+        if decisions:
+            summary_parts.append(f"状态: {', '.join(set(decisions[:3]))}")
+        
+        if summary_parts:
+            compressed_items.append(" | ".join(summary_parts))
+    
+    # 构造压缩后的历史
+    if compressed_items:
+        summary_text = "\n".join([f"- {item}" for item in compressed_items[:10]])  # 最多保留 10 条摘要
+        compressed_msg = {
+            "role": "user",
+            "content": f"[上下文摘要 — 早期对话已压缩]\n{summary_text}\n\n[以下是最近 {keep_recent} 轮完整对话]"
+        }
+        compressed_history = [compressed_msg] + recent
+        compressed_tokens = sum(_estimate_tokens(m["content"]) for m in compressed_history)
+        print(f"[AI] 压缩完成: {len(history)}条 → {len(compressed_history)}条, {total_tokens}tokens → {compressed_tokens}tokens")
+        return compressed_history
+    else:
+        print(f"[AI] 压缩完成: 保留最近{keep_recent}轮")
+        return recent
+
+
+
 async def _noop_async(*args, **kwargs):
     pass
 
@@ -777,6 +856,22 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                         last_interrupted_context = meta.get("interrupted_tool_calls", [])
                 except:
                     pass
+
+        # Auto-compress history if context is getting full
+        # Get model context limit from config (default 128k for Claude)
+        model_config_temp = get_model_config_for_agent(db, full_agent)
+        model_context_limit = 128000  # Default for Claude Opus/Sonnet
+        if model_config_temp:
+            # Try to infer from model name
+            model_name = model_config_temp.get("model", "").lower()
+            if "gpt-4" in model_name:
+                model_context_limit = 128000
+            elif "gpt-3.5" in model_name:
+                model_context_limit = 16000
+            elif "claude" in model_name:
+                model_context_limit = 200000  # Claude 3.5 Sonnet has 200k
+        
+        history = _compress_history(history, keep_recent=5, model_context_limit=model_context_limit)
 
         # If last agent message was interrupted, inject continuation context
         if last_interrupted_context and history:
