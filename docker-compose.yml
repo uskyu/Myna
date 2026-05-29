@@ -1,24 +1,4 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: myna-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: myna_root_2024
-      MYSQL_DATABASE: myna
-      MYSQL_USER: myna
-      MYSQL_PASSWORD: myna
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   myna:
     image: ghcr.io/uskyu/myna:latest
     container_name: myna-app
@@ -27,22 +7,15 @@ services:
       - "3456:3456"
     environment:
       - PORT=3456
-      - DB_TYPE=mysql
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=myna
-      - MYSQL_PASSWORD=myna
-      - MYSQL_DATABASE=myna
-    depends_on:
-      mysql:
-        condition: service_healthy
+      - DB_TYPE=sqlite
     volumes:
+      - app_db:/app/db
       - app_data:/app/data
       - hermes_profiles:/root/.hermes/profiles
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker-compose.yml:/app/docker-compose.yml:ro
 
 volumes:
-  mysql_data:
+  app_db:
   app_data:
   hermes_profiles:
