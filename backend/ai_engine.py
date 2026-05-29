@@ -681,10 +681,13 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     if room_type == "dm":
         responding_agents = [m for m in members if m["id"] not in (sender_id, "system", "user")]
     elif mentions:
-        responding_agents = [m for m in members if m["id"] in mentions]
+        responding_agents = [m for m in members if m["id"] in mentions and m["id"] not in ("user", "system")]
         if len(responding_agents) < len(mentions):
             all_agents = db.list_agents()
             for mid in mentions:
+                # Skip non-AI agents
+                if mid in ("user", "system"):
+                    continue
                 if not any(m["id"] == mid for m in members):
                     agent = next((a for a in all_agents if a["id"] == mid), None)
                     if agent and agent.get("status") != "offline":
@@ -716,6 +719,11 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
 
     for agent in responding_agents:
+        # Special handling for System Agent
+        if agent["id"] == "__system__":
+            await _handle_system_agent_request(db, ws_manager, room_id, text, sender_id, thread_id)
+            continue
+
         full_agent = db.get_agent_by_id(agent["id"])
         if not full_agent:
             continue
@@ -1045,3 +1053,160 @@ def get_engine_status() -> dict:
             "tool_use", "file_ops", "terminal", "http_requests"
         ],
     }
+
+
+async def _handle_system_agent_request(db, ws_manager, room_id: str, text: str, sender_id: str, thread_id: str = None):
+    """
+    Handle @System mentions by parsing the request and delegating to SystemAgent.
+    Supports natural language commands like:
+      @System clone https://github.com/user/repo
+      @System pull myrepo
+      @System status myrepo
+      @System list repos
+      @System list credentials
+    """
+    import re
+    from fastapi import Request
+
+    # Get system agent instance from the module-level or app state
+    # We import it here to avoid circular imports
+    try:
+        from main import app
+        system_agent = app.state.system_agent
+    except Exception:
+        # Fallback: send error message
+        reply = "⚠️ 系统智能体未初始化"
+        msg = db.create_message(room_id, "__system__", reply, "markdown", None, [], thread_id=thread_id)
+        await ws_manager.notify_ui({
+            "type": "message", "message_id": msg["id"], "room_id": room_id,
+            "from": {"id": "__system__", "name": "System"},
+            "text": reply, "parse_mode": "markdown",
+            "thread_id": thread_id,
+        })
+        return
+
+    # Parse the command from text (strip @System prefix)
+    cmd_text = re.sub(r"@System\s*", "", text, flags=re.IGNORECASE).strip()
+
+    # Parse action and params
+    action, params = _parse_system_command(cmd_text)
+
+    if not action:
+        reply = """🔐 **System Agent** — 可用命令：
+
+• `@System clone <url>` — Clone 仓库
+• `@System pull <repo>` — 拉取最新代码
+• `@System push <repo>` — 推送代码
+• `@System status <repo>` — 查看仓库状态
+• `@System commit <repo> <message>` — 提交更改
+• `@System list repos` — 列出所有仓库
+• `@System list credentials` — 列出可用凭据
+• `@System exec <repo> <command>` — 在仓库中执行命令"""
+    else:
+        result = system_agent.handle_request(action, params, sender_id)
+        if result["ok"]:
+            data = result["data"]
+            # Format response based on action
+            if action == "git_clone":
+                reply = f"✅ 已 Clone 到 `{data.get('path', '')}`"
+            elif action == "git_pull":
+                reply = f"✅ Pull 完成: {data.get('message', '')}"
+            elif action == "git_push":
+                reply = f"✅ Push 完成: {data.get('message', '')}"
+            elif action == "git_status":
+                reply = f"📂 **{data.get('repo')}** (branch: `{data.get('branch')}`)\n```\n{data.get('status')}\n```"
+            elif action == "git_commit":
+                reply = f"✅ {data.get('message', 'Committed')}"
+            elif action == "list_repos":
+                repos = data.get("repos", [])
+                if repos:
+                    lines = [f"• `{r['name']}` ({r['branch']}) — {r['path']}" for r in repos]
+                    reply = "📂 **工作区仓库：**\n" + "\n".join(lines)
+                else:
+                    reply = "📂 工作区暂无仓库"
+            elif action == "list_credentials":
+                creds = data.get("credentials", [])
+                if creds:
+                    lines = [f"• `{c['name']}` ({c['type']})" for c in creds]
+                    reply = "🔑 **可用凭据：**\n" + "\n".join(lines)
+                else:
+                    reply = "🔑 暂无配置凭据"
+            elif action == "exec_command":
+                exit_code = data.get("exit_code", -1)
+                stdout = data.get("stdout", "").strip()
+                icon = "✅" if exit_code == 0 else "❌"
+                reply = f"{icon} Exit code: {exit_code}"
+                if stdout:
+                    reply += f"\n```\n{stdout[:1000]}\n```"
+            else:
+                reply = f"✅ {json.dumps(data, ensure_ascii=False)}"
+        else:
+            reply = f"❌ {result.get('error', 'Unknown error')}"
+
+    # Send reply as System Agent
+    msg = db.create_message(room_id, "__system__", reply, "markdown", None, [], thread_id=thread_id)
+    await ws_manager.notify_ui({
+        "type": "message", "message_id": msg["id"], "room_id": room_id,
+        "from": {"id": "__system__", "name": "System"},
+        "text": reply, "parse_mode": "markdown",
+        "thread_id": thread_id,
+    })
+
+
+def _parse_system_command(text: str):
+    """Parse a natural language command into (action, params)."""
+    import re
+    text = text.strip()
+    if not text:
+        return None, {}
+
+    # clone <url> [name]
+    m = re.match(r"clone\s+(https?://\S+)(?:\s+(\S+))?", text, re.IGNORECASE)
+    if m:
+        params = {"url": m.group(1)}
+        if m.group(2):
+            params["name"] = m.group(2)
+        return "git_clone", params
+
+    # pull <repo>
+    m = re.match(r"pull\s+(\S+)", text, re.IGNORECASE)
+    if m:
+        return "git_pull", {"repo": m.group(1)}
+
+    # push <repo> [branch]
+    m = re.match(r"push\s+(\S+)(?:\s+(\S+))?", text, re.IGNORECASE)
+    if m:
+        params = {"repo": m.group(1)}
+        if m.group(2):
+            params["branch"] = m.group(2)
+        return "git_push", params
+
+    # status <repo>
+    m = re.match(r"status\s+(\S+)", text, re.IGNORECASE)
+    if m:
+        return "git_status", {"repo": m.group(1)}
+
+    # commit <repo> <message>
+    m = re.match(r"commit\s+(\S+)\s+(.+)", text, re.IGNORECASE)
+    if m:
+        return "git_commit", {"repo": m.group(1), "message": m.group(2)}
+
+    # list repos
+    if re.match(r"list\s+repos?", text, re.IGNORECASE):
+        return "list_repos", {}
+
+    # list credentials
+    if re.match(r"list\s+cred", text, re.IGNORECASE):
+        return "list_credentials", {}
+
+    # exec <repo> <command>
+    m = re.match(r"exec\s+(\S+)\s+(.+)", text, re.IGNORECASE)
+    if m:
+        return "exec_command", {"repo": m.group(1), "command": m.group(2)}
+
+    # run <command> (no repo)
+    m = re.match(r"run\s+(.+)", text, re.IGNORECASE)
+    if m:
+        return "exec_command", {"command": m.group(1)}
+
+    return None, {}

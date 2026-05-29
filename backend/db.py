@@ -548,11 +548,18 @@ class BaseDatabase:
         ph = self._placeholder()
         self.execute(
             f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            ('user', '我', '__user__', '用户', 'online')
+            ('user', 'user', '__user__', '用户', 'online')
         )
+        # Migrate: rename '我' to 'user' for clarity in multi-agent context
+        self.execute(f"UPDATE agents SET name = {ph} WHERE id = {ph} AND name = {ph}", ('user', 'user', '我'))
         self.execute(
             f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
             ('system', '系统', '__system__', '系统消息', 'online')
+        )
+        # System Agent - handles credentials and git operations
+        self.execute(
+            f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+            ('__system__', 'System', '__sysagent__', '系统智能体：管理凭据、执行 Git 操作、分发共享资源', 'online')
         )
         self.commit()
 

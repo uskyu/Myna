@@ -842,7 +842,25 @@ async def serve_media(path: str, download: str = None):
 
 import subprocess
 
-MYNA_VERSION = os.environ.get("MYNA_VERSION", "0.5.0")
+def _detect_version():
+    """Detect version: env var > git tag > fallback."""
+    env_ver = os.environ.get("MYNA_VERSION")
+    if env_ver:
+        return env_ver
+    # Try git tag (works when running from source)
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().lstrip("v")
+    except Exception:
+        pass
+    return "0.5.0"
+
+MYNA_VERSION = _detect_version()
 
 @router.get("/system/version")
 async def get_system_version():

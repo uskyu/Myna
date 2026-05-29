@@ -7,8 +7,9 @@
     <!-- Tab bar -->
     <div class="tab-bar">
       <div class="tab-item" :class="{ active: activeTab === 'config' }" @click="activeTab = 'config'">配置</div>
+      <div class="tab-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">系统智能体</div>
       <div class="tab-item" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">技能库</div>
-      <div class="tab-indicator" :style="{ transform: activeTab === 'skills' ? 'translateX(100%)' : 'translateX(0)' }"></div>
+      <div class="tab-indicator" :style="tabIndicatorStyle"></div>
     </div>
 
     <!-- Tab content (scrollable) -->
@@ -66,6 +67,11 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- System Agent tab -->
+      <div v-show="activeTab === 'system'" class="tab-panel">
+        <SystemAgentPanel />
       </div>
 
       <!-- Skills tab -->
@@ -198,6 +204,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api, store, chatSettings, saveChatSettings } from '../store.js'
+import SystemAgentPanel from './SystemAgentPanel.vue'
 
 const allSkills = ref([])
 const viewingSkill = ref(null)
@@ -205,6 +212,15 @@ const copyingSkill = ref(null)
 const showCreateSkill = ref(false)
 const skillFileInput = ref(null)
 const activeTab = ref('config')
+
+const tabIndicatorStyle = computed(() => {
+  const tabs = ['config', 'system', 'skills']
+  const idx = tabs.indexOf(activeTab.value)
+  return {
+    width: `${100 / tabs.length}%`,
+    transform: `translateX(${idx * 100}%)`,
+  }
+})
 const createForm = reactive({ name: '', description: '', content: '', agent_id: '' })
 const hubSettings = reactive({
   agent_max_rounds: '50',
@@ -413,11 +429,11 @@ onMounted(() => {
   position: absolute;
   bottom: -1px;
   left: 0;
-  width: 50%;
+  width: 33.33%;
   height: 2px;
   background: var(--accent, #2d6a4f);
   border-radius: 1px;
-  transition: transform 0.25s ease;
+  transition: transform 0.25s ease, width 0.25s ease;
 }
 
 /* Tab content */

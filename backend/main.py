@@ -24,7 +24,10 @@ from routes.admin import router as admin_router
 from routes.gateway import router as gateway_router
 from routes.upload import router as upload_router
 from routes.auth import router as auth_router, is_authenticated, ensure_password_initialized
+from routes.system_agent import router as system_agent_router
 from workflow_engine import WorkflowRunner, WorkflowScheduler
+from credentials import CredentialStore
+from system_agent import SystemAgent
 
 # Globals
 db = None
@@ -48,12 +51,20 @@ async def lifespan(app: FastAPI):
     workflow_runner = WorkflowRunner(db, ws_manager)
     workflow_scheduler = WorkflowScheduler(db, workflow_runner)
     workflow_scheduler.start()
+
+    # Initialize credential store and system agent
+    # Use a stable secret for encryption (derived from DB path + machine id)
+    encryption_secret = os.environ.get("MYNA_ENCRYPTION_KEY", "myna-default-key-change-me")
+    credential_store = CredentialStore(db, encryption_secret)
+    system_agent = SystemAgent(credential_store)
     
     # Store in app state
     app.state.db = db
     app.state.ws_manager = ws_manager
     app.state.workflow_runner = workflow_runner
     app.state.workflow_scheduler = workflow_scheduler
+    app.state.credential_store = credential_store
+    app.state.system_agent = system_agent
     
     port = int(os.environ.get("PORT", "3456"))
     print(f"""
@@ -100,6 +111,7 @@ app.add_middleware(
 # Routes
 app.include_router(auth_router, prefix="/auth")
 app.include_router(admin_router, prefix="/admin")
+app.include_router(system_agent_router, prefix="/admin/system-agent")
 app.include_router(gateway_router)
 app.include_router(upload_router)
 

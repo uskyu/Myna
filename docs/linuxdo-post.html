@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Linux.do 发帖内容</title>
+<style>
+body { max-width: 800px; margin: 40px auto; padding: 0 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; color: #333; background: #fafafa; }
+h1 { font-size: 1.6em; border-bottom: 2px solid #2d6a4f; padding-bottom: 10px; }
+h2 { font-size: 1.3em; margin-top: 2em; color: #2d6a4f; }
+h3 { font-size: 1.1em; color: #555; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: center; }
+th { background: #2d6a4f; color: white; }
+code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+pre { background: #1a1a2e; color: #f0f0f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; color: inherit; }
+strong { color: #2d6a4f; }
+ul { padding-left: 1.5em; }
+li { margin: 0.4em 0; }
+hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
+.copy-btn { position: fixed; top: 20px; right: 20px; background: #2d6a4f; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; z-index: 999; }
+.copy-btn:hover { background: #1b4332; }
+.raw-box { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; padding: 40px; }
+.raw-box textarea { width: 100%; height: 100%; font-family: monospace; font-size: 14px; padding: 20px; border: none; border-radius: 8px; resize: none; }
+.raw-box .close { position: absolute; top: 10px; right: 50px; background: #d97706; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="copy-btn" onclick="showRaw()">📋 复制原始 Markdown</button>
+<div class="raw-box" id="rawBox">
+  <button class="close" onclick="hideRaw()">关闭</button>
+  <textarea id="rawText" readonly onclick="this.select()"># [开源] Myna — 多智能体协作平台，对话即协作，自主进化，完全自定义 API
+
+## 项目地址
+
+GitHub: https://github.com/uskyu/myna
+
+## 这是什么
+
+一个轻量的多智能体协作平台，部署在自己服务器上，多个 AI Agent 在群聊里通过 @提及 自动接力完成任务。
+
+比如我日常用法：跟「程序开发」说一句需求，它写完代码自动 @程序测试员 去测，测试员发现 bug 再 @回开发修，全程不用我管。
+
+## 跟 Dify / Coze / CrewAI 有什么区别
+
+| | Myna | Dify | Coze | CrewAI |
+|---|---|---|---|---|
+| 协作方式 | 对话 @提及接力 | 拖拽流程图 | 拖拽流程图 | 写代码定义 |
+| 自主学习 | ✅ 自动提取技能 | ❌ | ❌ | 部分 |
+| 自定义 API | ✅ 任意 OpenAI 格式 | ✅ | ⚠️ 绑字节模型 | ✅ |
+| 部署复杂度 | 1 条命令 | Redis+PG+微服务 | 云端不可自托管 | 纯代码无 UI |
+| Web UI | ✅ 开箱即用 | ✅ | ✅ | ❌ |
+
+**核心差异：不需要画流程图，不需要写代码编排，对话里 @ 就行。**
+
+## 主要特性
+
+- 🔗 **链式协作** — Agent 之间 @提及自动触发，无限接力
+- 🧠 **自主进化** — 多步操作后自动提取技能，越用越聪明
+- 🌐 **完全自定义 API** — 兼容任意 OpenAI 格式接口，自由选模型
+- 🛠 **完整工具链** — 终端、文件读写、HTTP 请求、代码搜索
+- ✅ **审批机制** — auto / confirm / manual 三档，不是黑盒
+- 📡 **实时流式输出** — WebSocket 推送，工具调用过程全程可见
+- 🐳 **一键部署** — `docker compose up -d`，SQLite 零配置
+
+## 实际效果
+
+### 链式协作：开发 → 测试 → 修复
+
+【配图1：chain-workflow.jpg — 开发→测试→修复的协作流程截图】
+
+### 链式对话触发
+
+【配图2：chain-chat.jpg — 对话界面中 Agent 之间 @提及接力的示意图】
+
+### 自主进化：自动提取技能
+
+【配图3：self-improve.jpg — Agent 自动提取技能的界面截图】
+
+## 快速开始
+
+```bash
+git clone https://github.com/uskyu/myna.git
+cd myna
+docker compose up -d
+```
+
+打开 `http://你的IP:3456`，默认密码 `admin`，进去改。
+
+## 技术栈
+
+- 后端：Python 3.11 + FastAPI + Hermes Agent 引擎
+- 前端：Vue 3 + Vite
+- 数据库：SQLite（默认）/ MySQL（可选）
+- 部署：Docker Compose 单容器
+
+## 适合谁
+
+- 想让多个 AI Agent 协作干活，但不想画流程图
+- 想用自己的 API Key / 自建模型，不想被平台绑定
+- 想要 Agent 能记住经验、越用越好用
+- 想要一个轻量的自托管方案，不想搞一堆中间件
+
+---
+
+第一次做这类项目，还有很多不完善的地方，欢迎大佬们指点。有问题直接开 issue 或者在下面回复，功能建议也欢迎提，一起完善。
+</textarea>
+</div>
+<h1>[开源] Myna — 多智能体协作平台，对话即协作，自主进化，完全自定义 API</h1>
+<h2>项目地址</h2>
+<p>GitHub: https://github.com/uskyu/myna</p>
+<h2>这是什么</h2>
+<p>一个轻量的多智能体协作平台，部署在自己服务器上，多个 AI Agent 在群聊里通过 @提及 自动接力完成任务。</p>
+<p>比如我日常用法：跟「程序开发」说一句需求，它写完代码自动 @程序测试员 去测，测试员发现 bug 再 @回开发修，全程不用我管。</p>
+<h2>跟 Dify / Coze / CrewAI 有什么区别</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Myna</th>
+<th>Dify</th>
+<th>Coze</th>
+<th>CrewAI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>协作方式</td>
+<td>对话 @提及接力</td>
+<td>拖拽流程图</td>
+<td>拖拽流程图</td>
+<td>写代码定义</td>
+</tr>
+<tr>
+<td>自主学习</td>
+<td>✅ 自动提取技能</td>
+<td>❌</td>
+<td>❌</td>
+<td>部分</td>
+</tr>
+<tr>
+<td>自定义 API</td>
+<td>✅ 任意 OpenAI 格式</td>
+<td>✅</td>
+<td>⚠️ 绑字节模型</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>部署复杂度</td>
+<td>1 条命令</td>
+<td>Redis+PG+微服务</td>
+<td>云端不可自托管</td>
+<td>纯代码无 UI</td>
+</tr>
+<tr>
+<td>Web UI</td>
+<td>✅ 开箱即用</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心差异：不需要画流程图，不需要写代码编排，对话里 @ 就行。</strong></p>
+<h2>主要特性</h2>
+<ul>
+<li>🔗 <strong>链式协作</strong> — Agent 之间 @提及自动触发，无限接力</li>
+<li>🧠 <strong>自主进化</strong> — 多步操作后自动提取技能，越用越聪明</li>
+<li>🌐 <strong>完全自定义 API</strong> — 兼容任意 OpenAI 格式接口，自由选模型</li>
+<li>🛠 <strong>完整工具链</strong> — 终端、文件读写、HTTP 请求、代码搜索</li>
+<li>✅ <strong>审批机制</strong> — auto / confirm / manual 三档，不是黑盒</li>
+<li>📡 <strong>实时流式输出</strong> — WebSocket 推送，工具调用过程全程可见</li>
+<li>🐳 <strong>一键部署</strong> — <code>docker compose up -d</code>，SQLite 零配置</li>
+</ul>
+<h2>实际效果</h2>
+<h3>链式协作：开发 → 测试 → 修复</h3>
+<p>【配图1：chain-workflow.jpg — 开发→测试→修复的协作流程截图】</p>
+<h3>链式对话触发</h3>
+<p>【配图2：chain-chat.jpg — 对话界面中 Agent 之间 @提及接力的示意图】</p>
+<h3>自主进化：自动提取技能</h3>
+<p>【配图3：self-improve.jpg — Agent 自动提取技能的界面截图】</p>
+<h2>快速开始</h2>
+<pre><code class="language-bash">git clone https://github.com/uskyu/myna.git
+cd myna
+docker compose up -d
+</code></pre>
+<p>打开 <code>http://你的IP:3456</code>，默认密码 <code>admin</code>，进去改。</p>
+<h2>技术栈</h2>
+<ul>
+<li>后端：Python 3.11 + FastAPI + Hermes Agent 引擎</li>
+<li>前端：Vue 3 + Vite</li>
+<li>数据库：SQLite（默认）/ MySQL（可选）</li>
+<li>部署：Docker Compose 单容器</li>
+</ul>
+<h2>适合谁</h2>
+<ul>
+<li>想让多个 AI Agent 协作干活，但不想画流程图</li>
+<li>想用自己的 API Key / 自建模型，不想被平台绑定</li>
+<li>想要 Agent 能记住经验、越用越好用</li>
+<li>想要一个轻量的自托管方案，不想搞一堆中间件</li>
+</ul>
+<hr />
+<p>第一次做这类项目，还有很多不完善的地方，欢迎大佬们指点。有问题直接开 issue 或者在下面回复，功能建议也欢迎提，一起完善。</p>
+<script>
+function showRaw() { document.getElementById('rawBox').style.display = 'block'; document.getElementById('rawText').select(); }
+function hideRaw() { document.getElementById('rawBox').style.display = 'none'; }
+</script>
+</body>
+</html>
