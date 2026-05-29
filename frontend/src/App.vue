@@ -31,7 +31,7 @@
     <!-- Desktop chat panel -->
     <div class="desktop-chat-panel" v-if="isDesktop">
       <ChatView v-if="currentRoom" :room="currentRoom" :type="currentRoomType" @close="closeChat" />
-      <AgentDetail v-if="currentAgent" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
+      <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
       <div v-if="!currentRoom && !currentAgent" class="desktop-empty-state">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <p>选择一个对话开始聊天</p>
@@ -46,7 +46,7 @@
         <AdminCenter v-if="page === 'admin'" />
         <SettingsPage v-if="page === 'settings'" />
         <ChatView v-if="currentRoom" :room="currentRoom" :type="currentRoomType" @close="closeChat" />
-        <AgentDetail v-if="currentAgent" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
+        <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
       </div>
       <div class="bottom-nav" v-if="!currentRoom && !currentAgent">
         <div class="nav-item" :class="{ active: page === 'chats' }" @click="page = 'chats'">
