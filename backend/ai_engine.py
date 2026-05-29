@@ -268,24 +268,29 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
     # Inject collaboration guide if configured
     room_settings = room_settings or {}
-    guide_json = room_settings.get("collaboration_guide", "")
-    if guide_json:
+    guide_text = room_settings.get("collaboration_guide", "")
+    if guide_text and isinstance(guide_text, str) and guide_text.strip():
+        # Support both new plain-text format and legacy JSON format
+        display_text = guide_text.strip()
         try:
-            steps = json.loads(guide_json) if isinstance(guide_json, str) else guide_json
-            if steps:
-                guide_text = "\n".join([
+            steps = json.loads(guide_text)
+            if isinstance(steps, list) and steps:
+                # Legacy JSON format — convert to readable text
+                display_text = "\n".join([
                     f"  {i+1}. {'@' + s['agent'] + ' ' if s.get('agent') else ''}{s.get('action', '')}"
                     for i, s in enumerate(steps)
                 ])
-                prompt += f"""
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass  # Already plain text, use as-is
 
-[协作流程指导 — 必须遵守]
-本群聊已配置协作流程，完成你的工作后必须按以下流程推进：
-{guide_text}
+        prompt += f"""
 
-重要：完成你负责的步骤后，必须 @下一步的负责人并说明情况。不要忘记！"""
-        except:
-            pass
+[协作指导 — 所有智能体共享]
+以下是用户为本群聊配置的协作流程，所有智能体都能看到。请理解你在流程中的角色，按照指导协作：
+
+{display_text}
+
+重要：完成你负责的部分后，主动 @下一个负责人并说明进展。"""
 
     return prompt
 

@@ -338,6 +338,22 @@ let pollTimer = null
 // Tool expand state per stream
 const toolsExpandedMap = ref({})
 
+// Markdown render cache to avoid re-parsing on every computed tick
+const _mdCache = new Map()
+function cachedRenderMd(text, id) {
+  if (!text) return ''
+  const key = `${id}:${text.length}:${text.slice(0, 64)}`
+  if (_mdCache.has(key)) return _mdCache.get(key)
+  const html = renderMd(text)
+  // Cap cache size
+  if (_mdCache.size > 300) {
+    const first = _mdCache.keys().next().value
+    _mdCache.delete(first)
+  }
+  _mdCache.set(key, html)
+  return html
+}
+
 const TOOL_LABELS = {
   run_command: '执行命令',
   read_file: '读取文件',
@@ -569,7 +585,7 @@ const messageGroups = computed(() => {
       sender_id: m.sender_id,
       sender_name: m.sender_name,
       text: m.text,
-      rendered: renderMd(m.text),
+      rendered: cachedRenderMd(m.text, m.id),
       time: formatMsgTime(m.created_at),
       date: formatMsgDate(m.created_at),
       self,
@@ -1129,14 +1145,5 @@ onUnmounted(() => {
   ws.offMessage(handleWS)
 })
 
-// When room prop changes, update currentRoomId and clear unread
-watch(() => props.room.id, (newId) => {
-  clearUnread(newId)
-  currentRoomId.value = newId
-  showSettings.value = false
-  activeThreadId.value = null
-  messages.value = []
-  fetchMessages()
-  fetchThreads()
-})
+// Note: room switching is handled by :key on <ChatView> which destroys/recreates the component
 </script>

@@ -61,33 +61,26 @@
     <div class="info-section">
       <div class="section-head">
         <h4>📋 协作指导</h4>
-        <button class="btn-sm" @click="showGuideEditor = !showGuideEditor">{{ showGuideEditor ? '收起' : '编辑' }}</button>
+        <button v-if="!showGuideEditor" class="btn-sm" @click="showGuideEditor = true">编辑</button>
       </div>
       <div v-if="!showGuideEditor && !roomSettings.collaboration_guide" class="hint-box">
-        <p>未配置协作指导。设置后智能体会按照指定流程协作。</p>
-        <p class="hint-sub">例如：开发完成后 @测试员 测试，测试完反馈问题再 @开发 修复。</p>
+        <p>未配置协作指导。设置后所有智能体都能看到完整协作流程。</p>
+        <p class="hint-sub">描述整体目标、各角色分工、交互流程，智能体会自行判断何时接手和 @谁。</p>
       </div>
-      <div v-if="!showGuideEditor && roomSettings.collaboration_guide" class="guide-preview">
-        <div v-for="(step, idx) in parsedGuide" :key="idx" class="guide-step">
-          <span class="guide-step-num">{{ idx + 1 }}</span>
-          <span class="guide-step-agent" v-if="step.agent">@{{ step.agent }}</span>
-          <span class="guide-step-text">{{ step.action }}</span>
-        </div>
+      <div v-if="!showGuideEditor && roomSettings.collaboration_guide" class="guide-preview-text" @click="showGuideEditor = true">
+        <pre class="guide-text-display">{{ roomSettings.collaboration_guide }}</pre>
       </div>
       <div v-if="showGuideEditor" class="guide-editor">
-        <div class="guide-editor-hint">每行一个步骤，格式：@智能体名 做什么事</div>
-        <div v-for="(step, idx) in guideSteps" :key="idx" class="guide-step-edit">
-          <span class="guide-step-num">{{ idx + 1 }}</span>
-          <select class="guide-agent-select" v-model="guideSteps[idx].agent">
-            <option value="">（不指定）</option>
-            <option v-for="m in members" :key="m.id" :value="m.name">{{ m.name }}</option>
-          </select>
-          <input class="guide-action-input" v-model="guideSteps[idx].action" placeholder="执行什么任务...">
-          <button class="guide-step-remove" @click="guideSteps.splice(idx, 1)" title="删除">×</button>
-        </div>
+        <div class="guide-editor-hint">描述整个协作流程，所有智能体都能看到这段内容。可以用自然语言描述角色分工和交互规则。</div>
+        <textarea
+          class="guide-textarea"
+          v-model="guideText"
+          placeholder="例如：&#10;本群目标：完成XX功能的开发和测试。&#10;&#10;流程：&#10;1. 用户提出需求&#10;2. @开发 负责编码实现&#10;3. 开发完成后 @测试 进行验证&#10;4. 测试发现问题反馈给 @开发 修复&#10;5. 全部通过后 @开发 提交PR&#10;&#10;规则：&#10;- 每步完成后必须 @下一个负责人&#10;- 遇到阻塞问题直接 @用户 确认"
+          rows="10"
+        ></textarea>
         <div class="guide-editor-actions">
-          <button class="btn-sm" @click="guideSteps.push({ agent: '', action: '' })">+ 添加步骤</button>
-          <button class="btn-sm primary" @click="saveGuide">保存指导</button>
+          <button class="btn-sm" @click="showGuideEditor = false; guideText = roomSettings.collaboration_guide">取消</button>
+          <button class="btn-sm primary" @click="saveGuide">保存</button>
         </div>
       </div>
     </div>
@@ -288,7 +281,7 @@ const allSkills = ref([])
 const showSkillPicker = ref(false)
 const showMemberPicker = ref(false)
 const showGuideEditor = ref(false)
-const guideSteps = ref([])
+const guideText = ref('')
 const form = reactive({
   name: props.room.name || '',
   description: props.room.description || '',
@@ -314,14 +307,7 @@ async function load() {
         if (s.context_messages_limit !== undefined) roomSettings.context_messages_limit = s.context_messages_limit
         if (s.collaboration_guide !== undefined) {
           roomSettings.collaboration_guide = s.collaboration_guide
-          // Parse guide into steps for editor
-          if (s.collaboration_guide) {
-            try {
-              guideSteps.value = JSON.parse(s.collaboration_guide)
-            } catch {
-              guideSteps.value = []
-            }
-          }
+          guideText.value = s.collaboration_guide || ''
         }
       } catch {}
     }
@@ -421,18 +407,8 @@ async function addMember(a) {
 }
 
 // === Collaboration Guide ===
-const parsedGuide = computed(() => {
-  if (!roomSettings.collaboration_guide) return []
-  try {
-    return JSON.parse(roomSettings.collaboration_guide)
-  } catch { return [] }
-})
-
 async function saveGuide() {
-  // Filter out empty steps
-  const validSteps = guideSteps.value.filter(s => s.agent || s.action)
-  guideSteps.value = validSteps
-  roomSettings.collaboration_guide = validSteps.length ? JSON.stringify(validSteps) : ''
+  roomSettings.collaboration_guide = guideText.value.trim()
   await saveSettings()
   showGuideEditor.value = false
 }
@@ -921,43 +897,44 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
   display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--border);
 }
-.guide-step {
-  display: flex; align-items: center; gap: 8px; font-size: 13px;
+.guide-preview-text {
+  cursor: pointer;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s;
 }
-.guide-step-num {
-  width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
-  color: #fff; font-size: 11px; font-weight: 600;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.guide-preview-text:hover { border-color: var(--accent); }
+.guide-text-display {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
 }
-.guide-step-agent {
-  color: var(--accent); font-weight: 500; white-space: nowrap;
-}
-.guide-step-text { color: var(--text-2); }
 
 .guide-editor { display: flex; flex-direction: column; gap: 8px; }
 .guide-editor-hint { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
-.guide-step-edit {
-  display: flex; align-items: center; gap: 6px;
+.guide-textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+  line-height: 1.6;
 }
-.guide-agent-select {
-  padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
-  border-radius: 6px; background: var(--bg-2); color: var(--text);
-  min-width: 100px; max-width: 120px;
-}
-.guide-action-input {
-  flex: 1; padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
-  border-radius: 6px; background: var(--bg-2); color: var(--text);
-}
-.guide-action-input:focus, .guide-agent-select:focus {
-  outline: none; border-color: var(--accent);
-}
-.guide-step-remove {
-  background: none; border: none; color: var(--text-dim); cursor: pointer;
-  font-size: 16px; padding: 0 4px; line-height: 1;
-}
-.guide-step-remove:hover { color: var(--danger); }
+.guide-textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.guide-textarea::placeholder { color: var(--text-dim); opacity: 0.7; }
 .guide-editor-actions {
-  display: flex; justify-content: space-between; margin-top: 6px;
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;
 }
 
 /* Member avatar small variant for picker */
