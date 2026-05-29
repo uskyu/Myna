@@ -193,9 +193,21 @@
 
       <!-- Floating action bar -->
       <div v-if="type === 'group'" class="action-bar">
+        <button class="action-bar-btn" :class="{ active: showShortcutBar }" @click="showShortcutBar = !showShortcutBar" title="快捷指令">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span>指令</span>
+        </button>
         <button class="action-bar-btn" :class="{ active: cloneMode }" @click="cloneMode = !cloneMode" title="分身模式：允许同一智能体并行处理多个任务">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
           <span>分身</span>
+        </button>
+      </div>
+
+      <!-- Shortcut bar (above input, below action-bar) -->
+      <div v-if="showShortcutBar" class="shortcut-bar">
+        <button v-for="cmd in shortcutCommands" :key="cmd.id" class="shortcut-chip" @click="applyShortcut(cmd)" :title="cmd.label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path :d="cmd.icon"/></svg>
+          <span>{{ cmd.label }}</span>
         </button>
       </div>
 
@@ -268,7 +280,7 @@
         rows="1"
         placeholder="输入消息..."
         v-model="inputText"
-        @keydown.enter.exact.prevent="onEnter"
+        @keydown.enter.exact.prevent="onEnterKey"
         @keydown.down.prevent="moveMention(1)"
         @keydown.up.prevent="moveMention(-1)"
         @keydown.tab.prevent="onTab"
@@ -311,6 +323,7 @@ const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
 const showShortcutMenu = ref(false)
+const showShortcutBar = ref(false)
 const cloneMode = ref(false)
 const cloneConfirm = ref(null)  // { agentName, agentId, pendingText, pendingMentions }
 
@@ -418,7 +431,69 @@ function onPlusUploadImage() {
 }
 function applyShortcut(cmd) {
   showShortcutMenu.value = false
-  // Always insert command and trigger @ mention picker
+  showShortcutBar.value = false
+
+  // Direct-execute commands that don't need agent interaction
+  if (cmd.command === '/clear') {
+    handleCommand('/clear')
+    return
+  }
+  if (cmd.command === '/stop') {
+    // Stop all active streams in this room
+    for (const [streamId, stream] of Object.entries(store.activeStreams)) {
+      if (stream.roomId === props.room.id) {
+        if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
+          ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
+        }
+        delete store.activeStreams[streamId]
+      }
+    }
+    store.activeStreams = { ...store.activeStreams }
+    showToast('已停止所有生成')
+    return
+  }
+
+  // Commands that need to be sent to the agent (compact, retry, summary)
+  if (cmd.command === '/compact' || cmd.command === '/retry' || cmd.command === '/summary') {
+    const toastMsg = cmd.command === '/compact' ? '正在压缩上下文...' : cmd.command === '/retry' ? '正在重新生成...' : '正在总结对话...'
+    showToast(toastMsg)
+
+    // /retry: don't show user message (backend handles deletion + re-trigger)
+    if (cmd.command === '/retry') {
+      const endpoint = activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`
+      // Determine target agent
+      const lastAgentMsg = [...messages.value].reverse().find(m => m.sender_id && m.sender_id !== 'user' && m.sender_id !== 'system')
+      const mentions = lastAgentMsg ? [lastAgentMsg.sender_id] : []
+      api('POST', endpoint, { text: '/retry', mentions })
+      return
+    }
+
+    // Determine target agent (last agent that replied)
+    const lastAgentMsg = [...messages.value].reverse().find(m => m.sender_id && m.sender_id !== 'user' && m.sender_id !== 'system')
+    const mentions = []
+    if (lastAgentMsg) mentions.push(lastAgentMsg.sender_id)
+    else if (props.room.members?.length) {
+      const first = props.room.members.find(m => m.id !== 'user' && m.id !== 'system')
+      if (first) mentions.push(first.id)
+    }
+
+    // Add user message to UI
+    messages.value.push({
+      id: 'tmp-' + Date.now(),
+      sender_id: 'user',
+      sender_name: '我',
+      text: cmd.command,
+      created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    })
+    nextTick(scrollToBottom)
+
+    // Send to backend
+    const endpoint = activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`
+    api('POST', endpoint, { text: cmd.command, mentions })
+    return
+  }
+
+  // Fallback: insert command and trigger @ mention picker
   inputText.value = cmd.command + ' @'
   nextTick(() => {
     inputEl.value?.focus()
@@ -863,12 +938,21 @@ function closeMentions() {
   mentionStartPos.value = -1
 }
 
-function onEnter() {
+function onEnterKey() {
   if (showMentions.value && mentionCandidates.value[mentionIndex.value]) {
     selectMention(mentionCandidates.value[mentionIndex.value])
     return
   }
-  send()
+  // Enter = newline (insert \n at cursor position)
+  const el = inputEl.value
+  if (!el) return
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  inputText.value = inputText.value.slice(0, start) + '\n' + inputText.value.slice(end)
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = start + 1
+    autoResize({ target: el })
+  })
 }
 
 function onTab() {
@@ -1025,6 +1109,17 @@ async function send() {
   attachments.value = []
   if (inputEl.value) inputEl.value.style.height = 'auto'
 
+  // Auto-interrupt: cancel any active streams for mentioned agents in this room
+  if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
+    for (const [streamId, stream] of Object.entries(store.activeStreams)) {
+      if (stream.roomId === props.room.id && (mentions.includes(stream.agentId) || mentions.length === 0)) {
+        ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
+        delete store.activeStreams[streamId]
+      }
+    }
+    store.activeStreams = { ...store.activeStreams }
+  }
+
   // Optimistic add
   messages.value.push({
     id: 'tmp-' + Date.now(),
@@ -1048,6 +1143,33 @@ async function handleCommand(text) {
     if (data.ok) { messages.value = []; showToast('对话已清空') }
   } else if (cmd === '/members') {
     showSettings.value = true
+  } else if (cmd === '/compact' || cmd === '/summary') {
+    // These need to be sent to the agent as regular messages
+    const toastMsg = cmd === '/compact' ? '正在压缩上下文...' : '正在总结对话...'
+    showToast(toastMsg)
+    const lastAgentMsg = [...messages.value].reverse().find(m => m.sender_id && m.sender_id !== 'user' && m.sender_id !== 'system')
+    const mentions = []
+    if (lastAgentMsg) mentions.push(lastAgentMsg.sender_id)
+    else if (props.room.members?.length) {
+      const first = props.room.members.find(m => m.id !== 'user' && m.id !== 'system')
+      if (first) mentions.push(first.id)
+    }
+    messages.value.push({
+      id: 'tmp-' + Date.now(),
+      sender_id: 'user',
+      sender_name: '我',
+      text: cmd,
+      created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    })
+    nextTick(scrollToBottom)
+    const endpoint = activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`
+    api('POST', endpoint, { text: cmd, mentions })
+  } else if (cmd === '/retry') {
+    showToast('正在重新生成...')
+    const lastAgentMsg = [...messages.value].reverse().find(m => m.sender_id && m.sender_id !== 'user' && m.sender_id !== 'system')
+    const mentions = lastAgentMsg ? [lastAgentMsg.sender_id] : []
+    const endpoint = activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`
+    api('POST', endpoint, { text: '/retry', mentions })
   }
 }
 
@@ -1120,6 +1242,12 @@ function handleWS(msg) {
       command: msg.command,
       description: msg.description,
       agentName: msg.agent_name,
+    }
+  } else if (msg.type === 'message_deleted' && msg.room_id === props.room.id) {
+    // Remove deleted message from local list
+    const msgThread = msg.thread_id || null
+    if (msgThread === activeThreadId.value) {
+      messages.value = messages.value.filter(m => m.id !== msg.message_id)
     }
   }
 }

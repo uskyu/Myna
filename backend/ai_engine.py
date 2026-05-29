@@ -236,6 +236,15 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
     prompt += "\n\n回复使用 Markdown 格式，保持简洁专业。直接执行用户的指令。"
 
+    # Slash command instructions
+    prompt += """
+
+[斜杠指令处理]
+当用户发送以下指令时，按对应方式处理：
+- /compact — 将之前的对话内容压缩为简洁摘要（保留关键决策、文件路径、代码变更），然后回复"✅ 上下文已压缩"并附上摘要。
+- /summary — 总结当前对话的要点、完成的任务、待办事项，以结构化列表形式回复。
+- /retry 由系统处理，你不会收到此指令。"""
+
     # Context management rules
     prompt += """
 
@@ -463,6 +472,7 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                 try:
                     # Get max_iterations from hub settings (budget = max API call rounds)
                     max_iters = 50
+                    auto_mode = False
                     try:
                         import yaml
                         _settings_db_path = Path("/root/hermes-hub/db/myna.sqlite")
@@ -470,13 +480,30 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                             import sqlite3
                             _conn = sqlite3.connect(str(_settings_db_path))
                             _row = _conn.execute("SELECT value FROM hub_settings WHERE key = 'agent_max_rounds'").fetchone()
-                            if _row and int(_row[0]) > 0:
-                                max_iters = int(_row[0])
-                            elif _row and int(_row[0]) == 0:
-                                max_iters = 200  # "unlimited" = 200 rounds
+                            if _row:
+                                if _row[0] == 'auto':
+                                    max_iters = 200
+                                    auto_mode = True
+                                elif int(_row[0]) > 0:
+                                    max_iters = int(_row[0])
+                                elif int(_row[0]) == 0:
+                                    max_iters = 200  # "unlimited" = 200 rounds
                             _conn.close()
                     except:
                         pass
+
+                    # Auto mode: inject autonomous decision-making instructions
+                    if auto_mode:
+                        system_prompt += """
+
+[智能执行模式 — 自主决策]
+你处于智能执行模式。你需要自己判断：
+1. 任务是否已完成？完成就停止，不要为了用完轮数而继续。
+2. 是否需要先回复用户再继续工作？如果任务很长，先给用户一个进度更新，然后继续。
+3. 遇到需要用户确认的决策点时，停下来询问，不要自作主张。
+4. 如果任务明确且简单（如回答问题），直接回复，不需要调用工具。
+5. 如果任务复杂（如修改代码、部署），按需调用工具直到完成，不受轮数限制。
+核心原则：以完成任务为目标，不多不少。"""
 
                     agent_instance = AIAgent(
                         base_url=base_url,
@@ -765,8 +792,17 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # If room has no skill config, use all agent skills (backward compatible)
 
         # Build system prompt
-        all_agents = db.list_agents()
-        other_agents = [a for a in all_agents if a["id"] != agent["id"] and a["id"] != "user" and a.get("status") == "online"]
+        # Only show agents that are members of this room (not all agents globally)
+        room_members = db.get_room_members(room_id)
+        other_agents = []
+        for m in room_members:
+            if m["id"] != agent["id"] and m["id"] not in ("user", "system"):
+                # Enrich with description from full agent record
+                full_m = db.get_agent_by_id(m["id"])
+                if full_m:
+                    other_agents.append(full_m)
+                else:
+                    other_agents.append(m)
         system_prompt = build_system_prompt(full_agent, room_type,
                                             other_agents if room_type == "group" else None,
                                             agent_skills,
@@ -908,21 +944,21 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id)
 
         # Self-improvement (skip if interrupted)
-        # Use the passed db object directly (no hardcoded sqlite path)
-        _global_self_improve = True
+        # Default: OFF globally and per-agent. Must be explicitly enabled.
+        _global_self_improve = False
         _global_threshold = 2
         try:
             _si_val = db.get_hub_setting("self_improve_enabled")
             if _si_val is not None:
-                _global_self_improve = _si_val != '0'
+                _global_self_improve = _si_val == '1'
             _th_val = db.get_hub_setting("self_improve_threshold")
             if _th_val is not None:
                 _global_threshold = int(_th_val)
         except:
             pass
 
-        # Agent-level overrides global; if agent has self_improve=0, skip
-        agent_self_improve = full_agent.get("self_improve", 1)
+        # Agent-level: default OFF (0), must be explicitly set to 1
+        agent_self_improve = full_agent.get("self_improve", 0)
         effective_self_improve = bool(agent_self_improve) if agent_self_improve is not None else _global_self_improve
         effective_threshold = full_agent.get("self_improve_threshold") or _global_threshold
 

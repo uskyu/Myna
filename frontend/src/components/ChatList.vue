@@ -8,9 +8,20 @@
         </button>
       </div>
     </div>
+    <!-- Tab navigation -->
+    <div class="msg-tabs">
+      <button class="msg-tab" :class="{ active: activeTab === 'group' }" @click="activeTab = 'group'">
+        群聊
+        <span v-if="groupUnread > 0" class="tab-badge">{{ groupUnread }}</span>
+      </button>
+      <button class="msg-tab" :class="{ active: activeTab === 'dm' }" @click="activeTab = 'dm'">
+        私信
+        <span v-if="dmUnread > 0" class="tab-badge">{{ dmUnread }}</span>
+      </button>
+    </div>
     <div class="chat-list">
-      <template v-if="store.rooms.length">
-        <div class="list-section-title">群聊</div>
+      <!-- Group chats -->
+      <template v-if="activeTab === 'group'">
         <div v-for="(r, i) in store.rooms" :key="r.id" class="chat-item" @click="$emit('open-chat', r, 'group')">
           <div class="avatar" :style="{ background: getAgentColor(i + 2) }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -33,9 +44,14 @@
             </button>
           </div>
         </div>
+        <div v-if="!store.rooms.length" class="empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <p>还没有群聊</p>
+          <p>点击右上角 + 创建</p>
+        </div>
       </template>
-      <template v-if="store.dms.length">
-        <div class="list-section-title">私聊</div>
+      <!-- DMs -->
+      <template v-if="activeTab === 'dm'">
         <div v-for="dm in store.dms" :key="dm.id" class="chat-item" @click="$emit('open-chat', dm, 'dm')">
           <div class="avatar round" :style="{ background: getAgentColor(agentIndex(dm.agent?.id)) }">
             <span v-html="getAgentIcon(agentIndex(dm.agent?.id))"></span>
@@ -55,12 +71,12 @@
             </button>
           </div>
         </div>
+        <div v-if="!store.dms.length" class="empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <p>还没有私信</p>
+          <p>在智能体列表中点击消息图标开始</p>
+        </div>
       </template>
-      <div v-if="!store.rooms.length && !store.dms.length" class="empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <p>还没有对话</p>
-        <p>点击右上角 + 创建群聊</p>
-      </div>
     </div>
 
     <!-- Rename modal -->
@@ -80,14 +96,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { store, api, loadConversations, loadAgents, getAgentColor, getAgentIcon } from '../store.js'
 
 defineEmits(['open-chat', 'create-room'])
 
+const activeTab = ref('group')
 const agentIndex = (id) => store.agents.findIndex(a => a.id === id)
 const renamingRoom = ref(null)
 const renameText = ref('')
+
+const groupUnread = computed(() => {
+  return store.rooms.reduce((sum, r) => sum + (store.unreadCounts[r.id] || 0), 0)
+})
+const dmUnread = computed(() => {
+  return store.dms.reduce((sum, dm) => sum + (store.unreadCounts[dm.id] || 0), 0)
+})
 
 function isRoomActive(roomId) {
   return Object.values(store.activeStreams).some(s => s.roomId === roomId)
@@ -122,6 +146,52 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
+/* Tab navigation */
+.msg-tabs {
+  display: flex;
+  padding: 0 16px;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.msg-tab {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  position: relative;
+}
+.msg-tab.active {
+  color: var(--accent, #2d6a4f);
+  font-weight: 600;
+  border-bottom-color: var(--accent, #2d6a4f);
+}
+.msg-tab:not(.active):hover {
+  color: var(--text);
+}
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger, #e53e3e);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 .unread-badge {
   background: var(--accent);
   color: white;

@@ -559,7 +559,7 @@ class BaseDatabase:
         # System Agent - handles credentials and git operations
         self.execute(
             f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            ('__system__', 'System', '__sysagent__', '系统智能体：管理凭据、执行 Git 操作、分发共享资源', 'online')
+            ('__system__', 'System', '__sysagent__', '系统智能体：管理凭据与配置、提供 Git/SSH 令牌位置、分发共享资源信息', 'online')
         )
         self.commit()
 

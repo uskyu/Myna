@@ -164,7 +164,7 @@
         <div class="hint" style="margin-top:8px">由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间</div>
       </div>
 
-      <div style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border)">
+      <div v-if="agent.id !== '__system__'" style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border)">
         <button class="btn btn-danger" @click="$emit('delete', agent.id)" style="width:100%">删除智能体</button>
       </div>
     </div>

@@ -13,7 +13,7 @@
       <input type="text" v-model="filter" placeholder="搜索智能体...">
     </div>
     <div class="agent-grid list-view">
-      <div v-for="a in filtered" :key="a.id" class="agent-card" @click="$emit('open-detail', a)">
+      <div v-for="a in filtered" :key="a.id" class="agent-card" :class="{ 'system-agent': a.id === '__system__' }" @click="$emit('open-detail', a)">
         <div class="avatar-wrap">
           <div class="agent-avatar" :style="{ background: getAgentColor(agentIndex(a.id)) }">
             <span v-html="getAgentIcon(agentIndex(a.id))"></span>
@@ -21,7 +21,10 @@
           <span class="status-dot" :class="a.status === 'online' ? 'online' : 'offline'"></span>
         </div>
         <div class="info-block">
-          <div class="agent-name">{{ a.name }}</div>
+          <div class="agent-name">
+            {{ a.name }}
+            <span v-if="a.id === '__system__'" class="sys-badge">系统</span>
+          </div>
           <div class="agent-desc">{{ a.description || '通用智能体' }}</div>
         </div>
         <button class="btn-dm" @click.stop="startDM(a.id)" title="发消息">
@@ -50,7 +53,7 @@ watch(sort, (v) => localStorage.setItem('hub-agent-sort', v))
 const agentIndex = (id) => store.agents.findIndex(a => a.id === id)
 
 const filtered = computed(() => {
-  let list = [...store.agents]
+  let list = [...store.agents].filter(a => a.id !== 'user' && a.id !== 'system')
   if (filter.value) {
     const q = filter.value.toLowerCase()
     list = list.filter(a => (a.name || '').toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
@@ -58,6 +61,12 @@ const filtered = computed(() => {
   if (sort.value === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
   else if (sort.value === 'status') list.sort((a, b) => (a.status === 'online' ? -1 : 1) - (b.status === 'online' ? -1 : 1))
   else if (sort.value === 'newest') list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  // Pin __system__ to top
+  const sysIdx = list.findIndex(a => a.id === '__system__')
+  if (sysIdx > 0) {
+    const [sys] = list.splice(sysIdx, 1)
+    list.unshift(sys)
+  }
   return list
 })
 
@@ -170,5 +179,22 @@ onMounted(loadAgents)
 .btn-dm:hover {
   background: rgba(99, 102, 241, 0.2);
   color: #818cf8;
+}
+
+/* System agent styling */
+.agent-card.system-agent {
+  border-left: 3px solid var(--accent, #2d6a4f);
+  background: rgba(45, 106, 79, 0.04);
+}
+.sys-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft, rgba(45, 106, 79, 0.12));
+  color: var(--accent, #2d6a4f);
+  margin-left: 6px;
+  vertical-align: middle;
 }
 </style>

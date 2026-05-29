@@ -75,6 +75,9 @@ async def update_agent(agent_id: str, request: Request):
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str, request: Request):
+    # Protect system agents from deletion
+    if agent_id in ('__system__', 'user', 'system'):
+        return JSONResponse({"ok": False, "error": "系统智能体不可删除"}, status_code=403)
     db = get_db(request)
     db.delete_agent(agent_id)
     return {"ok": True}
@@ -216,10 +219,47 @@ async def send_message(room_id: str, request: Request):
             if mentioned:
                 mentions.append(mentioned["id"])
 
+    # Handle /retry: delete last AI message and re-trigger
+    if text.strip() == '/retry':
+        recent = db.get_room_messages(room_id, 10)
+        last_ai = None
+        for m in reversed(recent):
+            if m["sender_id"] not in ("user", "system"):
+                last_ai = m
+                break
+        if last_ai:
+            db.delete_message(last_ai["id"])
+            ws_manager.broadcast({"type": "message_deleted", "room_id": room_id, "message_id": last_ai["id"]})
+            # Re-trigger with the last user message
+            last_user = None
+            for m in reversed(recent):
+                if m["sender_id"] == "user" and m["id"] != last_ai["id"]:
+                    last_user = m
+                    break
+            if last_user:
+                from ai_engine import process_message
+                room = db.get_room(room_id)
+                room_type = room["type"] if room else "group"
+                target_agents = mentions if mentions else [last_ai["sender_id"]]
+                async def _retry():
+                    try:
+                        await process_message(db, ws_manager, room_id, "user", last_user["text"], target_agents, room_type)
+                    except Exception as e:
+                        print(f"[AI] retry error: {e}")
+                asyncio.create_task(_retry())
+        return {"ok": True, "result": {"action": "retry"}}
+
     message = db.create_message(room_id, "user", text, "markdown", None, mentions)
 
     room = db.get_room(room_id)
     room_type = room["type"] if room else "group"
+
+    # Auto-interrupt: cancel any active streams for mentioned agents in this room
+    for stream_id, stream_info in list(ws_manager.active_streams.items()):
+        if stream_info.get('room_id') == room_id:
+            agent_id = stream_info.get('agent_id')
+            if agent_id in mentions or not mentions:
+                ws_manager.cancel_stream(stream_id)
 
     # Trigger AI asynchronously
     from ai_engine import process_message
@@ -558,10 +598,46 @@ async def send_thread_message(thread_id: str, request: Request):
             if mentioned:
                 mentions.append(mentioned["id"])
 
+    # Handle /retry in thread
+    if text.strip() == '/retry':
+        recent = db.get_thread_messages(thread_id, 10)
+        last_ai = None
+        for m in reversed(recent):
+            if m["sender_id"] not in ("user", "system"):
+                last_ai = m
+                break
+        if last_ai:
+            db.delete_message(last_ai["id"])
+            ws_manager.broadcast({"type": "message_deleted", "room_id": thread["room_id"], "message_id": last_ai["id"], "thread_id": thread_id})
+            last_user = None
+            for m in reversed(recent):
+                if m["sender_id"] == "user" and m["id"] != last_ai["id"]:
+                    last_user = m
+                    break
+            if last_user:
+                from ai_engine import process_message
+                room = db.get_room(thread["room_id"])
+                room_type = room["type"] if room else "group"
+                target_agents = mentions if mentions else [last_ai["sender_id"]]
+                async def _retry_thread():
+                    try:
+                        await process_message(db, ws_manager, thread["room_id"], "user", last_user["text"], target_agents, room_type, thread_id=thread_id)
+                    except Exception as e:
+                        print(f"[AI] retry error: {e}")
+                asyncio.create_task(_retry_thread())
+        return {"ok": True, "result": {"action": "retry"}}
+
     message = db.create_message(thread["room_id"], "user", text, "markdown", None, mentions, thread_id=thread_id)
 
     room = db.get_room(thread["room_id"])
     room_type = room["type"] if room else "group"
+
+    # Auto-interrupt: cancel any active streams for mentioned agents in this thread
+    for stream_id, stream_info in list(ws_manager.active_streams.items()):
+        if stream_info.get('room_id') == thread["room_id"] and stream_info.get('thread_id') == thread_id:
+            agent_id = stream_info.get('agent_id')
+            if agent_id in mentions or not mentions:
+                ws_manager.cancel_stream(stream_id)
 
     # Trigger AI
     from ai_engine import process_message

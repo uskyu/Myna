@@ -224,7 +224,7 @@ const tabIndicatorStyle = computed(() => {
 const createForm = reactive({ name: '', description: '', content: '', agent_id: '' })
 const hubSettings = reactive({
   agent_max_rounds: '50',
-  self_improve_enabled: '1',
+  self_improve_enabled: '0',
   self_improve_threshold: '2',
 })
 
@@ -240,6 +240,7 @@ const roundOptions = [
   { label: '50 轮（推荐）', value: '50' },
   { label: '90 轮', value: '90' },
   { label: '无限制', value: '0' },
+  { label: '🧠 智能', value: 'auto' },
 ]
 
 const thresholdOptions = [
@@ -833,4 +834,18 @@ onMounted(() => {
 }
 .link-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .skill-card-btn.danger:hover { border-color: var(--danger, #e53e3e); color: var(--danger, #e53e3e); }
+
+/* Mobile: smaller radio options */
+@media (max-width: 480px) {
+  .config-options .radio-option {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .config-panel {
+    padding: 12px 14px;
+  }
+  .tab-panel {
+    padding: 12px 14px;
+  }
+}
 </style>

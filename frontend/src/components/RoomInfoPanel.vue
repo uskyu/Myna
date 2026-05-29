@@ -15,6 +15,54 @@
       </div>
     </div>
 
+    <!-- Members (right below header, like WeChat/QQ) -->
+    <div class="info-section members-section">
+      <div class="member-grid">
+        <div v-for="m in members" :key="m.id" class="member-cell">
+          <div class="member-avatar" :style="{ background: getAgentColor(agentColorIdx(m.id)) }">
+            <span v-html="getAgentIcon(agentColorIdx(m.id))"></span>
+          </div>
+          <div class="member-cell-name">{{ m.name }}</div>
+          <button v-if="m.id !== 'user'" class="member-remove-btn" @click="removeMember(m)" title="移出群聊">×</button>
+        </div>
+        <div v-if="available.length" class="member-cell add-cell" @click="showMemberPicker = true">
+          <div class="member-avatar add-avatar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div class="member-cell-name">添加</div>
+        </div>
+      </div>
+
+      <!-- Member picker modal -->
+      <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="showMemberPicker = false">
+        <div class="skill-picker-modal">
+          <div class="skill-picker-header">
+            <h4>添加智能体到群聊</h4>
+            <button class="close-btn" @click="showMemberPicker = false">×</button>
+          </div>
+          <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
+          <div v-else class="skill-picker-list">
+            <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
+              <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
+                <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
+              </div>
+              <div class="skill-picker-info">
+                <span class="skill-picker-name">{{ a.name }}</span>
+                <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
+              </div>
+              <button class="icon-btn add">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="skill-picker-footer">
+            <span></span>
+            <button class="btn-sm primary" @click="showMemberPicker = false">完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Description -->
     <div class="info-section">
       <h4>简介</h4>
@@ -125,60 +173,6 @@
           <div class="skill-picker-footer">
             <button class="btn-sm" @click="clearRoomSkills">清除全部（使用默认）</button>
             <button class="btn-sm primary" @click="showSkillPicker = false">完成</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Members -->
-    <div class="info-section">
-      <div class="section-head">
-        <h4>成员 <span class="muted">({{ members.length }})</span></h4>
-        <button v-if="available.length" class="btn-sm" @click="showMemberPicker = true">+ 添加</button>
-      </div>
-      <div class="member-list">
-        <div v-for="m in members" :key="m.id" class="member-row">
-          <div class="member-avatar" :style="{ background: getAgentColor(agentColorIdx(m.id)) }">
-            <span v-html="getAgentIcon(agentColorIdx(m.id))"></span>
-          </div>
-          <div class="member-info">
-            <div class="member-name">{{ m.name }}</div>
-            <div class="member-status">
-              <span class="dot" :class="m.status === 'online' ? 'online' : 'offline'"></span>
-              {{ m.status === 'online' ? '在线' : '离线' }}
-            </div>
-          </div>
-          <button v-if="m.id !== 'user'" class="icon-btn danger" @click="removeMember(m)" title="移出群聊">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Member picker modal -->
-      <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="showMemberPicker = false">
-        <div class="skill-picker-modal">
-          <div class="skill-picker-header">
-            <h4>添加智能体到群聊</h4>
-            <button class="close-btn" @click="showMemberPicker = false">×</button>
-          </div>
-          <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
-          <div v-else class="skill-picker-list">
-            <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
-              <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
-                <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
-              </div>
-              <div class="skill-picker-info">
-                <span class="skill-picker-name">{{ a.name }}</span>
-                <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
-              </div>
-              <button class="icon-btn add">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="skill-picker-footer">
-            <span></span>
-            <button class="btn-sm primary" @click="showMemberPicker = false">完成</button>
           </div>
         </div>
       </div>
@@ -668,6 +662,64 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
   flex-shrink: 0;
 }
 .member-avatar svg, .member-avatar span svg { width: 18px; height: 18px; color: white; }
+
+/* WeChat-style member grid */
+.members-section {
+  margin-bottom: 12px;
+}
+.member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 60px);
+  gap: 12px;
+  justify-content: start;
+}
+.member-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+.member-cell-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-remove-btn {
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger, #e53e3e);
+  color: white;
+  border: none;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.member-cell:hover .member-remove-btn {
+  display: flex;
+}
+.add-cell {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.add-cell:hover { opacity: 1; }
+.add-avatar {
+  border: 2px dashed var(--border-strong);
+  background: transparent !important;
+}
+.add-avatar svg { width: 18px; height: 18px; color: var(--text-dim); }
 
 .member-info { flex: 1; min-width: 0; }
 .member-name { font-size: 14px; font-weight: 600; color: var(--text); }
