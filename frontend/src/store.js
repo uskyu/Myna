@@ -78,6 +78,10 @@ export const updateInfo = reactive({
   updating: false,
   checking: false,
   error: '',
+  // Progress fields (pushed via WebSocket)
+  stage: '',       // 'pulling' | 'pulled' | 'restarting' | 'error'
+  message: '',     // Human-readable status
+  percent: 0,      // 0-100
 })
 
 export async function checkForUpdate() {
@@ -114,6 +118,10 @@ export async function checkForUpdate() {
 
 export async function doUpdate() {
   updateInfo.updating = true
+  updateInfo.stage = 'pulling'
+  updateInfo.message = '正在启动更新...'
+  updateInfo.percent = 0
+  updateInfo.error = ''
   try {
     const token = localStorage.getItem('hub_auth_token')
     const res = await fetch('/admin/system/update', {
@@ -121,33 +129,18 @@ export async function doUpdate() {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     })
     const data = await res.json()
-    if (data.ok) {
-      // Poll until the server comes back (new container starts)
-      let attempts = 0
-      const poll = setInterval(async () => {
-        attempts++
-        if (attempts > 30) { // 30s max wait
-          clearInterval(poll)
-          updateInfo.updating = false
-          return
-        }
-        try {
-          const r = await fetch('/admin/system/check-update', {
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-          })
-          if (r.ok) {
-            clearInterval(poll)
-            window.location.reload()
-          }
-        } catch {}
-      }, 1000)
-    } else {
-      alert('更新失败: ' + (data.error || '未知错误'))
+    if (!data.ok) {
       updateInfo.updating = false
+      updateInfo.stage = 'error'
+      updateInfo.message = data.error || '更新失败'
+      alert('更新失败: ' + (data.error || '未知错误'))
     }
+    // Progress will be pushed via WebSocket (update_progress events)
   } catch (e) {
     alert('更新请求失败: ' + e.message)
     updateInfo.updating = false
+    updateInfo.stage = 'error'
+    updateInfo.message = e.message
   }
 }
 
@@ -270,6 +263,36 @@ function _globalWSHandler(msg) {
     // Increment unread if not the current room
     if (msg.room_id && msg.room_id !== currentRoomId.value) {
       store.unreadCounts[msg.room_id] = (store.unreadCounts[msg.room_id] || 0) + 1
+    }
+  } else if (msg.type === 'update_progress') {
+    // Real-time update progress from backend
+    updateInfo.stage = msg.stage || ''
+    updateInfo.message = msg.message || ''
+    updateInfo.percent = msg.percent || 0
+    if (msg.stage === 'error') {
+      updateInfo.updating = false
+      updateInfo.error = msg.message
+    } else if (msg.stage === 'restarting') {
+      // Server will restart — poll until it comes back
+      let attempts = 0
+      const poll = setInterval(async () => {
+        attempts++
+        if (attempts > 30) {
+          clearInterval(poll)
+          updateInfo.updating = false
+          return
+        }
+        try {
+          const token = localStorage.getItem('hub_auth_token')
+          const r = await fetch('/admin/system/check-update', {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          })
+          if (r.ok) {
+            clearInterval(poll)
+            window.location.reload()
+          }
+        } catch {}
+      }, 1000)
     }
   }
 }

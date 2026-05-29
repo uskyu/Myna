@@ -984,7 +984,7 @@ async def check_for_update():
 
 @router.post("/system/update")
 async def do_system_update(request: Request):
-    """Trigger container update. Works with Watchtower or direct docker compose."""
+    """Trigger container update with real-time progress via WebSocket."""
     import os
     if not (os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")):
         return JSONResponse({"ok": False, "error": "Not running in Docker mode"}, status_code=400)
@@ -993,48 +993,114 @@ async def do_system_update(request: Request):
     if not os.path.exists(docker_sock):
         return JSONResponse({"ok": False, "error": "Docker socket not mounted"}, status_code=400)
 
-    try:
-        # Pull new image first
-        pull_result = subprocess.run(
-            ["docker", "pull", "ghcr.io/uskyu/myna:latest"],
-            capture_output=True, text=True, timeout=180
-        )
-        if pull_result.returncode != 0:
-            return JSONResponse({"ok": False, "error": f"Pull failed: {pull_result.stderr[:500]}"}, status_code=500)
+    ws_manager = get_ws(request)
 
-        # Try to trigger Watchtower immediate check (if running)
-        wt_result = subprocess.run(
-            ["docker", "kill", "--signal=SIGHUP", "watchtower"],
-            capture_output=True, text=True, timeout=10
-        )
-        if wt_result.returncode == 0:
-            # Watchtower will pick up the new image and recreate us
-            return {"ok": True, "message": "Image pulled. Watchtower will update the container shortly."}
+    async def _pull_with_progress():
+        """Run docker pull and stream progress to UI via WebSocket."""
+        import re
+        try:
+            await ws_manager.notify_ui({"type": "update_progress", "stage": "pulling", "message": "正在拉取镜像...", "percent": 0})
 
-        # No Watchtower — fallback: direct docker compose recreate
-        # Find compose working dir from our container labels
-        container_id = ""
-        ps_result = subprocess.run(
-            ["docker", "ps", "--filter", "label=com.docker.compose.service=myna",
-             "--format", "{{.ID}}"],
-            capture_output=True, text=True, timeout=10
-        )
-        if ps_result.returncode == 0 and ps_result.stdout.strip():
-            container_id = ps_result.stdout.strip().split("\n")[0]
-
-        if container_id:
-            # Use compose file mounted at /app/docker-compose.yml with project name
-            subprocess.Popen(
-                ["docker", "compose", "-f", "/app/docker-compose.yml", "-p", "myna",
-                 "up", "-d", "--force-recreate", "--no-deps", "myna"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True
+            # Use asyncio subprocess for non-blocking pull
+            proc = await asyncio.subprocess.create_subprocess_exec(
+                "docker", "pull", "ghcr.io/uskyu/myna:latest",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
             )
-            return {"ok": True, "message": "Updating... page will reload in a few seconds."}
 
-        return JSONResponse({"ok": False, "error": "Cannot find container to update"}, status_code=500)
+            layers_progress = {}  # layer_id -> (current, total)
+            output_lines = []
 
-    except subprocess.TimeoutExpired:
-        return JSONResponse({"ok": False, "error": "Pull timed out"}, status_code=500)
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+            async for line_bytes in proc.stdout:
+                line = line_bytes.decode('utf-8', errors='replace').strip()
+                if not line:
+                    continue
+                output_lines.append(line)
+
+                # Parse docker pull progress lines like:
+                # "abc123: Downloading  12.5MB/45.2MB"
+                # "abc123: Pull complete"
+                # "abc123: Already exists"
+                m = re.match(r'^([a-f0-9]+):\s+(Downloading|Extracting)\s+(\d+(?:\.\d+)?[kKmMgG]?B?)/(\d+(?:\.\d+)?[kKmMgG]?B?)', line)
+                if m:
+                    layer_id = m.group(1)
+                    current_str = m.group(3)
+                    total_str = m.group(4)
+                    current = _parse_size(current_str)
+                    total = _parse_size(total_str)
+                    layers_progress[layer_id] = (current, total)
+                elif re.match(r'^([a-f0-9]+):\s+(Pull complete|Already exists)', line):
+                    layer_id = line.split(':')[0]
+                    layers_progress[layer_id] = (1, 1)  # 100%
+
+                # Calculate overall progress
+                if layers_progress:
+                    total_bytes = sum(t for _, t in layers_progress.values())
+                    done_bytes = sum(c for c, _ in layers_progress.values())
+                    percent = int(done_bytes * 100 / total_bytes) if total_bytes > 0 else 0
+                    percent = min(percent, 99)  # Cap at 99 until fully done
+                    await ws_manager.notify_ui({
+                        "type": "update_progress",
+                        "stage": "pulling",
+                        "message": f"下载中... {percent}%",
+                        "percent": percent,
+                        "layers": len(layers_progress)
+                    })
+
+            await proc.wait()
+
+            if proc.returncode != 0:
+                await ws_manager.notify_ui({"type": "update_progress", "stage": "error", "message": "拉取失败", "percent": 0})
+                return
+
+            await ws_manager.notify_ui({"type": "update_progress", "stage": "pulled", "message": "镜像已更新，正在重启...", "percent": 100})
+
+            # Trigger Watchtower or direct recreate
+            wt_result = subprocess.run(
+                ["docker", "kill", "--signal=SIGHUP", "watchtower"],
+                capture_output=True, text=True, timeout=10
+            )
+            if wt_result.returncode == 0:
+                await ws_manager.notify_ui({"type": "update_progress", "stage": "restarting", "message": "Watchtower 正在重启容器...", "percent": 100})
+                return
+
+            # Fallback: direct compose recreate
+            container_id = ""
+            ps_result = subprocess.run(
+                ["docker", "ps", "--filter", "label=com.docker.compose.service=myna",
+                 "--format", "{{.ID}}"],
+                capture_output=True, text=True, timeout=10
+            )
+            if ps_result.returncode == 0 and ps_result.stdout.strip():
+                container_id = ps_result.stdout.strip().split("\n")[0]
+
+            if container_id:
+                subprocess.Popen(
+                    ["docker", "compose", "-f", "/app/docker-compose.yml", "-p", "myna",
+                     "up", "-d", "--force-recreate", "--no-deps", "myna"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                await ws_manager.notify_ui({"type": "update_progress", "stage": "restarting", "message": "正在重启容器...", "percent": 100})
+            else:
+                await ws_manager.notify_ui({"type": "update_progress", "stage": "error", "message": "找不到容器，请手动重启"})
+
+        except Exception as e:
+            await ws_manager.notify_ui({"type": "update_progress", "stage": "error", "message": f"更新失败: {str(e)[:100]}"})
+
+    # Launch pull in background, return immediately
+    asyncio.create_task(_pull_with_progress())
+    return {"ok": True, "message": "Update started, progress will be pushed via WebSocket."}
+
+
+def _parse_size(s: str) -> int:
+    """Parse size string like '12.5MB' to bytes."""
+    import re
+    s = s.strip().upper()
+    m = re.match(r'^([\d.]+)\s*([KMGT]?)B?$', s)
+    if not m:
+        return 0
+    val = float(m.group(1))
+    unit = m.group(2)
+    multipliers = {'': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
+    return int(val * multipliers.get(unit, 1))

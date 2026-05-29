@@ -69,6 +69,13 @@
           <span class="setting-label">{{ updateInfo.updating ? '更新中...' : '一键更新' }}</span>
           <span class="setting-value" style="color:#d97706">{{ updateInfo.latestVersion }}</span>
         </div>
+        <!-- Update progress bar -->
+        <div v-if="updateInfo.updating" class="update-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: updateInfo.percent + '%' }"></div>
+          </div>
+          <div class="progress-text">{{ updateInfo.message || '准备中...' }}</div>
+        </div>
         <a v-else-if="updateInfo.available" class="setting-item update-item" :href="'https://github.com/uskyu/myna/releases'" target="_blank" style="text-decoration:none;color:inherit">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
           <span class="setting-label">发现新版本</span>
@@ -339,5 +346,29 @@ onMounted(async () => {
   margin: 4px 0 0 0;
   padding: 0 4px;
   line-height: 1.5;
+}
+
+/* Update progress */
+.update-progress {
+  padding: 8px 16px 12px;
+  margin: -4px 0 8px;
+}
+.progress-bar {
+  height: 6px;
+  background: var(--border, #e0e0e0);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent, #2d6a4f), #40916c);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.progress-text {
+  font-size: 11px;
+  color: var(--text-dim, #999);
+  margin-top: 4px;
+  text-align: center;
 }
 </style>
