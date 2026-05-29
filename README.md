@@ -138,6 +138,12 @@ myna/
   <img src="docs/wechat-qr.jpg" width="200" alt="微信联系作者" />
 </div>
 
+### 交流群
+
+<div align="center">
+  <img src="docs/screenshots/wechat-group.jpg" width="200" alt="微信交流群" />
+</div>
+
 ---
 
 <div align="center">
