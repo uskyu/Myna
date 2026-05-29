@@ -121,17 +121,32 @@ export async function doUpdate() {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     })
     const data = await res.json()
-    if (data.ok && !data.manual) {
-      // Container will restart, wait and reload
-      setTimeout(() => { window.location.reload() }, 8000)
-    } else if (data.manual) {
-      alert('请在宿主机执行: docker compose pull && docker compose up -d')
+    if (data.ok) {
+      // Poll until the server comes back (new container starts)
+      let attempts = 0
+      const poll = setInterval(async () => {
+        attempts++
+        if (attempts > 30) { // 30s max wait
+          clearInterval(poll)
+          updateInfo.updating = false
+          return
+        }
+        try {
+          const r = await fetch('/admin/system/check-update', {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          })
+          if (r.ok) {
+            clearInterval(poll)
+            window.location.reload()
+          }
+        } catch {}
+      }, 1000)
     } else {
       alert('更新失败: ' + (data.error || '未知错误'))
+      updateInfo.updating = false
     }
   } catch (e) {
     alert('更新请求失败: ' + e.message)
-  } finally {
     updateInfo.updating = false
   }
 }

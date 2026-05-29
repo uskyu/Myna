@@ -984,17 +984,17 @@ async def check_for_update():
 
 @router.post("/system/update")
 async def do_system_update(request: Request):
-    """Pull latest Docker image and recreate container. Only works in Docker mode."""
+    """Trigger container update. Works with Watchtower or direct docker compose."""
     import os
     if not (os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")):
         return JSONResponse({"ok": False, "error": "Not running in Docker mode"}, status_code=400)
 
     docker_sock = "/var/run/docker.sock"
     if not os.path.exists(docker_sock):
-        return JSONResponse({"ok": False, "error": "Docker socket not mounted. Add '/var/run/docker.sock:/var/run/docker.sock' to volumes in docker-compose.yml"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Docker socket not mounted"}, status_code=400)
 
     try:
-        # Pull new image
+        # Pull new image first
         pull_result = subprocess.run(
             ["docker", "pull", "ghcr.io/uskyu/myna:latest"],
             capture_output=True, text=True, timeout=180
@@ -1002,59 +1002,38 @@ async def do_system_update(request: Request):
         if pull_result.returncode != 0:
             return JSONResponse({"ok": False, "error": f"Pull failed: {pull_result.stderr[:500]}"}, status_code=500)
 
-        # Strategy 1: Use mounted docker-compose.yml path directly
-        compose_file = "/app/docker-compose.yml"
-        if os.path.exists(compose_file):
-            # Read compose to find the working dir (the file is bind-mounted from host)
-            # The compose file is at host_path/docker-compose.yml, mounted as /app/docker-compose.yml:ro
-            # We need the host path — get it from mount info
-            import socket
-            container_id = ""
+        # Try to trigger Watchtower immediate check (if running)
+        wt_result = subprocess.run(
+            ["docker", "kill", "--signal=SIGHUP", "watchtower"],
+            capture_output=True, text=True, timeout=10
+        )
+        if wt_result.returncode == 0:
+            # Watchtower will pick up the new image and recreate us
+            return {"ok": True, "message": "Image pulled. Watchtower will update the container shortly."}
 
-            # Try container name from environment or hostname
-            # In network_mode:host, hostname = host's hostname, not container ID
-            # So we find ourselves by container name label
-            ps_result = subprocess.run(
-                ["docker", "ps", "--filter", "label=com.docker.compose.service=myna",
-                 "--format", "{{.ID}}"],
-                capture_output=True, text=True, timeout=10
+        # No Watchtower — fallback: direct docker compose recreate
+        # Find compose working dir from our container labels
+        container_id = ""
+        ps_result = subprocess.run(
+            ["docker", "ps", "--filter", "label=com.docker.compose.service=myna",
+             "--format", "{{.ID}}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if ps_result.returncode == 0 and ps_result.stdout.strip():
+            container_id = ps_result.stdout.strip().split("\n")[0]
+
+        if container_id:
+            # Use compose file mounted at /app/docker-compose.yml with project name
+            subprocess.Popen(
+                ["docker", "compose", "-f", "/app/docker-compose.yml", "-p", "myna",
+                 "up", "-d", "--force-recreate", "--no-deps", "myna"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True
             )
-            if ps_result.returncode == 0 and ps_result.stdout.strip():
-                container_id = ps_result.stdout.strip().split("\n")[0]
-            else:
-                # Fallback: find by image name
-                ps_result = subprocess.run(
-                    ["docker", "ps", "--filter", "ancestor=ghcr.io/uskyu/myna:latest",
-                     "--format", "{{.ID}}"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if ps_result.returncode == 0 and ps_result.stdout.strip():
-                    container_id = ps_result.stdout.strip().split("\n")[0]
+            return {"ok": True, "message": "Updating... page will reload in a few seconds."}
 
-            if not container_id:
-                # Last resort: try hostname (works when not network_mode:host)
-                container_id = socket.gethostname()
+        return JSONResponse({"ok": False, "error": "Cannot find container to update"}, status_code=500)
 
-            # Get compose working dir from container labels
-            inspect = subprocess.run(
-                ["docker", "inspect", "--format",
-                 '{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}',
-                 container_id],
-                capture_output=True, text=True, timeout=10
-            )
-            if inspect.returncode == 0 and "|" in inspect.stdout.strip():
-                workdir, service = inspect.stdout.strip().split("|", 1)
-                # Recreate just this service in background (will kill us, that's fine)
-                subprocess.Popen(
-                    ["docker", "compose", "-f", f"{workdir}/docker-compose.yml",
-                     "up", "-d", "--force-recreate", "--no-deps", service],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                return {"ok": True, "message": "Updating... page will reload in a few seconds."}
-            else:
-                return JSONResponse({"ok": False, "error": "Cannot detect compose project. Run manually: docker compose pull && docker compose up -d"}, status_code=500)
-        else:
-            return JSONResponse({"ok": False, "error": "docker-compose.yml not found at /app/docker-compose.yml"}, status_code=500)
     except subprocess.TimeoutExpired:
         return JSONResponse({"ok": False, "error": "Pull timed out"}, status_code=500)
     except Exception as e:
