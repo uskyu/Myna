@@ -226,7 +226,7 @@
         <span>松开即可添加到输入框</span>
       </div>
       <!-- Shortcut commands floating card -->
-      <div v-if="showShortcutBar" class="shortcut-card">
+      <div v-if="showShortcutBar" class="shortcut-card" @click.stop>
         <div class="shortcut-card-head">
           <span>快捷指令</span>
           <button class="shortcut-close" @click="showShortcutBar = false">×</button>
@@ -280,11 +280,13 @@
         </div>
       </div>
 
+      <button class="shortcut-trigger-btn" :class="{ active: showShortcutBar }" @click.stop="toggleShortcutBar" title="快捷指令">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span>快捷指令</span>
+      </button>
+
       <button class="file-btn plus-btn" :class="{ active: showPlusMenu }" @click="togglePlusMenu" title="上传文件">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
-      <button class="shortcut-trigger-btn" :class="{ active: showShortcutBar }" @click="toggleShortcutBar" title="快捷指令">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       </button>
       <input ref="fileInput" type="file" multiple style="display:none" @change="onFiles">
       <input ref="imageInput" type="file" multiple accept="image/*" style="display:none" @change="onFiles">
@@ -472,17 +474,20 @@ function applyShortcut(cmd) {
     return
   }
   if (cmd.command === '/stop') {
-    // Stop all active streams in this room
+    // Stop all active streams in this room, but keep their bubbles until backend saves interrupted messages
+    let count = 0
     for (const [streamId, stream] of Object.entries(store.activeStreams)) {
-      if (stream.roomId === props.room.id) {
+      if (stream.roomId === props.room.id && (stream.threadId || null) === activeThreadId.value) {
         if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
           ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
         }
-        delete store.activeStreams[streamId]
+        stream.interrupted = true
+        stream.working = false
+        count++
       }
     }
     store.activeStreams = { ...store.activeStreams }
-    showToast('已停止所有生成')
+    showToast(count ? '已打断，正在保存中断内容' : '当前没有正在生成的回复')
     return
   }
 
@@ -541,8 +546,13 @@ function cancelStream(msg) {
   if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
     ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
   }
-  // Remove from activeStreams
-  delete store.activeStreams[streamId]
+  // Keep the interrupted bubble visible until the backend persists it.
+  // This preserves partial work and prevents the next reply from visually merging with it.
+  const stream = store.activeStreams[streamId]
+  if (stream) {
+    stream.interrupted = true
+    stream.working = false
+  }
   store.activeStreams = { ...store.activeStreams }
 }
 
@@ -681,6 +691,7 @@ const messageGroups = computed(() => {
       rendered: cachedRenderMd(m.text, m.id),
       time: formatMsgTime(m.created_at),
       date: formatMsgDate(m.created_at),
+      sortTs: new Date(m.created_at).getTime() || 0,
       self,
       showName: !self && (props.type === 'group' || !self),
       toolCalls,
@@ -691,23 +702,33 @@ const messageGroups = computed(() => {
   for (const sid in store.activeStreams) {
     const s = store.activeStreams[sid]
     if (s.roomId !== props.room.id) continue
+    if ((s.threadId || null) !== activeThreadId.value) continue
+    const startedAt = s.startedAt || Date.now()
     allMsgs.push({
       id: `stream-${sid}`,
       sender_id: s.agentId,
       sender_name: s.agentName,
       text: s.text,
       rendered: renderMd(s.text),
-      time: '',
+      time: s.interrupted ? '已中断，正在保存...' : '',
       date: '',
+      sortTs: startedAt,
       self: false,
       showName: props.type === 'group',
-      streaming: true,
+      streaming: !s.interrupted,
+      interrupted: s.interrupted,
       working: s.working,
       parts: (s.parts || []).map(p => p.type === 'text' ? { ...p, rendered: renderMd(p.text) } : p),
       toolCalls: s.toolCalls || [],
       toolsExpanded: getToolsExpanded(sid, true), // streaming = true
     })
   }
+  allMsgs.sort((a, b) => {
+    const ta = a.sortTs || 0
+    const tb = b.sortTs || 0
+    if (ta !== tb) return ta - tb
+    return String(a.id).localeCompare(String(b.id))
+  })
   const groups = []
   let prevSender = null
   let prevDate = null
@@ -1179,12 +1200,15 @@ async function send() {
   attachments.value = []
   if (inputEl.value) inputEl.value.style.height = 'auto'
 
-  // Auto-interrupt: cancel any active streams for mentioned agents in this room
+  // Auto-interrupt: cancel matching active streams but keep their bubbles visible
+  // until the backend saves them as interrupted messages. This preserves proof of
+  // partial work and keeps the next AI reply below the new user message.
   if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
     for (const [streamId, stream] of Object.entries(store.activeStreams)) {
-      if (stream.roomId === props.room.id && (mentions.includes(stream.agentId) || mentions.length === 0)) {
+      if (stream.roomId === props.room.id && (stream.threadId || null) === activeThreadId.value && (mentions.includes(stream.agentId) || mentions.length === 0)) {
         ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
-        delete store.activeStreams[streamId]
+        stream.interrupted = true
+        stream.working = false
       }
     }
     store.activeStreams = { ...store.activeStreams }

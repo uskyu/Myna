@@ -904,6 +904,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             "agent_id": agent["id"],
             "agent_name": agent.get("name") or full_agent.get("name", ""),
             "thread_id": thread_id,
+            "timestamp": int(datetime.now().timestamp() * 1000),
         })
 
         collected_tool_calls = []
@@ -1004,7 +1005,16 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # Give async callbacks time to complete (they're scheduled via run_coroutine_threadsafe)
         await asyncio.sleep(0.5)
 
-        if not reply and not collected_tool_calls:
+        if is_interrupted and not reply:
+            # Preserve partial work on user interruption. The streamed text is evidence
+            # of what the agent already did and should stay in chat/history for follow-up agents.
+            stream_info = ws_manager.active_streams.get(stream_id)
+            streamed_text = (stream_info.get("text", "") if stream_info else "")
+            if not streamed_text and stream_parts:
+                streamed_text = "".join(p.get("text", "") for p in stream_parts if p.get("type") == "text")
+            reply = streamed_text.strip() or None
+
+        if not reply and not collected_tool_calls and not stream_parts:
             # Send stream_end before continuing (no message to save)
             await ws_manager.notify_ui({"type": "stream_end", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "interrupted": is_interrupted})
             continue

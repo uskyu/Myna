@@ -50,6 +50,7 @@ class WSManager:
                 "thread_id": payload.get("thread_id"),
                 "text": "",
                 "tool_calls": [],
+                "timestamp": payload.get("timestamp"),
             }
             self._stream_last_activity[payload["stream_id"]] = time.time()
         elif payload.get("type") == "stream_end":

@@ -214,7 +214,17 @@ function _globalWSHandler(msg) {
     // Server reconnect: clear stale streams — server will replay active ones immediately after
     store.activeStreams = {}
   } else if (msg.type === 'stream_start') {
-    store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '', toolCalls: [], parts: [], working: true }
+    store.activeStreams[msg.stream_id] = {
+      roomId: msg.room_id,
+      agentId: msg.agent_id,
+      agentName: msg.agent_name,
+      threadId: msg.thread_id || null,
+      text: '',
+      toolCalls: [],
+      parts: [],
+      working: true,
+      startedAt: msg.timestamp || Date.now(),
+    }
     store.activeStreams = { ...store.activeStreams }
   } else if (msg.type === 'stream_end') {
     if (store.activeStreams[msg.stream_id]) {
