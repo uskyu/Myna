@@ -948,9 +948,21 @@ async def get_system_version():
 # Cache for update check (avoid hammering GitHub API)
 _update_cache = {"latest": None, "checked_at": 0}
 
+
+def _version_key(version: str) -> tuple:
+    """Return a comparable semantic-ish version key for tags like v0.7.6.
+
+    Avoid external dependencies and keep behavior consistent in Docker images.
+    Non-numeric suffixes are ignored for ordering.
+    """
+    import re
+    nums = re.findall(r"\d+", (version or "").lstrip("vV"))
+    return tuple(int(n) for n in nums[:4]) or (0,)
+
+
 @router.get("/system/check-update")
 async def check_for_update():
-    """Check GitHub for latest release. Server-side with caching (60s)."""
+    """Check GitHub tags for latest version. Server-side with caching (60s)."""
     import time, httpx
     now = time.time()
     # Return cached result if checked within 60s
@@ -959,10 +971,12 @@ async def check_for_update():
     else:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get("https://api.github.com/repos/uskyu/myna/releases/latest")
+                resp = await client.get("https://api.github.com/repos/uskyu/myna/tags?per_page=100")
                 if resp.status_code == 200:
-                    data = resp.json()
-                    remote = (data.get("tag_name") or "").lstrip("v")
+                    tags = resp.json()
+                    tag_names = [t.get("name", "") for t in tags if t.get("name")]
+                    semver_tags = [t for t in tag_names if _version_key(t) != (0,)]
+                    remote = max(semver_tags, key=_version_key).lstrip("v") if semver_tags else ""
                     _update_cache["latest"] = remote
                     _update_cache["checked_at"] = now
                 else:
@@ -972,7 +986,7 @@ async def check_for_update():
 
     in_docker = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
     current = MYNA_VERSION.lstrip("v")
-    available = bool(remote and remote != current)
+    available = bool(remote and _version_key(remote) > _version_key(current))
     return {
         "ok": True,
         "current": current,
