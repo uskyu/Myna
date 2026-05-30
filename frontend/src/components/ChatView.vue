@@ -62,7 +62,7 @@
             <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
             <div class="msg-meta-row">
               <span class="msg-time">{{ msg.streaming ? (msg.text ? '生成中...' : '思考中...') : msg.time }}</span>
-              <!-- Message actions (edit/delete/mention/retry) — always visible for non-streaming -->
+              <!-- Message actions (edit/delete/mention/retry/copy) — always visible for non-streaming -->
               <span v-if="!msg.streaming && !String(msg.id).startsWith('tmp-')" class="msg-actions">
                 <button class="msg-action-btn danger" @click.stop="deleteMsg(msg)" title="删除">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -70,8 +70,11 @@
                 <button class="msg-action-btn" @click.stop="startEditMsg(msg)" title="编辑">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
-                <button class="msg-action-btn retry-btn" @click.stop="retryMsg(msg)" title="重试">
+                <button v-if="group.self" class="msg-action-btn retry-btn" @click.stop="retryMsg(msg)" title="重试">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                </button>
+                <button v-if="!group.self" class="msg-action-btn copy-btn" @click.stop="copyMsg(msg)" title="复制">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 </button>
                 <button v-if="!group.self && msg.sender_name" class="msg-action-btn mention-btn" @click.stop="onMentionClick(msg)" title="@提及">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>
@@ -798,6 +801,24 @@ async function retryMsg(msg) {
       await nextTick()
       send()
     }
+  }
+}
+
+async function copyMsg(msg) {
+  try {
+    await navigator.clipboard.writeText(msg.text)
+    showToast('已复制到剪贴板')
+  } catch (err) {
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea')
+    textarea.value = msg.text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    showToast('已复制到剪贴板')
   }
 }
 
