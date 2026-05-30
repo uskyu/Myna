@@ -212,13 +212,31 @@
     </div>
 
     <!-- Input bar (hidden when info panel showing) -->
-    <div v-if="!(type === 'group' && showSettings)" class="input-bar">
-      <!-- Shortcut bar (above input) -->
-      <div v-if="showShortcutBar" class="shortcut-bar">
-        <button v-for="cmd in shortcutCommands" :key="cmd.id" class="shortcut-chip" @click="applyShortcut(cmd)" :title="cmd.label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path :d="cmd.icon"/></svg>
-          <span>{{ cmd.label }}</span>
-        </button>
+    <div
+      v-if="!(type === 'group' && showSettings)"
+      class="input-bar"
+      :class="{ 'drag-over': isDraggingFiles, uploading: isUploadingFiles }"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="onDragOver"
+      @dragleave="onDragLeave"
+      @drop.prevent="onDropFiles"
+    >
+      <div v-if="isDraggingFiles" class="drop-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span>松开即可添加到输入框</span>
+      </div>
+      <!-- Shortcut commands floating card -->
+      <div v-if="showShortcutBar" class="shortcut-card">
+        <div class="shortcut-card-head">
+          <span>快捷指令</span>
+          <button class="shortcut-close" @click="showShortcutBar = false">×</button>
+        </div>
+        <div class="shortcut-card-grid">
+          <button v-for="cmd in shortcutCommands" :key="cmd.id" class="shortcut-card-item" @click="applyShortcut(cmd)" :title="cmd.label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="cmd.icon"/></svg>
+            <span>{{ cmd.label }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Mention popup -->
@@ -248,19 +266,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           <span>添加图片</span>
         </div>
-        <div class="plus-menu-item" @mousedown.prevent="showShortcutMenu = true; showPlusMenu = false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          <span>快捷指令</span>
-        </div>
-      </div>
-
-      <!-- Shortcut commands popup -->
-      <div v-if="showShortcutMenu" class="plus-menu-popup shortcut-menu">
-        <div class="shortcut-header">快捷指令</div>
-        <div class="plus-menu-item" v-for="cmd in shortcutCommands" :key="cmd.id" @mousedown.prevent="applyShortcut(cmd)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><path :d="cmd.icon"/></svg>
-          <span>{{ cmd.label }}</span>
-        </div>
       </div>
 
       <!-- Attachment preview -->
@@ -275,8 +280,11 @@
         </div>
       </div>
 
-      <button class="file-btn plus-btn" @click="togglePlusMenu" title="更多">
+      <button class="file-btn plus-btn" :class="{ active: showPlusMenu }" @click="togglePlusMenu" title="上传文件">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="shortcut-trigger-btn" :class="{ active: showShortcutBar }" @click="toggleShortcutBar" title="快捷指令">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       </button>
       <input ref="fileInput" type="file" multiple style="display:none" @change="onFiles">
       <input ref="imageInput" type="file" multiple accept="image/*" style="display:none" @change="onFiles">
@@ -329,12 +337,16 @@ const typingAgent = ref(null)
 const showSettings = ref(false)
 const pendingApproval = ref(null)
 const attachments = ref([])
+const isDraggingFiles = ref(false)
+const isUploadingFiles = ref(false)
+let dragDepth = 0
 const threads = ref([])
 const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
-const showShortcutMenu = ref(false)
 const showShortcutBar = ref(false)
+
+const hasActiveStreamInRoom = computed(() => Object.values(store.activeStreams).some(s => s.roomId === props.room.id))
 
 // Shortcut commands (like TG Hermes slash commands)
 const shortcutCommands = [
@@ -420,6 +432,7 @@ function onMentionClick(msg) {
 function togglePlusMenu() {
   showPlusMenu.value = !showPlusMenu.value
   if (showPlusMenu.value) {
+    showShortcutBar.value = false
     // Close on outside click
     setTimeout(() => {
       document.addEventListener('click', closePlusMenu, { once: true })
@@ -428,7 +441,19 @@ function togglePlusMenu() {
 }
 function closePlusMenu() {
   showPlusMenu.value = false
-  showShortcutMenu.value = false
+}
+function toggleShortcutBar() {
+  showShortcutBar.value = !showShortcutBar.value
+  if (showShortcutBar.value) {
+    showPlusMenu.value = false
+    setTimeout(() => {
+      document.addEventListener('click', closeShortcutBar, { once: true })
+    }, 0)
+  }
+}
+function closeShortcutBar(e) {
+  if (e?.target?.closest?.('.shortcut-card, .shortcut-trigger-btn')) return
+  showShortcutBar.value = false
 }
 function onPlusUploadFile() {
   showPlusMenu.value = false
@@ -439,7 +464,6 @@ function onPlusUploadImage() {
   imageInput.value?.click()
 }
 function applyShortcut(cmd) {
-  showShortcutMenu.value = false
   showShortcutBar.value = false
 
   // Direct-execute commands that don't need agent interaction
@@ -702,7 +726,10 @@ const messageGroups = computed(() => {
   return groups
 })
 
-async function fetchMessages() {
+async function fetchMessages({ keepPosition = false, forceScroll = false } = {}) {
+  const area = messagesArea.value
+  const wasNearBottom = !area || (area.scrollHeight - area.scrollTop - area.clientHeight < 120)
+  const prevHeight = area?.scrollHeight || 0
   let data
   if (activeThreadId.value) {
     data = await api('GET', `/admin/threads/${activeThreadId.value}/messages?limit=100`)
@@ -717,7 +744,11 @@ async function fetchMessages() {
   const unsaved = optimistic.filter(om => !newMsgs.some(sm => sm.sender_id === 'user' && sm.text === om.text))
   messages.value = [...newMsgs, ...unsaved]
   await nextTick()
-  scrollToBottomIfNeeded()
+  if (keepPosition && area) {
+    area.scrollTop += area.scrollHeight - prevHeight
+  } else if (forceScroll || wasNearBottom) {
+    scrollToBottom()
+  }
 }
 
 async function fetchThreads() {
@@ -728,7 +759,7 @@ async function fetchThreads() {
 function selectThread(threadId) {
   activeThreadId.value = threadId
   messages.value = []
-  fetchMessages()
+  fetchMessages({ forceScroll: true })
 }
 
 async function createThread() {
@@ -747,7 +778,7 @@ async function deleteThread(threadId) {
     activeThreadId.value = null
   }
   await fetchThreads()
-  fetchMessages()
+  fetchMessages({ forceScroll: true })
 }
 
 // === Task 3: Thread rename ===
@@ -1004,6 +1035,70 @@ function triggerAt() {
 }
 
 // === File upload ===
+function getEventFiles(e) {
+  return Array.from(e?.dataTransfer?.files || []).filter(f => f && f.size >= 0)
+}
+
+function hasDraggedFiles(e) {
+  return Array.from(e?.dataTransfer?.types || []).includes('Files')
+}
+
+async function uploadFiles(files, source = '上传') {
+  if (!files?.length) return
+  isUploadingFiles.value = true
+  const token = localStorage.getItem('hub_auth_token')
+  let okCount = 0
+  for (const f of files) {
+    const fd = new FormData()
+    fd.append('file', f, f.name || `${source}-${Date.now()}.${f.type?.split('/')[1] || 'bin'}`)
+    try {
+      const headers = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const r = await fetch('/admin/upload', { method: 'POST', body: fd, headers })
+      const data = await r.json()
+      if (data.ok) {
+        attachments.value.push({ url: data.url, type: data.type, name: data.name, size: data.size })
+        okCount++
+      } else {
+        showToast(`${source}失败: ` + (data.error || '未知错误'))
+      }
+    } catch (err) {
+      showToast(`${source}失败: ` + err.message)
+    }
+  }
+  isUploadingFiles.value = false
+  if (okCount) {
+    inputEl.value?.focus()
+    showToast(okCount === 1 ? '已添加到输入框' : `已添加 ${okCount} 个文件`)
+  }
+}
+
+function onDragEnter(e) {
+  if (!hasDraggedFiles(e)) return
+  dragDepth++
+  isDraggingFiles.value = true
+}
+
+function onDragOver(e) {
+  if (!hasDraggedFiles(e)) return
+  e.dataTransfer.dropEffect = 'copy'
+  isDraggingFiles.value = true
+}
+
+function onDragLeave(e) {
+  if (!hasDraggedFiles(e)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) isDraggingFiles.value = false
+}
+
+async function onDropFiles(e) {
+  dragDepth = 0
+  isDraggingFiles.value = false
+  const files = getEventFiles(e)
+  if (!files.length) return
+  await uploadFiles(files, '拖拽上传')
+}
+
 async function onPaste(e) {
   const items = e.clipboardData?.items
   if (!items) return
@@ -1017,46 +1112,12 @@ async function onPaste(e) {
   if (!files.length) return
   // Prevent default paste of image as text
   e.preventDefault()
-  const token = localStorage.getItem('hub_auth_token')
-  for (const f of files) {
-    const fd = new FormData()
-    fd.append('file', f, f.name || `paste-${Date.now()}.${f.type.split('/')[1] || 'png'}`)
-    try {
-      const headers = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-      const r = await fetch('/admin/upload', { method: 'POST', body: fd, headers })
-      const data = await r.json()
-      if (data.ok) {
-        attachments.value.push({ url: data.url, type: data.type, name: data.name, size: data.size })
-      } else {
-        showToast('粘贴上传失败: ' + (data.error || '未知错误'))
-      }
-    } catch (err) {
-      showToast('粘贴上传失败: ' + err.message)
-    }
-  }
+  await uploadFiles(files, '粘贴上传')
 }
 
 async function onFiles(e) {
   const files = Array.from(e.target.files || [])
-  const token = localStorage.getItem('hub_auth_token')
-  for (const f of files) {
-    const fd = new FormData()
-    fd.append('file', f)
-    try {
-      const headers = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-      const r = await fetch('/admin/upload', { method: 'POST', body: fd, headers })
-      const data = await r.json()
-      if (data.ok) {
-        attachments.value.push({ url: data.url, type: data.type, name: data.name, size: data.size })
-      } else {
-        showToast('上传失败: ' + (data.error || '未知错误'))
-      }
-    } catch (err) {
-      showToast('上传失败: ' + err.message)
-    }
-  }
+  await uploadFiles(files, '上传')
   e.target.value = ''
 }
 
@@ -1231,13 +1292,15 @@ function handleWS(msg) {
     // Stream tokens are now handled globally in store.js — just scroll
     nextTick(scrollToBottomIfNeeded)
   } else if (msg.type === 'stream_end' && msg.room_id === props.room.id) {
-    // activeStreams cleanup is handled globally; just refresh messages
-    setTimeout(fetchMessages, 300)
+    // new_message arrives before stream_end; let stream_end do the final refresh
+    if (!store.activeStreams[msg.stream_id]) {
+      setTimeout(() => fetchMessages({ forceScroll: true }), 120)
+    }
   } else if (msg.type === 'new_message' && msg.room_id === props.room.id) {
     // Only fetch if thread matches current view
     const msgThread = msg.thread_id || null
-    if (msgThread === activeThreadId.value) {
-      fetchMessages()
+    if (msgThread === activeThreadId.value && !hasActiveStreamInRoom.value) {
+      fetchMessages({ forceScroll: true })
     }
     // Refresh threads list in case a workflow created a new thread
     fetchThreads()
@@ -1264,9 +1327,11 @@ function handleWS(msg) {
 onMounted(() => {
   clearUnread(props.room.id)
   currentRoomId.value = props.room.id
-  fetchMessages()
+  fetchMessages({ forceScroll: true })
   fetchThreads()
-  pollTimer = setInterval(fetchMessages, 3000)
+  pollTimer = setInterval(() => {
+    if (!hasActiveStreamInRoom.value) fetchMessages({ keepPosition: true })
+  }, 3000)
   ws.onMessage(handleWS)
   // If there are already active streams for this room (e.g. from WS reconnect before mount),
   // scroll to bottom to show the generating bubble

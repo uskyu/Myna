@@ -968,6 +968,33 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-color: var(--accent);
   box-shadow: var(--shadow-glow);
 }
+.input-bar.drag-over {
+  border-top-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 28%, var(--surface));
+}
+.input-bar.drag-over textarea {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+.input-bar.uploading { opacity: 0.82; }
+.drop-hint {
+  position: absolute;
+  inset: 8px 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+  box-shadow: var(--shadow-glow);
+}
+.drop-hint svg { width: 18px; height: 18px; }
 .input-bar .send-btn {
   width: 38px;
   height: 38px;
@@ -2132,19 +2159,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   color: var(--accent);
 }
 
-/* Shortcut menu */
-.shortcut-menu {
-  min-width: 180px;
-}
-.shortcut-header {
-  padding: 8px 14px 4px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-}
-
 /* Plus button rotation when active */
 .input-bar .plus-btn.active {
   transform: rotate(45deg);
@@ -2393,38 +2407,89 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .action-bar-btn svg { width: 14px; height: 14px; }
 
-/* === Shortcut Bar (above input) === */
-.shortcut-bar {
-  display: flex;
-  gap: 6px;
-  padding: 6px 0 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  width: 100%;
-  order: -1;
-}
-.shortcut-bar::-webkit-scrollbar { display: none; }
-.shortcut-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-dim);
-  background: var(--bg-2);
+/* === Shortcut Command Floating Card === */
+.shortcut-trigger-btn {
+  background: transparent;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  color: var(--text-2);
   cursor: pointer;
-  white-space: nowrap;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
 }
-.shortcut-chip:hover {
+.shortcut-trigger-btn:hover,
+.shortcut-trigger-btn.active {
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.shortcut-trigger-btn svg { width: 18px; height: 18px; }
+.shortcut-card {
+  position: absolute;
+  left: 58px;
+  bottom: calc(100% + 10px);
+  width: min(440px, calc(100vw - 28px));
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent-soft));
+  box-shadow: var(--shadow-lg);
+  z-index: 80;
+  animation: slideUp 0.16s ease;
+}
+.shortcut-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 8px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+.shortcut-close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.shortcut-close:hover { background: var(--surface2); color: var(--text); }
+.shortcut-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+.shortcut-card-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.shortcut-card-item:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(45,106,79,0.08);
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--bg));
+  transform: translateY(-1px);
 }
-.shortcut-chip svg { width: 12px; height: 12px; flex-shrink: 0; }
+.shortcut-card-item svg { width: 15px; height: 15px; flex-shrink: 0; }
 
 /* === Clone Confirmation Popup === */
 .clone-confirm-popup {
