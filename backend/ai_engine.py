@@ -907,12 +907,19 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         })
 
         collected_tool_calls = []
+        stream_parts = []
 
         async def on_token(chunk):
+            if stream_parts and stream_parts[-1].get("type") == "text":
+                stream_parts[-1]["text"] += chunk
+            else:
+                stream_parts.append({"type": "text", "text": chunk})
             await ws_manager.notify_ui({"type": "stream_token", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "chunk": chunk})
 
         async def on_tool_call(info):
-            collected_tool_calls.append({"name": info["name"], "summary": info["summary"], "status": "running", "result": None})
+            tool_part = {"type": "tool", "name": info["name"], "summary": info["summary"], "status": "running", "result": None}
+            collected_tool_calls.append(tool_part)
+            stream_parts.append(tool_part)
             await ws_manager.notify_ui({"type": "tool_call", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "tool": info["name"], "args_summary": info["summary"], "timestamp": int(datetime.now().timestamp() * 1000)})
 
         async def on_tool_result(info):
@@ -1013,7 +1020,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             else:
                 reply += "\n\n⏸️ *已被中断*"
 
-        metadata = {"tool_calls": collected_tool_calls} if collected_tool_calls else None
+        metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else None
         if is_interrupted:
             metadata = metadata or {}
             metadata["interrupted"] = True

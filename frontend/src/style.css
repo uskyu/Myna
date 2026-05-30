@@ -1701,6 +1701,16 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   transition: background 0.15s ease;
 }
 .working-header:hover { background: var(--surface); }
+.working-header.static { cursor: default; }
+.working-header.static:hover { background: transparent; }
+.working-bubble.inline-tool {
+  margin: 8px 0;
+  max-width: 100%;
+}
+.working-bubble.inline-tool .working-steps {
+  padding-bottom: 8px;
+}
+.working-done-icon.error { color: var(--danger, #dc2626); }
 .working-spinner {
   width: 12px; height: 12px;
   border: 2px solid var(--border-strong);

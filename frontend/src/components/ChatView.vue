@@ -33,33 +33,64 @@
         <div class="msg-group" :class="{ self: group.self }">
           <div v-for="(msg, mi) in group.messages" :key="msg.id || mi" class="msg" :class="{ self: group.self, streaming: msg.streaming }">
             <div v-if="msg.showName" class="sender-name">{{ msg.sender_name }}</div>
-            <!-- Working bubble (tool calls - streaming or saved) -->
-            <div v-if="msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded, done: !msg.streaming }">
-              <div class="working-header" @click.stop="toggleToolsExpand(msg)">
-                <div v-if="msg.streaming" class="working-spinner"></div>
-                <svg v-else class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                <span class="working-label">{{ msg.streaming ? '工作中' : '工具调用' }}</span>
-                <span class="working-count">{{ msg.toolCalls.length }} 步</span>
-                <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-              </div>
-              <div v-if="msg.toolsExpanded" class="working-steps">
-                <div v-for="(tc, ti) in msg.toolCalls" :key="ti" class="tool-step" :class="{ running: tc.status === 'running', done: tc.status === 'done', error: tc.status === 'error', flash: tc.flash }">
-                  <div class="step-icon">
-                    <svg v-if="tc.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                    <svg v-else-if="tc.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <!-- Text/tools content in chronological order -->
+            <template v-if="msg.parts && msg.parts.length">
+              <template v-for="(part, pi) in msg.parts" :key="pi">
+                <div v-if="part.type === 'tool'" class="working-bubble inline-tool" :class="{ done: part.status !== 'running' }">
+                  <div class="working-header static">
+                    <div v-if="part.status === 'running'" class="working-spinner"></div>
+                    <svg v-else-if="part.status === 'done'" class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                    <svg v-else class="working-done-icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <span class="working-label">{{ part.status === 'running' ? '调用工具' : '工具完成' }}</span>
+                    <span class="working-count">{{ toolLabel(part.name) }}</span>
                   </div>
-                  <div class="step-body">
-                    <div class="step-name">{{ toolLabel(tc.name) }}</div>
-                    <div class="step-summary">{{ tc.summary }}</div>
-                    <div v-if="tc.result" class="step-result" :class="{ error: tc.status === 'error' }">{{ tc.result }}</div>
+                  <div class="working-steps">
+                    <div class="tool-step" :class="{ running: part.status === 'running', done: part.status === 'done', error: part.status === 'error' }">
+                      <div class="step-icon">
+                        <svg v-if="part.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg v-else-if="part.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      </div>
+                      <div class="step-body">
+                        <div class="step-name">{{ toolLabel(part.name) }}</div>
+                        <div class="step-summary">{{ part.summary }}</div>
+                        <div v-if="part.result" class="step-result" :class="{ error: part.status === 'error' }">{{ part.result }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="msg-text" v-html="part.rendered + (msg.streaming && pi === msg.parts.length - 1 ? '<span class=stream-cursor>▊</span>' : '')"></div>
+              </template>
+            </template>
+            <template v-else>
+              <!-- Working bubble (tool calls - streaming or saved) -->
+              <div v-if="msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded, done: !msg.streaming }">
+                <div class="working-header" @click.stop="toggleToolsExpand(msg)">
+                  <div v-if="msg.streaming" class="working-spinner"></div>
+                  <svg v-else class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                  <span class="working-label">{{ msg.streaming ? '工作中' : '工具调用' }}</span>
+                  <span class="working-count">{{ msg.toolCalls.length }} 步</span>
+                  <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div v-if="msg.toolsExpanded" class="working-steps">
+                  <div v-for="(tc, ti) in msg.toolCalls" :key="ti" class="tool-step" :class="{ running: tc.status === 'running', done: tc.status === 'done', error: tc.status === 'error', flash: tc.flash }">
+                    <div class="step-icon">
+                      <svg v-if="tc.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                      <svg v-else-if="tc.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                      <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </div>
+                    <div class="step-body">
+                      <div class="step-name">{{ toolLabel(tc.name) }}</div>
+                      <div class="step-summary">{{ tc.summary }}</div>
+                      <div v-if="tc.result" class="step-result" :class="{ error: tc.status === 'error' }">{{ tc.result }}</div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <!-- Text content (shown after tools or for non-tool messages) -->
-            <div v-if="msg.streaming && !msg.text && msg.toolCalls && msg.toolCalls.length" class="msg-text working-placeholder"></div>
-            <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
+              <!-- Text content (shown after tools or for non-tool messages) -->
+              <div v-if="msg.streaming && !msg.text && msg.toolCalls && msg.toolCalls.length" class="msg-text working-placeholder"></div>
+              <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
+            </template>
             <div class="msg-meta-row">
               <span class="msg-time">{{ msg.streaming ? (msg.text ? '生成中...' : '思考中...') : msg.time }}</span>
               <!-- Message actions (edit/delete/mention/retry/copy) — always visible for non-streaming -->
@@ -604,13 +635,17 @@ const messageGroups = computed(() => {
   const allMsgs = []
   messages.value.forEach(m => {
     const self = m.sender_id === 'user' || m.sender_id === 'system'
-    // Parse metadata for tool_calls
+    // Parse metadata for tool_calls and chronological parts
     let toolCalls = null
+    let parts = null
     if (m.metadata) {
       try {
         const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
         if (meta.tool_calls && meta.tool_calls.length > 0) {
           toolCalls = meta.tool_calls
+        }
+        if (meta.parts && meta.parts.length > 0) {
+          parts = meta.parts.map(p => p.type === 'text' ? { ...p, rendered: cachedRenderMd(p.text, `${m.id}-part-${p.text?.length || 0}`) } : p)
         }
       } catch {}
     }
@@ -625,6 +660,7 @@ const messageGroups = computed(() => {
       self,
       showName: !self && (props.type === 'group' || !self),
       toolCalls,
+      parts,
       toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
     })
   })
@@ -643,6 +679,7 @@ const messageGroups = computed(() => {
       showName: props.type === 'group',
       streaming: true,
       working: s.working,
+      parts: (s.parts || []).map(p => p.type === 'text' ? { ...p, rendered: renderMd(p.text) } : p),
       toolCalls: s.toolCalls || [],
       toolsExpanded: getToolsExpanded(sid, true), // streaming = true
     })

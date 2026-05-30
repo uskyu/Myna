@@ -214,7 +214,7 @@ function _globalWSHandler(msg) {
     // Server reconnect: clear stale streams — server will replay active ones immediately after
     store.activeStreams = {}
   } else if (msg.type === 'stream_start') {
-    store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '', toolCalls: [], working: true }
+    store.activeStreams[msg.stream_id] = { roomId: msg.room_id, agentId: msg.agent_id, agentName: msg.agent_name, text: '', toolCalls: [], parts: [], working: true }
     store.activeStreams = { ...store.activeStreams }
   } else if (msg.type === 'stream_end') {
     if (store.activeStreams[msg.stream_id]) {
@@ -229,7 +229,10 @@ function _globalWSHandler(msg) {
     // Handle tool_call at store level so reconnecting clients get them regardless of which ChatView is mounted
     const stream = store.activeStreams[msg.stream_id]
     if (stream) {
-      stream.toolCalls.push({ name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp })
+      const toolPart = { type: 'tool', name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp }
+      stream.toolCalls.push(toolPart)
+      stream.parts = stream.parts || []
+      stream.parts.push(toolPart)
       store.activeStreams = { ...store.activeStreams }
     }
   } else if (msg.type === 'tool_result') {
@@ -241,6 +244,11 @@ function _globalWSHandler(msg) {
         last.status = msg.ok ? 'done' : 'error'
         last.result = msg.output_preview || msg.output || ''
       }
+      const lastPart = stream.parts?.findLast?.(t => t.type === 'tool' && t.name === msg.tool && t.status === 'running')
+      if (lastPart && lastPart !== last) {
+        lastPart.status = msg.ok ? 'done' : 'error'
+        lastPart.result = msg.output_preview || msg.output || ''
+      }
       store.activeStreams = { ...store.activeStreams }
     }
   } else if (msg.type === 'stream_token') {
@@ -249,6 +257,13 @@ function _globalWSHandler(msg) {
       // Don't set working=false here — tools may still be running
       // working is only cleared on stream_end
       stream.text += msg.chunk
+      stream.parts = stream.parts || []
+      const lastPart = stream.parts[stream.parts.length - 1]
+      if (lastPart && lastPart.type === 'text') {
+        lastPart.text += msg.chunk
+      } else {
+        stream.parts.push({ type: 'text', text: msg.chunk })
+      }
       store.activeStreams = { ...store.activeStreams }
     }
   } else if (msg.type === 'stream_error') {
