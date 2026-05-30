@@ -79,6 +79,20 @@
     <div class="info-section">
       <h4>⚙️ 协作设置</h4>
       <div class="setting-row">
+        <label class="setting-label">协作模式</label>
+        <select
+          class="setting-input setting-select"
+          v-model="roomSettings.collaboration_mode"
+          @change="saveSettings"
+        >
+          <option value="guided">引导</option>
+          <option value="manual">手动</option>
+          <option value="free">自由</option>
+          <option value="strict">严格</option>
+        </select>
+      </div>
+      <div class="setting-hint">引导模式允许主动交接，但会抑制感谢、总结、重复 @ 这类无效循环</div>
+      <div class="setting-row">
         <label class="setting-label">最大协作轮数</label>
         <input
           type="number"
@@ -92,6 +106,19 @@
       </div>
       <div class="setting-hint">设为 0 表示不限制，智能体可自主规划协作深度</div>
       <div class="setting-row" style="margin-top:10px">
+        <label class="setting-label">上下文策略</label>
+        <select
+          class="setting-input setting-select"
+          v-model="roomSettings.context_strategy"
+          @change="saveSettings"
+        >
+          <option value="inherit">全局</option>
+          <option value="fixed">固定</option>
+          <option value="auto">自动</option>
+        </select>
+      </div>
+      <div class="setting-hint">全局模式使用系统设置；自动模式会按模型上下文估算消息窗口并压缩旧消息</div>
+      <div class="setting-row" style="margin-top:10px">
         <label class="setting-label">上下文消息数</label>
         <input
           type="number"
@@ -101,6 +128,7 @@
           min="0"
           max="200"
           placeholder="全局默认"
+          :disabled="roomSettings.context_strategy !== 'fixed'"
         >
       </div>
       <div class="setting-hint">智能体能看到的最近消息条数。设为 0 表示使用全局设置</div>
@@ -324,7 +352,9 @@ const form = reactive({
   description: props.room.description || '',
 })
 const roomSettings = reactive({
+  collaboration_mode: 'guided',
   max_chain_depth: 5,
+  context_strategy: 'inherit',
   context_messages_limit: 0,
   collaboration_guide: '',
   handoff_rules: [],
@@ -347,7 +377,9 @@ async function load() {
     if (room.settings_json) {
       try {
         const s = typeof room.settings_json === 'string' ? JSON.parse(room.settings_json) : room.settings_json
+        if (s.collaboration_mode !== undefined) roomSettings.collaboration_mode = normalizeCollaborationMode(s.collaboration_mode)
         if (s.max_chain_depth !== undefined) roomSettings.max_chain_depth = s.max_chain_depth
+        if (s.context_strategy !== undefined) roomSettings.context_strategy = normalizeContextStrategy(s.context_strategy)
         if (s.context_messages_limit !== undefined) roomSettings.context_messages_limit = s.context_messages_limit
         roomSettings.workspace_path = s.workspace_path || ''
         if (s.collaboration_guide !== undefined) {
@@ -435,14 +467,18 @@ async function saveField(immediate = false) {
 }
 
 async function saveSettings() {
+  roomSettings.collaboration_mode = normalizeCollaborationMode(roomSettings.collaboration_mode)
   const chainVal = Math.max(0, Math.min(50, parseInt(roomSettings.max_chain_depth) || 0))
   roomSettings.max_chain_depth = chainVal
+  roomSettings.context_strategy = normalizeContextStrategy(roomSettings.context_strategy)
   const ctxVal = Math.max(0, Math.min(200, parseInt(roomSettings.context_messages_limit) || 0))
   roomSettings.context_messages_limit = ctxVal
   roomSettings.handoff_rules.forEach(syncHandoffKeywords)
   await api('PUT', `/admin/rooms/${props.room.id}`, {
     settings_json: {
+      collaboration_mode: roomSettings.collaboration_mode,
       max_chain_depth: chainVal,
+      context_strategy: roomSettings.context_strategy,
       context_messages_limit: ctxVal,
       collaboration_guide: roomSettings.collaboration_guide,
       handoff_rules: (roomSettings.handoff_rules || []).map(({ keywordsText, ...rule }) => rule),
@@ -450,6 +486,14 @@ async function saveSettings() {
     }
   })
   await load()
+}
+
+function normalizeCollaborationMode(mode) {
+  return ['manual', 'free', 'guided', 'strict'].includes(mode) ? mode : 'guided'
+}
+
+function normalizeContextStrategy(strategy) {
+  return ['inherit', 'fixed', 'auto'].includes(strategy) ? strategy : 'inherit'
 }
 
 function normalizeHandoffRules(rules) {
@@ -869,6 +913,14 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
   background: var(--surface2);
   color: var(--text);
   text-align: center;
+}
+.setting-select {
+  width: 104px;
+  text-align: left;
+}
+.setting-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .setting-input:focus {
   outline: none;

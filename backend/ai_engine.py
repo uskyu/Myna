@@ -2,6 +2,8 @@
 AI Engine - Integrates Hermes Agent (AIAgent) directly as the intelligence layer.
 Each agent gets its own Hermes profile with independent memory, skills, and tools.
 """
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -126,6 +128,118 @@ def _compress_history(history: list, keep_recent: int = 5, model_context_limit: 
     else:
         print(f"[AI] 压缩完成: 保留最近{keep_recent}轮")
         return recent
+
+
+def _room_collaboration_mode(room_settings: dict | None) -> str:
+    mode = str((room_settings or {}).get("collaboration_mode") or "guided").strip().lower()
+    return mode if mode in {"manual", "free", "guided", "strict"} else "guided"
+
+
+def _room_context_strategy(room_settings: dict | None) -> str:
+    strategy = str((room_settings or {}).get("context_strategy") or "inherit").strip().lower()
+    return strategy if strategy in {"inherit", "fixed", "auto"} else "inherit"
+
+
+def _infer_model_context_limit(model_config: dict | None) -> int:
+    if not model_config:
+        return 128000
+    model_name = str(model_config.get("model") or "").lower()
+    if "gpt-3.5" in model_name:
+        return 16000
+    if "gpt-4.1" in model_name or "gpt-5" in model_name or "o3" in model_name or "o4" in model_name:
+        return 128000
+    if "gpt-4" in model_name:
+        return 128000
+    if "claude" in model_name:
+        return 200000
+    if "gemini" in model_name:
+        return 1000000
+    if "deepseek" in model_name or "qwen" in model_name or "kimi" in model_name or "mimo" in model_name:
+        return 128000
+    return 128000
+
+
+def _resolve_context_limit(db, room_settings: dict, model_config: dict | None = None) -> int:
+    strategy = _room_context_strategy(room_settings)
+    raw_room_limit = room_settings.get("context_messages_limit")
+    try:
+        room_limit = int(raw_room_limit)
+    except (TypeError, ValueError):
+        room_limit = 0
+
+    if strategy == "fixed":
+        return max(1, min(200, room_limit or 20))
+
+    if strategy == "auto":
+        model_limit = _infer_model_context_limit(model_config)
+        if model_limit <= 16000:
+            auto_limit = 24
+        elif model_limit <= 64000:
+            auto_limit = 40
+        elif model_limit <= 128000:
+            auto_limit = 60
+        else:
+            auto_limit = 80
+        return max(1, min(200, auto_limit))
+
+    try:
+        global_limit = db.get_hub_setting("context_messages_limit")
+        inherited = int(global_limit) if global_limit else 20
+    except Exception:
+        inherited = 20
+    return max(1, min(200, inherited))
+
+
+def _collaboration_keep_recent(room_settings: dict, context_limit: int) -> int:
+    if _room_context_strategy(room_settings) == "auto":
+        return max(8, min(16, int(context_limit / 4)))
+    return 5
+
+
+def _is_low_value_handoff_reply(reply: str, has_tool_calls: bool = False) -> bool:
+    if has_tool_calls:
+        return False
+    body = re.sub(r"@[^\s@,，.。;；:：!！?？]+", "", reply or "")
+    text = re.sub(r"\s+", "", body).lower()
+    if not text:
+        return True
+
+    low_value_markers = [
+        "收到", "同意", "认可", "没有补充", "暂无补充", "无补充", "总结到位",
+        "谢谢", "感谢", "辛苦", "好的", "可以", "没问题", "等待用户",
+        "流程已明确", "随时可以", "先这样", "以上", "完毕",
+    ]
+    action_markers = [
+        "请", "需要", "修复", "复测", "评审", "验收",
+        "确认", "实现", "检查", "执行", "运行", "报错", "失败",
+        "bug", "issue", "review", "test", "fix", "implement", "verify",
+    ]
+
+    if any(marker in text for marker in action_markers):
+        return False
+    if any(marker in text for marker in low_value_markers) and len(text) <= 120:
+        return True
+    return False
+
+
+def _is_tasklike_handoff_reply(reply: str, has_tool_calls: bool = False) -> bool:
+    if has_tool_calls:
+        return True
+    text = re.sub(r"@[^\s@,，.。;；:：!！?？]+", "", reply or "").lower()
+    task_markers = [
+        "请", "需要", "交给", "接手", "继续", "复测", "评审", "验收",
+        "修复", "实现", "开发", "检查", "确认", "阻塞", "失败", "报错",
+        "bug", "issue", "review", "test", "fix", "implement", "verify",
+    ]
+    return any(marker in text for marker in task_markers)
+
+
+def _merge_metadata(metadata: dict | None, extra: dict) -> dict:
+    merged = dict(metadata or {})
+    for key, value in extra.items():
+        if value is not None:
+            merged[key] = value
+    return merged
 
 
 
@@ -317,6 +431,7 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
     prompt += "\n\n回复使用 Markdown 格式，保持简洁专业。直接执行用户的指令。"
 
     room_settings = room_settings or {}
+    collaboration_mode = _room_collaboration_mode(room_settings)
     room_description = (room or {}).get("description") or room_settings.get("room_description") or ""
     guide_text = room_settings.get("collaboration_guide", "")
     unified_guide = room_settings.get("room_guide") or ""
@@ -369,18 +484,27 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
     if room_type == "group" and other_agents:
         agent_list = "\n".join([f"  - @{a['name']}：{a.get('description') or '通用智能体'}" for a in other_agents[:8]])
+        mode_label = {
+            "manual": "手动：只有用户明确 @ 时才会触发其他智能体。",
+            "free": "自由：可以主动 @ 其他智能体，但必须避免无价值循环。",
+            "guided": "引导：可以在有明确任务、评审、测试、修复需要时主动交接；闲聊、感谢、总结不触发交接。",
+            "strict": "严格：优先遵守房间自动交接规则，避免仅凭正文 @ 发起新链路。",
+        }.get(collaboration_mode, "引导：可以在有明确任务需要时主动交接。")
         prompt += f"""
 
 [群聊协作机制]
 当前群聊中的其他智能体：
 {agent_list}
 
+协作模式：{collaboration_mode}。{mode_label}
+
 协作规则：
 1. 当任务超出你的职责范围时，直接在回复中用 @名字 请求对方协助
 2. @提及格式：直接写 @名字（不要加粗、不要加引号、不要加括号），例如：@程序开发 请帮我修复这个bug
 3. 被其他智能体@时，你必须响应并执行请求
 4. 完成协作任务后，@回请求方告知结果
-5. 不要自己尝试做不属于你职责的事情，交给专业的智能体处理"""
+5. 不要自己尝试做不属于你职责的事情，交给专业的智能体处理
+6. 不要为了“收到、同意、感谢、无补充、总结到位”这类低价值回复继续 @；没有新的问题、产物或行动时应自然结束。"""
 
     # Inject legacy JSON collaboration guide if configured separately.
     guide_text = "" if unified_guide else room_settings.get("collaboration_guide", "")
@@ -972,19 +1096,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     if not responding_agents:
         return
 
-    # Determine context window size: room-level > global > default(20)
-    context_limit = room_settings.get("context_messages_limit")
-    if not context_limit or int(context_limit) <= 0:
-        try:
-            global_limit = db.get_hub_setting("context_messages_limit")
-            context_limit = int(global_limit) if global_limit else 20
-        except:
-            context_limit = 20
-    else:
-        context_limit = int(context_limit)
-    context_limit = max(1, min(200, context_limit))  # clamp 1-200
-
-    recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
+    collaboration_mode = _room_collaboration_mode(room_settings)
 
     for agent in responding_agents:
         # Special handling for System Agent
@@ -995,6 +1107,10 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         full_agent = db.get_agent_by_id(agent["id"])
         if not full_agent:
             continue
+
+        model_config = get_model_config_for_agent(db, full_agent)
+        context_limit = _resolve_context_limit(db, room_settings, model_config)
+        recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
 
         # Build conversation history
         history = []
@@ -1043,7 +1159,6 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                                             prompt_room_settings,
                                             room)
 
-        model_config = get_model_config_for_agent(db, full_agent)
         stream_started_at = int(datetime.now().timestamp() * 1000)
         stream_id = f"stream_{stream_started_at}_{agent['id'][:8]}"
 
@@ -1099,18 +1214,12 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         cancel_event = ws_manager.register_stream_cancel(stream_id)
 
         # Auto-compress history if context is getting full
-        # Infer model context limit from model name
-        model_context_limit = 128000  # Default for Claude Opus/Sonnet
-        if model_config:
-            model_name = model_config.get("model", "").lower()
-            if "gpt-4" in model_name:
-                model_context_limit = 128000
-            elif "gpt-3.5" in model_name:
-                model_context_limit = 16000
-            elif "claude" in model_name:
-                model_context_limit = 200000  # Claude 3.5 Sonnet has 200k
-        
-        history = _compress_history(history, keep_recent=5, model_context_limit=model_context_limit)
+        model_context_limit = _infer_model_context_limit(model_config)
+        history = _compress_history(
+            history,
+            keep_recent=_collaboration_keep_recent(room_settings, context_limit),
+            model_context_limit=model_context_limit,
+        )
 
         try:
             reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks, cancel_event,
@@ -1192,15 +1301,43 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         if not is_interrupted:
             metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else metadata
 
-        reply_mentions = []
+        text_mentions = []
+        repeated_text_mentions = []
         # Strip markdown formatting around @mentions: **@name**, *@name*, `@name`, etc.
         clean_reply = re.sub(r'[*_`~|]', '', reply)
         for m in re.finditer(r"@([^\s@,，.。;；:：!！?？]+)", clean_reply):
             mention_name = m.group(1).strip()
             mentioned = next((a for a in all_agents if a["name"] == mention_name and a["id"] != agent["id"]), None)
-            if mentioned and mentioned["id"] not in reply_mentions:
-                reply_mentions.append(mentioned["id"])
-        structured_handoff_mentions = _handoff_mentions(reply, full_agent, all_agents, room_settings, handoff_edges)
+            edge_key = (agent["id"], mentioned["id"]) if mentioned else None
+            if mentioned and edge_key in handoff_edges:
+                repeated_text_mentions.append(mentioned["id"])
+                continue
+            if mentioned and mentioned["id"] not in text_mentions:
+                text_mentions.append(mentioned["id"])
+
+        has_tool_calls = bool(collected_tool_calls)
+        suppressed_handoffs = []
+        suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "repeated_edge"} for mid in repeated_text_mentions])
+        if collaboration_mode == "manual":
+            reply_mentions = []
+            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "manual_mode"} for mid in text_mentions])
+        elif collaboration_mode == "strict":
+            reply_mentions = []
+            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "strict_mode"} for mid in text_mentions])
+        elif _is_low_value_handoff_reply(reply, has_tool_calls):
+            reply_mentions = []
+            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "low_value_reply"} for mid in text_mentions])
+        elif collaboration_mode == "guided" and not _is_tasklike_handoff_reply(reply, has_tool_calls):
+            reply_mentions = []
+            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "not_tasklike"} for mid in text_mentions])
+        else:
+            reply_mentions = list(text_mentions)
+            for mid in reply_mentions:
+                handoff_edges.add((agent["id"], mid))
+
+        structured_handoff_mentions = []
+        if collaboration_mode != "manual" and not _is_low_value_handoff_reply(reply, has_tool_calls):
+            structured_handoff_mentions = _handoff_mentions(reply, full_agent, all_agents, room_settings, handoff_edges)
         visible_handoff_lines = []
         for mid in structured_handoff_mentions:
             if mid not in reply_mentions:
@@ -1212,6 +1349,18 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 visible_handoff_lines.append(f"@{target_name} 请继续跟进。")
         if visible_handoff_lines:
             reply = reply.rstrip() + "\n\n" + "\n".join(visible_handoff_lines)
+
+        if text_mentions or structured_handoff_mentions or suppressed_handoffs:
+            metadata = _merge_metadata(metadata, {
+                "handoff": {
+                    "mode": collaboration_mode,
+                    "text_mentions": text_mentions,
+                    "structured_mentions": structured_handoff_mentions,
+                    "targets": reply_mentions,
+                    "suppressed": suppressed_handoffs,
+                    "chain_depth": chain_depth,
+                }
+            })
 
         message = db.create_message(room_id, agent["id"], reply, "markdown", None, reply_mentions, metadata, thread_id)
 
