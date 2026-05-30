@@ -2410,7 +2410,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 /* === Shortcut Command Floating Card === */
 .shortcut-trigger-btn {
   position: absolute;
-  right: 104px;
+  right: 60px;
   bottom: calc(100% + 10px);
   z-index: 75;
   height: 32px;
@@ -2438,7 +2438,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .shortcut-trigger-btn svg { width: 15px; height: 15px; }
 .shortcut-card {
   position: absolute;
-  right: 104px;
+  right: 60px;
   bottom: calc(100% + 48px);
   width: min(440px, calc(100vw - 28px));
   padding: 10px;
@@ -2497,6 +2497,24 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   transform: translateY(-1px);
 }
 .shortcut-card-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+@media (max-width: 767px) {
+  .shortcut-trigger-btn {
+    right: 60px;
+    bottom: calc(100% + 8px);
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .shortcut-card {
+    right: 10px;
+    bottom: calc(100% + 44px);
+    width: min(360px, calc(100vw - 20px));
+  }
+  .shortcut-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 /* === Clone Confirmation Popup === */
 .clone-confirm-popup {

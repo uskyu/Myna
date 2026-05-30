@@ -333,7 +333,16 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 # Serve frontend static files
 frontend_dist = Path(__file__).parent.parent / "src" / "web" / "public"
 if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+    class NoCacheIndexStaticFiles(StaticFiles):
+        def file_response(self, full_path, stat_result, scope, status_code=200):
+            response = super().file_response(full_path, stat_result, scope, status_code)
+            if Path(full_path).name == "index.html":
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            return response
+
+    app.mount("/", NoCacheIndexStaticFiles(directory=str(frontend_dist), html=True), name="static")
 
 
 if __name__ == "__main__":
