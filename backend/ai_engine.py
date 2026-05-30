@@ -810,6 +810,11 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         return
 
     members = db.get_room_members(room_id)
+    # Full agent list is needed both for auto-adding mentioned agents and for
+    # parsing @mentions in the agent's reply. Keep it initialized for every
+    # code path; otherwise replies that mention another agent can crash after
+    # streaming text, leaving the frontend stuck in "generating".
+    all_agents = db.list_agents()
     responding_agents = []
 
     if room_type == "dm":
@@ -817,7 +822,6 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     elif mentions:
         responding_agents = [m for m in members if m["id"] in mentions and m["id"] not in ("user", "system")]
         if len(responding_agents) < len(mentions):
-            all_agents = db.list_agents()
             for mid in mentions:
                 # Skip non-AI agents
                 if mid in ("user", "system"):

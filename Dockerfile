@@ -5,7 +5,7 @@ WORKDIR /app
 # System deps + Docker CLI (for self-update via mounted docker.sock)
 # + Playwright/Chromium system dependencies for browser tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates gnupg \
+    git curl ca-certificates gnupg xz-utils \
     # Playwright Chromium deps
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libdbus-1-3 libxkbcommon0 libatspi2.0-0 \
