@@ -474,20 +474,20 @@ function applyShortcut(cmd) {
     return
   }
   if (cmd.command === '/stop') {
-    // Stop all active streams in this room, but keep their bubbles until backend saves interrupted messages
+    // User stop means stop showing the live bubble immediately. Backend may save
+    // a compact audit marker, but the long partial stream should disappear now.
     let count = 0
     for (const [streamId, stream] of Object.entries(store.activeStreams)) {
       if (stream.roomId === props.room.id && (stream.threadId || null) === activeThreadId.value) {
         if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
           ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
         }
-        stream.interrupted = true
-        stream.working = false
+        delete store.activeStreams[streamId]
         count++
       }
     }
     store.activeStreams = { ...store.activeStreams }
-    showToast(count ? '已打断，正在保存中断内容' : '当前没有正在生成的回复')
+    showToast(count ? '已停止生成' : '当前没有正在生成的回复')
     return
   }
 
@@ -546,12 +546,11 @@ function cancelStream(msg) {
   if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
     ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
   }
-  // Keep the interrupted bubble visible until the backend persists it.
-  // This preserves partial work and prevents the next reply from visually merging with it.
-  const stream = store.activeStreams[streamId]
-  if (stream) {
-    stream.interrupted = true
-    stream.working = false
+  // Remove the live bubble immediately. The backend will receive the cancel and
+  // send stream_end/optional compact marker later; no need to keep a long partial
+  // response stuck at the bottom.
+  if (store.activeStreams[streamId]) {
+    delete store.activeStreams[streamId]
   }
   store.activeStreams = { ...store.activeStreams }
 }
@@ -1200,15 +1199,14 @@ async function send() {
   attachments.value = []
   if (inputEl.value) inputEl.value.style.height = 'auto'
 
-  // Auto-interrupt: cancel matching active streams but keep their bubbles visible
-  // until the backend saves them as interrupted messages. This preserves proof of
-  // partial work and keeps the next AI reply below the new user message.
+  // Auto-interrupt: cancel matching active streams and remove live bubbles
+  // immediately. User intent is to stop the old reply, not keep partial content
+  // pinned below the newly sent message.
   if (ws._ws && ws._ws.readyState === WebSocket.OPEN) {
     for (const [streamId, stream] of Object.entries(store.activeStreams)) {
       if (stream.roomId === props.room.id && (stream.threadId || null) === activeThreadId.value && (mentions.includes(stream.agentId) || mentions.length === 0)) {
         ws._ws.send(JSON.stringify({ type: 'cancel_stream', stream_id: streamId }))
-        stream.interrupted = true
-        stream.working = false
+        delete store.activeStreams[streamId]
       }
     }
     store.activeStreams = { ...store.activeStreams }

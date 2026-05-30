@@ -868,31 +868,18 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         # Build conversation history
         history = []
-        last_interrupted_context = None
+        # Track interrupted metadata but do not auto-continue it. User-initiated stop means
+        # "stop talking", not "resume this partial reply next turn".
         for m in recent_messages:
             role = "assistant" if m["sender_id"] == agent["id"] else "user"
             content = m["text"]
             if m.get("sender_name") and m["sender_id"] != agent["id"]:
                 content = f"[{m['sender_name']}]: {content}"
             history.append({"role": role, "content": content})
-            # Track if the last assistant message was interrupted
-            if m["sender_id"] == agent["id"] and m.get("metadata"):
-                try:
-                    meta = json.loads(m["metadata"]) if isinstance(m["metadata"], str) else m["metadata"]
-                    if meta.get("interrupted"):
-                        last_interrupted_context = meta.get("interrupted_tool_calls", [])
-                except:
-                    pass
 
-        # If last agent message was interrupted, inject continuation context
-        if last_interrupted_context and history:
-            tool_summary = "\n".join([f"  - {t['name']}: {t.get('summary', '')} → {t['status']}" for t in last_interrupted_context])
-            continuation_note = f"\n\n[续接提示] 你上次的回复被中断了。已完成的工具调用：\n{tool_summary}\n请从中断处继续，不要重复已完成的步骤。"
-            # Append to the last user message
-            for i in range(len(history) - 1, -1, -1):
-                if history[i]["role"] == "user":
-                    history[i]["content"] += continuation_note
-                    break
+        # No automatic continuation for interrupted messages. If the user wants to
+        # continue, they should explicitly ask; otherwise cancelled content should
+        # not keep resurfacing in later turns.
 
         # Load agent skills for context (filtered by room scope)
         agent_skills = db.get_agent_skills(agent["id"])
@@ -1035,14 +1022,21 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # Give async callbacks time to complete (they're scheduled via run_coroutine_threadsafe)
         await asyncio.sleep(0.5)
 
-        if is_interrupted and not reply:
-            # Preserve partial work on user interruption. The streamed text is evidence
-            # of what the agent already did and should stay in chat/history for follow-up agents.
-            stream_info = ws_manager.active_streams.get(stream_id)
-            streamed_text = (stream_info.get("text", "") if stream_info else "")
-            if not streamed_text and stream_parts:
-                streamed_text = "".join(p.get("text", "") for p in stream_parts if p.get("type") == "text")
-            reply = streamed_text.strip() or None
+        if is_interrupted:
+            # User-initiated stop should stop the UI immediately and should not
+            # persist a long partial reply that keeps sitting at the bottom.
+            # Keep only a compact audit marker when tools already ran.
+            if not collected_tool_calls:
+                await ws_manager.notify_ui({"type": "stream_end", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "interrupted": True})
+                continue
+            reply = f"⏹ 已停止（已执行 {len(collected_tool_calls)} 个工具调用）"
+            metadata = {
+                "interrupted": True,
+                "tool_calls": collected_tool_calls,
+                "interrupted_tool_calls": collected_tool_calls,
+            }
+        else:
+            metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else None
 
         if not reply and not collected_tool_calls and not stream_parts:
             # Send stream_end before continuing (no message to save)
@@ -1053,18 +1047,13 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         if not reply and collected_tool_calls:
             reply = "（工具执行完成）"
 
-        # If interrupted, mark in reply and metadata
-        if is_interrupted:
-            if not reply:
-                reply = "⏸️ 已中断"
-            else:
-                reply += "\n\n⏸️ *已被中断*"
+        # If interrupted, metadata/reply was already compacted above. Do not append
+        # the partial streamed text here.
+        if is_interrupted and not reply:
+            reply = "⏹ 已停止"
 
-        metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else None
-        if is_interrupted:
-            metadata = metadata or {}
-            metadata["interrupted"] = True
-            metadata["interrupted_tool_calls"] = collected_tool_calls
+        if not is_interrupted:
+            metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else metadata
 
         reply_mentions = []
         # Strip markdown formatting around @mentions: **@name**, *@name*, `@name`, etc.
