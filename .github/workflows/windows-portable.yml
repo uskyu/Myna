@@ -84,8 +84,23 @@ jobs:
           )
           Compress-Archive -Path $dist\* -DestinationPath dist\Myna-Windows-x64.zip -Force
 
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $env:MYNA_VERSION = "${{ github.ref_name }}"
+          $env:MYNA_DIST_DIR = (Resolve-Path "dist\Myna-Windows-x64").Path
+          $env:MYNA_OUTPUT_DIR = (Resolve-Path "dist").Path
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" scripts\windows\MynaInstaller.iss
+
       - name: Upload portable zip
         uses: actions/upload-artifact@v4
         with:
           name: Myna-Windows-x64
           path: dist/Myna-Windows-x64.zip
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Myna-Setup-x64
+          path: dist/Myna-Setup-x64.exe
