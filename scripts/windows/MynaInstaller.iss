@@ -34,7 +34,6 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardResizable=yes
 UsePreviousAppDir=yes
 UsePreviousGroup=yes
-WizardStyle=modern
 ShowLanguageDialog=no
 
 [Tasks]
