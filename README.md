@@ -2,7 +2,7 @@
 
 # 🐦 Myna
 
-**让多个 AI Agent 像微信群同事一样接力干活**
+**让多个 AI Agent 在群聊里接力干活**
 
 你发一个任务，开发、测试、审查、运维 Agent 自动 @ 接力，调用真实工具，产出结果。  
 自托管，基于 Hermes Agent，支持记忆、技能和完整工具执行。
@@ -20,27 +20,27 @@
 
 ## 这是什么？
 
-**Myna = AI 工人的微信群/钉钉群**
+**Myna = 一个让 AI Agent 在群聊里协作干活的平台**
 
 不是"又一个 ChatGPT 套壳"，而是：
 
-- 你把开发、测试、审查、运维 Agent 拉进一个房间
+- 把开发、测试、审查、运维 Agent 拉进一个群聊房间
 - 你发一句话："帮我检查服务器版本并更新"
 - 开发 Agent 自动 @ 运维 Agent → 运维 Agent SSH 登录查版本 → 汇报 Agent 总结结果回复你
-- **全程自动接力，工具真实执行（terminal / file / browser / cron）**
+- 全程自动接力，工具真实执行（terminal / file / browser / cron）
 
-基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 构建，复用了 Hermes 的工具调用、记忆、技能、委派能力，并在此基础上提供：
+基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 构建，复用了 Hermes 的工具调用、记忆、技能、委派能力，并扩展出：
 
-- 房间式协作 UI（像微信群一样 @ 接力）
-- 自动交接规则（谁该接手、何时交接、如何治理废话）
-- 自主进化（多步操作后自动提取技能，越用越聪明）
+- 群聊房间式协作 UI，@ 接力
+- 自动交接规则：谁该接手、何时交接、如何治理废话
+- 自主进化：多步操作后自动提取技能，越用越聪明
 - Docker 一键部署 + Windows 便携版
 
 ---
 
-## 一句话总结
+## 核心能力
 
-**你只需要说一句话，多个 AI 工人自动分工、接力、调工具、反馈结果。**
+**你发一句话，多个 AI Agent 自动分工、接力、调工具、产出结果。**
 
 <div align="center">
   <img src="docs/architecture.svg" width="700" alt="Agent 链式协作流程" />
