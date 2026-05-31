@@ -1,6 +1,6 @@
 """
 Authentication routes - login, change password, session validation.
-Default password: hermeshub
+Default password: admin123
 Password stored in hub_settings table (key: 'auth_password', bcrypt hash).
 Session token stored in cookie + localStorage on frontend.
 """

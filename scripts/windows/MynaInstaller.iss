@@ -48,6 +48,7 @@ Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{group}\Myna"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{group}\关闭 Myna"; Filename: "{app}\scripts\windows\stop-myna.bat"; WorkingDir: "{app}"
 Name: "{autodesktop}\Myna"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]

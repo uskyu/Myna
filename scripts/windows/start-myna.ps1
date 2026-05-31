@@ -2,7 +2,8 @@ param(
   [int]$Port = 3456,
   [string]$DataDir = "$env:APPDATA\Myna",
   [switch]$NoBrowser,
-  [switch]$Background
+  [switch]$Background,
+  [switch]$Stop
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,12 +33,75 @@ $env:MYNA_DB_DIR = Join-Path $DataDir "db"
 $env:MYNA_WORKSPACES_ROOT = Join-Path $DataDir "workspaces"
 $env:MYNA_PROFILES_DIR = Join-Path $DataDir "hermes\profiles"
 $env:HERMES_PATH = Join-Path $Root "vendor\hermes-agent"
+$versionFile = Join-Path $Root "VERSION"
+if (Test-Path $versionFile) {
+  $env:MYNA_VERSION = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+}
 $url = "http://127.0.0.1:$Port"
+$pidFile = Join-Path $DataDir "myna.pid"
+
+if ($Stop) {
+  $stopped = $false
+  if (Test-Path $pidFile) {
+    $savedPid = (Get-Content -LiteralPath $pidFile -Raw).Trim()
+    if ($savedPid -match '^\d+$') {
+      try {
+        Stop-Process -Id ([int]$savedPid) -Force -ErrorAction Stop
+        Write-Host "Stopped Myna process $savedPid."
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        $stopped = $true
+      } catch {
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  if ($stopped) {
+    exit 0
+  }
+
+  $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  if (!$connections) {
+    Write-Host "Myna is not running on port $Port."
+    exit 0
+  }
+  try {
+    $resp = Invoke-WebRequest -UseBasicParsing "$url/health" -TimeoutSec 2
+    if ($resp.StatusCode -ne 200 -or $resp.Content -notmatch '"status"\s*:\s*"ok"') {
+      Write-Host "Port $Port is in use, but it does not look like Myna. Not stopping it." -ForegroundColor Yellow
+      exit 1
+    }
+  } catch {
+    Write-Host "Port $Port is in use, but Myna health check failed. Not stopping it." -ForegroundColor Yellow
+    exit 1
+  }
+  $processIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique
+  foreach ($processId in $processIds) {
+    try {
+      Stop-Process -Id $processId -Force -ErrorAction Stop
+      Write-Host "Stopped Myna process $processId on port $Port."
+    } catch {
+      Write-Host "Failed to stop process ${processId}: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  }
+  exit 0
+}
+
 Write-Host "Starting Myna on $url"
 Write-Host "Data directory: $DataDir"
 
 $existing = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($existing) {
+  try {
+    $resp = Invoke-WebRequest -UseBasicParsing "$url/health" -TimeoutSec 2
+    if ($resp.StatusCode -eq 200) {
+      Write-Host "Myna is already running at $url"
+      if (!$NoBrowser) {
+        Start-Process $url | Out-Null
+      }
+      exit 0
+    }
+  } catch {}
   Write-Host "Port $Port is already in use. Start with another port, for example:" -ForegroundColor Yellow
   Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows\start-myna.ps1 -Port 3457" -ForegroundColor Yellow
   exit 1
@@ -54,6 +118,7 @@ if ($Background) {
     "`$env:MYNA_WORKSPACES_ROOT='" + (Join-Path $DataDir "workspaces") + "'"
     "`$env:MYNA_PROFILES_DIR='" + (Join-Path $DataDir "hermes\profiles") + "'"
     "`$env:HERMES_PATH='" + (Join-Path $Root "vendor\hermes-agent") + "'"
+    "if (Test-Path '$versionFile') { `$env:MYNA_VERSION=(Get-Content -LiteralPath '$versionFile' -Raw).Trim() }"
     "Set-Location '$Backend'"
     "& '$Python' '$Bootstrap'"
   ) -join "; "
@@ -90,6 +155,8 @@ if ($Background) {
     Write-Host "  $errLog"
     exit 1
   }
+
+  Set-Content -LiteralPath $pidFile -Value $proc.Id -Encoding ASCII
 
   if (!$NoBrowser) {
     Start-Process $url | Out-Null

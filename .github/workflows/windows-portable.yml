@@ -78,9 +78,14 @@ jobs:
           Copy-Item runtime $dist\runtime -Recurse
           Copy-Item README.md $dist\README.md
           Copy-Item LICENSE $dist\LICENSE
+          Set-Content -Encoding ASCII -Path "$dist\VERSION" -Value "${{ github.ref_name }}"
           Set-Content -Encoding ASCII -Path "$dist\Myna.bat" -Value @(
             '@echo off',
             'call "%~dp0scripts\windows\start-myna.bat"'
+          )
+          Set-Content -Encoding ASCII -Path "$dist\Stop-Myna.bat" -Value @(
+            '@echo off',
+            'call "%~dp0scripts\windows\stop-myna.bat"'
           )
           Compress-Archive -Path $dist\* -DestinationPath dist\Myna-Windows-x64.zip -Force
 

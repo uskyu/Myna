@@ -21,6 +21,7 @@
           />
         </div>
         <p v-if="errorMsg" class="error-text">{{ errorMsg }}</p>
+        <p class="login-hint">首次登录默认密码：<code>admin123</code></p>
         <button type="submit" class="login-btn" :disabled="loading">
           {{ loading ? '验证中...' : '进入' }}
         </button>
@@ -202,6 +203,20 @@ onMounted(() => {
   color: var(--accent, #2d6a4f);
   font-size: 13px;
   margin: 0;
+}
+
+.login-hint {
+  color: var(--text-dim, #888);
+  font-size: 12px;
+  margin: -2px 0 2px;
+}
+
+.login-hint code {
+  color: var(--accent, #2d6a4f);
+  background: rgba(45, 106, 79, 0.08);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: SF Mono, Fira Code, Consolas, monospace;
 }
 
 .login-btn {
