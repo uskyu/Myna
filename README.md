@@ -10,7 +10,8 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 [![Vue 3](https://img.shields.io/badge/Vue-3-brightgreen.svg)](https://vuejs.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](docker-compose.yml)
-[![Windows](https://img.shields.io/badge/Windows-便携版-0078D4?logo=windows)](https://github.com/uskyu/myna/releases/latest)
+[![在线演示](https://img.shields.io/badge/🎬_在线演示-查看效果-2d6a4f?style=flat)](https://uskyu.github.io/myna-demo/)
+[![Windows](https://img.shields.io/badge/Windows-便携版_(测试)-0078D4?logo=windows)](https://github.com/uskyu/myna/releases/latest)
 
 </div>
 
@@ -72,6 +73,8 @@ Myna 的核心不是"又一个 ChatGPT 套壳"——而是**多个 AI 智能体�
 ## 快速开始
 
 ### 方式一：Windows 便携版（推荐 Windows 用户）
+
+> ⚠️ **当前为测试版** — Windows 版本仍在完善中，可能存在路径兼容、依赖加载等问题。生产环境推荐使用 Docker 部署。
 
 **下载地址：** [GitHub Releases](https://github.com/uskyu/myna/releases/latest)
 
