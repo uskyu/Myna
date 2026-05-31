@@ -1,6 +1,7 @@
 node_modules/
 db/*.sqlite
 .env
+.hermes/
 data/
 *.log
 db/

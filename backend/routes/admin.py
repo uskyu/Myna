@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 from workspaces import get_room_workspace_info
+from paths import APP_ROOT, PROFILES_ROOT
 
 router = APIRouter()
 
@@ -911,7 +912,7 @@ async def serve_media(path: str, download: str = None):
     import mimetypes
     # Try multiple locations for the file
     candidates = [
-        f"/root/.hermes/profiles/{path}",  # Hermes profiles
+        str(PROFILES_ROOT / path),          # Hermes profiles
         f"/{path}",                         # Absolute path (e.g. /app/backend/project/...)
     ]
     full_path = None
@@ -939,10 +940,18 @@ async def serve_media(path: str, download: str = None):
 import subprocess
 
 def _detect_version():
-    """Detect version: env var > git tag > fallback."""
+    """Detect version: env var > packaged VERSION file > git tag > fallback."""
     env_ver = os.environ.get("MYNA_VERSION")
     if env_ver:
         return env_ver
+    try:
+        version_file = APP_ROOT / "VERSION"
+        if version_file.exists():
+            version = version_file.read_text(encoding="utf-8").strip()
+            if version:
+                return version
+    except Exception:
+        pass
     # Try git tag (works when running from source)
     try:
         import subprocess
