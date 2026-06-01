@@ -322,9 +322,6 @@ def _ensure_hub_agent_config(profile_dir: Path, base_url: str, api_key: str, mod
             "approvals": {
                 "mode": approval_mode,
             },
-            "auxiliary": {
-                "provider": "custom:hub",
-            },
         }
         config_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
 
