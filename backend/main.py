@@ -256,7 +256,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             await app.state.ws_manager.interrupt_stream(stream_id)
                 except:
                     pass
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
             app.state.ws_manager.remove_ui(websocket)

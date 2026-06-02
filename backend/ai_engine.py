@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import re
+import time
 import asyncio
 import traceback
 from pathlib import Path
@@ -217,7 +218,9 @@ def _is_low_value_handoff_reply(reply: str, has_tool_calls: bool = False) -> boo
 
     if any(marker in text for marker in action_markers):
         return False
-    if any(marker in text for marker in low_value_markers) and len(text) <= 120:
+    matched_chars = sum(len(marker) for marker in low_value_markers if marker in text)
+    low_value_ratio = matched_chars / max(len(text), 1)
+    if matched_chars and len(text) <= 120 and low_value_ratio >= 0.45:
         return True
     return False
 
@@ -730,6 +733,8 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
 
             def _stream_delta(delta):
                 # Stream intermediate text tokens to UI in real-time
+                if cancel_event and cancel_event.is_set():
+                    raise InterruptedError("Stream cancelled by user")
                 if on_token and delta:
                     asyncio.run_coroutine_threadsafe(
                         on_token(delta),
@@ -1047,13 +1052,15 @@ async def _execute_tool(name: str, args: dict) -> dict:
 async def process_message(db, ws_manager, room_id: str, sender_id: str, text: str,
                            mentions: list = None, room_type: str = "group",
                            chain_depth: int = 0, thread_id: str = None,
-                           handoff_edges: set | None = None):
+                           handoff_edges: set | None = None,
+                           visited_agents: set | None = None):
     """
     Process a message and generate AI replies from mentioned agents.
     Core orchestration logic.
     """
     mentions = mentions or []
     handoff_edges = handoff_edges or set()
+    visited_agents = set(visited_agents or set())
 
     # Chain depth limit: only applies to agent-to-agent chains, NOT user messages
     # Default max_chain = 5 if not configured (prevents infinite loops)
@@ -1107,6 +1114,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         full_agent = db.get_agent_by_id(agent["id"])
         if not full_agent:
             continue
+        visited_agents.add(agent["id"])
 
         model_config = get_model_config_for_agent(db, full_agent)
         context_limit = _resolve_context_limit(db, room_settings, model_config)
@@ -1221,6 +1229,8 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             model_context_limit=model_context_limit,
         )
 
+        execution_started = time.perf_counter()
+        execution_status = "ok"
         try:
             reply = await run_hermes_agent(full_agent, history, system_prompt, model_config, callbacks, cancel_event,
                                            room_id=room_id, room_settings=room_settings)
@@ -1228,6 +1238,8 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             # Could be user cancel OR context pressure / tool loop detection
             err_msg = str(ie)
             if "Context pressure" in err_msg or "Tool loop" in err_msg:
+                execution_status = "error"
+                db.record_agent_error(room_id, thread_id, agent["id"], "InterruptedError", err_msg)
                 # Context exhaustion — give user a meaningful message
                 reply = f"⚠️ {err_msg}\n\n已完成的步骤已保存，请开新对话继续未完成的任务。"
                 await ws_manager.notify_ui({
@@ -1239,8 +1251,11 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 })
             else:
                 # Normal user cancel
+                execution_status = "interrupted"
                 reply = None
         except Exception as e:
+            execution_status = "error"
+            db.record_agent_error(room_id, thread_id, agent["id"], type(e).__name__, str(e))
             print(f"[AI] Error for {agent.get('name')}: {e}")
             traceback.print_exc()
             # Notify UI about the error so it's visible
@@ -1257,6 +1272,16 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             if not reply:
                 reply = f"⚠️ 执行出错：{str(e)[:100]}"
         finally:
+            elapsed_ms = int((time.perf_counter() - execution_started) * 1000)
+            db.record_agent_execution(
+                room_id, thread_id, agent["id"],
+                model=(model_config or {}).get("model"),
+                elapsed_ms=elapsed_ms,
+                tool_calls_count=len(collected_tool_calls),
+                interrupted=cancel_event.is_set(),
+                chain_depth=chain_depth,
+                status=execution_status,
+            )
             ws_manager.unregister_stream_cancel(stream_id)
 
         # Check if cancelled
@@ -1303,12 +1328,16 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         text_mentions = []
         repeated_text_mentions = []
+        visited_text_mentions = []
         # Strip markdown formatting around @mentions: **@name**, *@name*, `@name`, etc.
         clean_reply = re.sub(r'[*_`~|]', '', reply)
         for m in re.finditer(r"@([^\s@,，.。;；:：!！?？]+)", clean_reply):
             mention_name = m.group(1).strip()
             mentioned = next((a for a in all_agents if a["name"] == mention_name and a["id"] != agent["id"]), None)
             edge_key = (agent["id"], mentioned["id"]) if mentioned else None
+            if mentioned and mentioned["id"] in visited_agents:
+                visited_text_mentions.append(mentioned["id"])
+                continue
             if mentioned and edge_key in handoff_edges:
                 repeated_text_mentions.append(mentioned["id"])
                 continue
@@ -1318,6 +1347,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         has_tool_calls = bool(collected_tool_calls)
         suppressed_handoffs = []
         suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "repeated_edge"} for mid in repeated_text_mentions])
+        suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "visited_agent"} for mid in visited_text_mentions])
         if collaboration_mode == "manual":
             reply_mentions = []
             suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "manual_mode"} for mid in text_mentions])
@@ -1340,6 +1370,9 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             structured_handoff_mentions = _handoff_mentions(reply, full_agent, all_agents, room_settings, handoff_edges)
         visible_handoff_lines = []
         for mid in structured_handoff_mentions:
+            if mid in visited_agents:
+                suppressed_handoffs.append({"target": mid, "source": "structured_rule", "reason": "visited_agent"})
+                continue
             if mid not in reply_mentions:
                 reply_mentions.append(mid)
             handoff_edges.add((agent["id"], mid))
@@ -1378,7 +1411,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # Chain collaboration (skip if interrupted)
         if reply_mentions and room_type == "group" and not is_interrupted:
             await asyncio.sleep(1)
-            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges)
+            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges, visited_agents)
 
         # Self-improvement (skip if interrupted)
         # Default: OFF globally and per-agent. Must be explicitly enabled.
@@ -1394,9 +1427,9 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         except:
             pass
 
-        # Agent-level: default OFF (0), must be explicitly set to 1
-        agent_self_improve = full_agent.get("self_improve", 0)
-        effective_self_improve = bool(agent_self_improve) if agent_self_improve is not None else _global_self_improve
+        # Agent-level: None = follow global switch; explicit 0/1 overrides per agent.
+        agent_self_improve = full_agent.get("self_improve")
+        effective_self_improve = _global_self_improve if agent_self_improve is None else bool(agent_self_improve)
         effective_threshold = full_agent.get("self_improve_threshold") or _global_threshold
 
         if (collected_tool_calls and len(collected_tool_calls) >= effective_threshold

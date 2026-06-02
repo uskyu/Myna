@@ -869,6 +869,16 @@ async def remove_room_skill(room_id: str, skill_id: str, request: Request):
     return {"ok": True, "result": skills}
 
 
+# === Observability ===
+
+@router.get("/observability/summary")
+async def get_observability_summary(request: Request):
+    db = get_db(request)
+    room_id = request.query_params.get("room_id")
+    limit = int(request.query_params.get("limit", "100"))
+    return {"ok": True, "result": db.get_observability_summary(room_id, limit)}
+
+
 # === Hub Settings ===
 
 @router.get("/settings")

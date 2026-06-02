@@ -373,6 +373,12 @@ let pollTimer = null
 
 // Tool expand state per stream
 const toolsExpandedMap = ref({})
+let clientOrderSeq = 0
+
+function nextClientOrder() {
+  clientOrderSeq += 1
+  return clientOrderSeq
+}
 
 // Markdown render cache to avoid re-parsing on every computed tick
 const _mdCache = new Map()
@@ -519,10 +525,11 @@ function applyShortcut(cmd) {
       id: 'tmp-' + Date.now(),
       sender_id: 'user',
       sender_name: '我',
-      text: cmd.command,
-      created_at: new Date().toISOString(),
-      clientSortTs: Date.now(),
-    })
+        text: cmd.command,
+        created_at: new Date().toISOString(),
+        clientSortTs: Date.now(),
+        clientOrder: nextClientOrder(),
+      })
     nextTick(scrollToBottom)
 
     // Send to backend
@@ -620,6 +627,35 @@ function parseMessageTs(ts) {
   } catch { return 0 }
 }
 
+function numericMessageId(id) {
+  const n = Number(id)
+  return Number.isFinite(n) && String(id).match(/^\d+$/) ? n : 0
+}
+
+function compareChatItems(a, b) {
+  const ta = a.sortTs || 0
+  const tb = b.sortTs || 0
+  if (ta !== tb) return ta - tb
+
+  const ia = numericMessageId(a.id)
+  const ib = numericMessageId(b.id)
+  if (ia && ib && ia !== ib) return ia - ib
+  if (ia && !ib) return -1
+  if (!ia && ib) return 1
+
+  const oa = a.clientOrder || 0
+  const ob = b.clientOrder || 0
+  if (oa !== ob) return oa - ob
+  return String(a.id).localeCompare(String(b.id))
+}
+
+function sortChatMessages(list) {
+  return [...list].sort((a, b) => compareChatItems(
+    { ...a, sortTs: a.clientSortTs || parseMessageTs(a.created_at), clientOrder: a.clientOrder || 0 },
+    { ...b, sortTs: b.clientSortTs || parseMessageTs(b.created_at), clientOrder: b.clientOrder || 0 }
+  ))
+}
+
 function renderMd(text) {
   if (!text) return ''
   try {
@@ -707,6 +743,7 @@ const messageGroups = computed(() => {
       time: formatMsgTime(m.created_at),
       date: formatMsgDate(m.created_at),
       sortTs: m.clientSortTs || metaSortTs || parseMessageTs(m.created_at),
+      clientOrder: m.clientOrder || 0,
       self,
       showName: !self && (props.type === 'group' || !self),
       toolCalls,
@@ -729,6 +766,7 @@ const messageGroups = computed(() => {
       time: s.interrupted ? '已中断' : '',
       date: '',
       sortTs: startedAt,
+      clientOrder: s.clientOrder || 0,
       self: false,
       showName: props.type === 'group',
       streaming: !s.interrupted,
@@ -739,12 +777,7 @@ const messageGroups = computed(() => {
       toolsExpanded: getToolsExpanded(sid, true), // streaming = true
     })
   }
-  allMsgs.sort((a, b) => {
-    const ta = a.sortTs || 0
-    const tb = b.sortTs || 0
-    if (ta !== tb) return ta - tb
-    return String(a.id).localeCompare(String(b.id))
-  })
+  allMsgs.sort(compareChatItems)
   const groups = []
   let prevSender = null
   let prevDate = null
@@ -779,7 +812,7 @@ async function fetchMessages({ keepPosition = false, forceScroll = false } = {})
   const optimistic = messages.value.filter(m => String(m.id).startsWith('tmp-'))
   // Check if optimistic msg text exists in server response (means it was saved)
   const unsaved = optimistic.filter(om => !newMsgs.some(sm => sm.sender_id === 'user' && sm.text === om.text))
-  messages.value = [...newMsgs, ...unsaved]
+  messages.value = sortChatMessages([...newMsgs, ...unsaved])
   await nextTick()
   if (keepPosition && area) {
     area.scrollTop += area.scrollHeight - prevHeight
@@ -1235,6 +1268,7 @@ async function send() {
     text: body,
     created_at: new Date().toISOString(),
     clientSortTs: Date.now(),
+    clientOrder: nextClientOrder(),
   })
   await nextTick()
   scrollToBottom()
@@ -1266,10 +1300,11 @@ async function handleCommand(text) {
       id: 'tmp-' + Date.now(),
       sender_id: 'user',
       sender_name: '我',
-      text: cmd,
-      created_at: new Date().toISOString(),
-      clientSortTs: Date.now(),
-    })
+        text: cmd,
+        created_at: new Date().toISOString(),
+        clientSortTs: Date.now(),
+        clientOrder: nextClientOrder(),
+      })
     nextTick(scrollToBottom)
     const endpoint = activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`
     api('POST', endpoint, { text: cmd, mentions })
