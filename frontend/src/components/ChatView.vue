@@ -640,8 +640,6 @@ function compareChatItems(a, b) {
   const ia = numericMessageId(a.id)
   const ib = numericMessageId(b.id)
   if (ia && ib && ia !== ib) return ia - ib
-  if (ia && !ib) return -1
-  if (!ia && ib) return 1
 
   const oa = a.clientOrder || 0
   const ob = b.clientOrder || 0
@@ -807,12 +805,27 @@ async function fetchMessages({ keepPosition = false, forceScroll = false } = {})
     data = await api('GET', `/admin/rooms/${props.room.id}/messages?limit=100`)
   }
   const newMsgs = data.result || []
-  // Preserve optimistic messages that haven't appeared in server response yet
-  const serverIds = new Set(newMsgs.map(m => m.id))
+  // Preserve optimistic messages that haven't appeared in server response yet.
+  // When the server-saved user message arrives, copy the optimistic sort anchor
+  // onto it so a fast AI stream/reply never jumps above the just-sent user turn.
   const optimistic = messages.value.filter(m => String(m.id).startsWith('tmp-'))
-  // Check if optimistic msg text exists in server response (means it was saved)
+  const optimisticByText = new Map()
+  optimistic.forEach(om => {
+    if (om.sender_id === 'user') optimisticByText.set(om.text, om)
+  })
+  const anchoredMsgs = newMsgs.map(sm => {
+    if (sm.sender_id !== 'user') return sm
+    const om = optimisticByText.get(sm.text)
+    if (!om) return sm
+    return {
+      ...sm,
+      clientSortTs: om.clientSortTs || parseMessageTs(sm.created_at),
+      clientOrder: om.clientOrder || 0,
+    }
+  })
+  // Keep optimistic messages only until their server copy appears.
   const unsaved = optimistic.filter(om => !newMsgs.some(sm => sm.sender_id === 'user' && sm.text === om.text))
-  messages.value = sortChatMessages([...newMsgs, ...unsaved])
+  messages.value = sortChatMessages([...anchoredMsgs, ...unsaved])
   await nextTick()
   if (keepPosition && area) {
     area.scrollTop += area.scrollHeight - prevHeight
@@ -1261,19 +1274,23 @@ async function send() {
   }
 
   // Optimistic add
+  const optimisticNow = Date.now()
   messages.value.push({
-    id: 'tmp-' + Date.now(),
+    id: 'tmp-' + optimisticNow,
     sender_id: 'user',
     sender_name: '我',
     text: body,
-    created_at: new Date().toISOString(),
-    clientSortTs: Date.now(),
+    created_at: new Date(optimisticNow).toISOString(),
+    clientSortTs: optimisticNow,
     clientOrder: nextClientOrder(),
   })
   await nextTick()
   scrollToBottom()
 
-  await api('POST', activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`, { text: body, mentions })
+  const res = await api('POST', activeThreadId.value ? `/admin/threads/${activeThreadId.value}/send` : `/admin/rooms/${props.room.id}/send`, { text: body, mentions })
+  if (res?.ok !== false) {
+    await fetchMessages({ forceScroll: true })
+  }
   // Auto-update thread title if this is the first message in a '新对话' thread
   autoUpdateThreadTitle(text)
 }
