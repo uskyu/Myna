@@ -582,6 +582,74 @@ class BaseDatabase:
         )
         self.commit()
 
+    # === Observability ===
+    def record_agent_execution(self, room_id: str, thread_id: str, agent_id: str, model: str = None,
+                               elapsed_ms: int = 0, tool_calls_count: int = 0,
+                               interrupted: bool = False, chain_depth: int = 0, status: str = "ok"):
+        ph = self._placeholder()
+        try:
+            self.execute(f"""
+                INSERT INTO agent_executions
+                (room_id, thread_id, agent_id, model, elapsed_ms, tool_calls_count, interrupted, chain_depth, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (room_id, thread_id, agent_id, model, int(elapsed_ms or 0), int(tool_calls_count or 0),
+                  1 if interrupted else 0, int(chain_depth or 0), status or "ok"))
+            self.commit()
+        except Exception as e:
+            print(f"[DB] record_agent_execution skipped: {e}")
+
+    def record_agent_error(self, room_id: str, thread_id: str, agent_id: str, error_type: str, error_message: str = ""):
+        ph = self._placeholder()
+        try:
+            self.execute(f"""
+                INSERT INTO agent_errors (room_id, thread_id, agent_id, error_type, error_message)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            """, (room_id, thread_id, agent_id, error_type or "Error", (error_message or "")[:1000]))
+            self.commit()
+        except Exception as e:
+            print(f"[DB] record_agent_error skipped: {e}")
+
+    def record_token_usage(self, room_id: str, thread_id: str, agent_id: str, model: str = None,
+                           prompt_tokens: int = 0, completion_tokens: int = 0, total_tokens: int = 0):
+        ph = self._placeholder()
+        try:
+            self.execute(f"""
+                INSERT INTO token_usage
+                (room_id, thread_id, agent_id, model, prompt_tokens, completion_tokens, total_tokens)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (room_id, thread_id, agent_id, model, int(prompt_tokens or 0), int(completion_tokens or 0), int(total_tokens or 0)))
+            self.commit()
+        except Exception as e:
+            print(f"[DB] record_token_usage skipped: {e}")
+
+    def get_observability_summary(self, room_id: str = None, limit: int = 100) -> dict:
+        ph = self._placeholder()
+        room_filter = f"WHERE room_id = {ph}" if room_id else ""
+        params = (room_id,) if room_id else ()
+        executions = self.fetchall(f"""
+            SELECT agent_id, COUNT(*) AS runs, AVG(elapsed_ms) AS avg_elapsed_ms,
+                   SUM(tool_calls_count) AS tool_calls, SUM(interrupted) AS interruptions
+            FROM agent_executions {room_filter}
+            GROUP BY agent_id ORDER BY runs DESC LIMIT {int(limit)}
+        """, params)
+        errors = self.fetchall(f"""
+            SELECT agent_id, error_type, COUNT(*) AS count
+            FROM agent_errors {room_filter}
+            GROUP BY agent_id, error_type ORDER BY count DESC LIMIT {int(limit)}
+        """, params)
+        tokens = self.fetchall(f"""
+            SELECT agent_id, model, SUM(prompt_tokens) AS prompt_tokens,
+                   SUM(completion_tokens) AS completion_tokens, SUM(total_tokens) AS total_tokens
+            FROM token_usage {room_filter}
+            GROUP BY agent_id, model ORDER BY total_tokens DESC LIMIT {int(limit)}
+        """, params)
+        recent_errors = self.fetchall(f"""
+            SELECT room_id, thread_id, agent_id, error_type, error_message, created_at
+            FROM agent_errors {room_filter}
+            ORDER BY id DESC LIMIT {int(limit)}
+        """, params)
+        return {"executions": executions, "errors": errors, "tokens": tokens, "recent_errors": recent_errors}
+
     # === Hub Settings ===
     def get_hub_setting(self, key: str, default=None):
         ph = self._placeholder()
@@ -710,8 +778,47 @@ class SQLiteDatabase(BaseDatabase):
                 FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS agent_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT,
+                thread_id TEXT,
+                agent_id TEXT NOT NULL,
+                model TEXT DEFAULT NULL,
+                elapsed_ms INTEGER DEFAULT 0,
+                tool_calls_count INTEGER DEFAULT 0,
+                interrupted INTEGER DEFAULT 0,
+                chain_depth INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'ok',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT,
+                thread_id TEXT,
+                agent_id TEXT,
+                error_type TEXT NOT NULL,
+                error_message TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT,
+                thread_id TEXT,
+                agent_id TEXT,
+                model TEXT DEFAULT NULL,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, id);
             CREATE INDEX IF NOT EXISTS idx_updates_agent ON updates(agent_id, consumed, id);
+            CREATE INDEX IF NOT EXISTS idx_agent_executions_room ON agent_executions(room_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_agent_errors_room ON agent_errors(room_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_token_usage_room ON token_usage(room_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
 
             CREATE TABLE IF NOT EXISTS model_configs (
@@ -927,6 +1034,45 @@ class MySQLDatabase(BaseDatabase):
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
                 INDEX idx_updates_agent (agent_id, consumed, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+
+            """CREATE TABLE IF NOT EXISTS agent_executions (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                room_id VARCHAR(36) DEFAULT NULL,
+                thread_id VARCHAR(36) DEFAULT NULL,
+                agent_id VARCHAR(36) NOT NULL,
+                model VARCHAR(255) DEFAULT NULL,
+                elapsed_ms INT DEFAULT 0,
+                tool_calls_count INT DEFAULT 0,
+                interrupted TINYINT DEFAULT 0,
+                chain_depth INT DEFAULT 0,
+                status VARCHAR(32) DEFAULT 'ok',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_agent_executions_room (room_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+
+            """CREATE TABLE IF NOT EXISTS agent_errors (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                room_id VARCHAR(36) DEFAULT NULL,
+                thread_id VARCHAR(36) DEFAULT NULL,
+                agent_id VARCHAR(36) DEFAULT NULL,
+                error_type VARCHAR(128) NOT NULL,
+                error_message TEXT DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_agent_errors_room (room_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+
+            """CREATE TABLE IF NOT EXISTS token_usage (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                room_id VARCHAR(36) DEFAULT NULL,
+                thread_id VARCHAR(36) DEFAULT NULL,
+                agent_id VARCHAR(36) DEFAULT NULL,
+                model VARCHAR(255) DEFAULT NULL,
+                prompt_tokens INT DEFAULT 0,
+                completion_tokens INT DEFAULT 0,
+                total_tokens INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_token_usage_room (room_id, created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 
             """CREATE TABLE IF NOT EXISTS model_configs (

@@ -69,6 +69,8 @@ export const store = reactive({
   initialized: false,
 })
 
+let streamClientOrderSeq = 0
+
 export function markStreamInterrupted(streamId) {
   const stream = store.activeStreams[streamId]
   if (stream) {
@@ -273,6 +275,7 @@ function _globalWSHandler(msg) {
       working: true,
       interrupted: false,
       startedAt: msg.timestamp || Date.now(),
+      clientOrder: ++streamClientOrderSeq,
     }
     store.activeStreams = { ...store.activeStreams }
   } else if (msg.type === 'stream_interrupted') {
