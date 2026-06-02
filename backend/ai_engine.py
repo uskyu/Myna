@@ -205,6 +205,16 @@ def _is_low_value_handoff_reply(reply: str, has_tool_calls: bool = False) -> boo
     if not text:
         return True
 
+    compact_text = re.sub(r"[,，.。;；:：!！?？、]+", "", text)
+    continuation_only_markers = [
+        "请继续", "继续", "好的请继续", "收到请继续", "可以请继续", "没问题请继续",
+        "请继续跟进", "继续跟进", "请接着", "接着来",
+    ]
+    if compact_text in continuation_only_markers:
+        return True
+    if re.fullmatch(r"(收到|好的|可以|没问题|同意|谢谢|感谢)*(请)?继续(跟进)?", compact_text):
+        return True
+
     low_value_markers = [
         "收到", "同意", "认可", "没有补充", "暂无补充", "无补充", "总结到位",
         "谢谢", "感谢", "辛苦", "好的", "可以", "没问题", "等待用户",
@@ -235,6 +245,201 @@ def _is_tasklike_handoff_reply(reply: str, has_tool_calls: bool = False) -> bool
         "bug", "issue", "review", "test", "fix", "implement", "verify",
     ]
     return any(marker in text for marker in task_markers)
+
+
+def _setting_int(room_settings: dict | None, key: str, default: int, lower: int = 0, upper: int | None = None) -> int:
+    try:
+        value = int((room_settings or {}).get(key, default))
+    except (TypeError, ValueError):
+        value = default
+    value = max(lower, value)
+    if upper is not None:
+        value = min(upper, value)
+    return value
+
+
+def _handoff_edge_key(source_id: str | None, target_id: str | None) -> str:
+    return f"{source_id or ''}->{target_id or ''}"
+
+
+def _normalize_handoff_text(reply: str) -> str:
+    text = re.sub(r"@[^\s@,，.。;；:：!！?？]+", " ", reply or "")
+    text = re.sub(r"[`*_~|#>\[\](){}]", " ", text)
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"\b[0-9a-f]{7,40}\b", " ", text.lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _handoff_reply_fingerprint(reply: str) -> str:
+    text = _normalize_handoff_text(reply)
+    text = re.sub(r"[\s,，.。;；:：!！?？\-_/\\]+", "", text)
+    return text[:240]
+
+
+def _failure_signature(reply: str) -> str | None:
+    text = _normalize_handoff_text(reply)
+    if not text:
+        return None
+    markers = [
+        "失败", "报错", "错误", "异常", "不通过", "未通过", "阻塞", "复现",
+        "fail", "failed", "failure", "error", "exception", "bug", "issue", "traceback", "assert",
+    ]
+    lowered = text.lower()
+    if not any(marker in lowered for marker in markers):
+        return None
+    chunks = re.split(r"[\n。！？!?;；]+", text)
+    focused = [chunk.strip() for chunk in chunks if any(marker in chunk.lower() for marker in markers)]
+    signature = " ".join(focused[:2]) if focused else text
+    signature = signature.lower()
+    signature = re.sub(r"\b(line|行)\s*\d+\b", r"\1 #", signature)
+    signature = re.sub(r"\s+", " ", signature).strip()
+    return signature[:180] or None
+
+
+def _init_handoff_state(handoff_state: dict | None = None, handoff_edges: set | None = None) -> dict:
+    state = dict(handoff_state or {})
+    turns = state.get("turns") if isinstance(state.get("turns"), list) else []
+    edge_counts = state.get("edge_counts") if isinstance(state.get("edge_counts"), dict) else {}
+    if handoff_edges:
+        for edge in handoff_edges:
+            if isinstance(edge, (list, tuple)) and len(edge) == 2:
+                key = _handoff_edge_key(edge[0], edge[1])
+                edge_counts[key] = max(1, int(edge_counts.get(key, 0) or 0))
+    recent_fingerprints = state.get("recent_fingerprints") if isinstance(state.get("recent_fingerprints"), list) else []
+    failure_signatures = state.get("failure_signatures") if isinstance(state.get("failure_signatures"), dict) else {}
+    try:
+        stalled_turns = int(state.get("stalled_turns", 0) or 0)
+    except (TypeError, ValueError):
+        stalled_turns = 0
+    state.update({
+        "turns": turns,
+        "edge_counts": edge_counts,
+        "recent_fingerprints": recent_fingerprints,
+        "failure_signatures": failure_signatures,
+        "stalled_turns": max(0, stalled_turns),
+    })
+    return state
+
+
+def _handoff_progress_signals(reply, collected_tool_calls, candidate, handoff_state) -> dict:
+    state = _init_handoff_state(handoff_state)
+    tool_calls = collected_tool_calls or []
+    has_tool_calls = bool(tool_calls)
+    low_value = _is_low_value_handoff_reply(reply, has_tool_calls)
+    tasklike = _is_tasklike_handoff_reply(reply, has_tool_calls) and not low_value
+    text = _normalize_handoff_text(reply).lower()
+    fingerprint = _handoff_reply_fingerprint(reply)
+    failure = _failure_signature(reply)
+    failure_count = int(state["failure_signatures"].get(failure, 0) or 0) if failure else 0
+    recent_fingerprints = state.get("recent_fingerprints") or []
+    explicit_fix_or_retest = any(marker in text for marker in [
+        "已修复", "修复完成", "修好了", "fix", "fixed", "复测", "回归", "验证", "verify", "retest",
+    ])
+    explicit_progress = any(marker in text for marker in [
+        "已完成", "完成", "通过", "定位", "根因", "原因", "新增", "更新", "调整", "实现", "改动", "结果", "结论",
+        "done", "passed", "implemented", "updated", "changed", "root cause",
+    ])
+    new_failure = bool(failure and failure_count == 0)
+    new_fingerprint = bool(fingerprint and fingerprint not in recent_fingerprints)
+    meaningful_progress = bool(has_tool_calls or new_failure or explicit_fix_or_retest or (explicit_progress and new_fingerprint))
+    return {
+        "tool_calls": has_tool_calls,
+        "tasklike": tasklike,
+        "low_value": low_value,
+        "new_failure": new_failure,
+        "failure_signature": failure,
+        "failure_count": failure_count,
+        "explicit_fix_or_retest": explicit_fix_or_retest,
+        "explicit_progress": explicit_progress,
+        "new_fingerprint": new_fingerprint,
+        "meaningful_progress": meaningful_progress,
+    }
+
+
+def _record_handoff_turn(handoff_state: dict, candidate: dict, decision: str, reason: str,
+                         fingerprint: str, failure: str | None, edge_key: str,
+                         repeat_window: int, increment_edge: bool) -> int:
+    state = _init_handoff_state(handoff_state)
+    if increment_edge:
+        state["edge_counts"][edge_key] = int(state["edge_counts"].get(edge_key, 0) or 0) + 1
+    if fingerprint:
+        recent = state["recent_fingerprints"]
+        recent.append(fingerprint)
+        del recent[:-repeat_window]
+    if failure:
+        state["failure_signatures"][failure] = int(state["failure_signatures"].get(failure, 0) or 0) + 1
+    state["turns"].append({
+        "source": candidate.get("source_agent_id"),
+        "target": candidate.get("target"),
+        "edge": edge_key,
+        "decision": decision,
+        "reason": reason,
+    })
+    del state["turns"][:-repeat_window]
+    return int(state["edge_counts"].get(edge_key, 0) or 0)
+
+
+def _evaluate_handoff_candidate(candidate, reply, collected_tool_calls, handoff_state, room_settings) -> dict:
+    state = _init_handoff_state(handoff_state)
+    source_id = candidate.get("source_agent_id")
+    target_id = candidate.get("target")
+    edge_key = _handoff_edge_key(source_id, target_id)
+    edge_count = int(state["edge_counts"].get(edge_key, 0) or 0)
+    repeat_window = _setting_int(room_settings, "handoff_repeat_window", 8, 1, 100)
+    stall_limit = _setting_int(room_settings, "handoff_stall_limit", 2, 1, 20)
+    same_failure_limit = _setting_int(room_settings, "handoff_same_failure_limit", 2, 1, 20)
+    max_chain = _setting_int(room_settings, "max_chain_depth", 12, 0, 1000)
+    chain_depth = int(candidate.get("chain_depth", 0) or 0)
+    budget_remaining = None if max_chain <= 0 else max_chain - chain_depth - 1
+    mode = _room_collaboration_mode(room_settings)
+    progress_signals = _handoff_progress_signals(reply, collected_tool_calls, candidate, state)
+    fingerprint = _handoff_reply_fingerprint(reply)
+    failure = progress_signals.get("failure_signature")
+
+    def finish(decision: str, reason: str, increment_edge: bool = False, stalled: bool | None = None) -> dict:
+        if stalled is True:
+            state["stalled_turns"] = int(state.get("stalled_turns", 0) or 0) + 1
+        elif stalled is False:
+            state["stalled_turns"] = 0
+        new_edge_count = _record_handoff_turn(
+            state, candidate, decision, reason, fingerprint, failure, edge_key, repeat_window, increment_edge
+        )
+        return {
+            "target": target_id,
+            "source": candidate.get("source"),
+            "decision": decision,
+            "reason": reason,
+            "progress_signals": progress_signals,
+            "edge_count": new_edge_count if increment_edge else edge_count,
+            "stalled_turns": int(state.get("stalled_turns", 0) or 0),
+            "budget_remaining": budget_remaining,
+        }
+
+    if max_chain > 0 and budget_remaining is not None and budget_remaining <= 0:
+        return finish("suppressed", "max_chain_depth")
+    if mode == "manual":
+        return finish("suppressed", "manual_mode")
+    if mode == "strict" and candidate.get("source") == "text_mention":
+        return finish("suppressed", "strict_mode")
+    if progress_signals.get("low_value"):
+        return finish("suppressed", "low_value_reply", stalled=True)
+    if (progress_signals.get("failure_count") or 0) >= same_failure_limit and not progress_signals.get("tool_calls"):
+        if not (progress_signals.get("explicit_fix_or_retest") or progress_signals.get("explicit_progress")):
+            return finish("suppressed", "same_failure_signature", stalled=True)
+    if mode == "guided" and not (
+        progress_signals.get("tasklike") or progress_signals.get("tool_calls")
+        or progress_signals.get("new_failure") or progress_signals.get("explicit_progress")
+    ):
+        return finish("suppressed", "not_tasklike", stalled=True)
+    if edge_count > 0 and not progress_signals.get("meaningful_progress"):
+        if failure and (progress_signals.get("failure_count") or 0) < same_failure_limit:
+            return finish("allowed", "repeated_failure_under_limit", increment_edge=True, stalled=False)
+        return finish("suppressed", "no_new_progress", stalled=True)
+    if int(state.get("stalled_turns", 0) or 0) >= stall_limit and not progress_signals.get("meaningful_progress"):
+        return finish("suppressed", "stalled_handoff", stalled=True)
+    reason = "progress" if progress_signals.get("meaningful_progress") else "first_handoff"
+    return finish("allowed", reason, increment_edge=True, stalled=False)
 
 
 def _merge_metadata(metadata: dict | None, extra: dict) -> dict:
@@ -1047,10 +1252,11 @@ async def _execute_tool(name: str, args: dict) -> dict:
 
 
 async def process_message(db, ws_manager, room_id: str, sender_id: str, text: str,
-                           mentions: list = None, room_type: str = "group",
-                           chain_depth: int = 0, thread_id: str = None,
-                           handoff_edges: set | None = None,
-                           visited_agents: set | None = None):
+                            mentions: list = None, room_type: str = "group",
+                            chain_depth: int = 0, thread_id: str = None,
+                            handoff_edges: set | None = None,
+                            visited_agents: set | None = None,
+                            handoff_state: dict | None = None):
     """
     Process a message and generate AI replies from mentioned agents.
     Core orchestration logic.
@@ -1058,11 +1264,12 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     mentions = mentions or []
     handoff_edges = handoff_edges or set()
     visited_agents = set(visited_agents or set())
+    handoff_state = _init_handoff_state(handoff_state, handoff_edges)
 
     # Chain depth limit: only applies to agent-to-agent chains, NOT user messages
-    # Default max_chain = 5 if not configured (prevents infinite loops)
+    # Default max_chain = 12 if not configured (prevents infinite loops)
     room_settings = db.get_room_settings(room_id)
-    max_chain = room_settings.get("max_chain_depth", 5)
+    max_chain = _setting_int(room_settings, "max_chain_depth", 12, 0, 1000)
     if sender_id != "user" and max_chain > 0 and chain_depth >= max_chain:
         print(f"[AI] Chain depth limit reached ({chain_depth}/{max_chain}) in room {room_id}")
         return
@@ -1324,51 +1531,51 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else metadata
 
         text_mentions = []
-        repeated_text_mentions = []
-        visited_text_mentions = []
         # Strip markdown formatting around @mentions: **@name**, *@name*, `@name`, etc.
         clean_reply = re.sub(r'[*_`~|]', '', reply)
         for m in re.finditer(r"@([^\s@,，.。;；:：!！?？]+)", clean_reply):
             mention_name = m.group(1).strip()
             mentioned = next((a for a in all_agents if a["name"] == mention_name and a["id"] != agent["id"]), None)
-            edge_key = (agent["id"], mentioned["id"]) if mentioned else None
-            if mentioned and mentioned["id"] in visited_agents:
-                visited_text_mentions.append(mentioned["id"])
-                continue
-            if mentioned and edge_key in handoff_edges:
-                repeated_text_mentions.append(mentioned["id"])
-                continue
             if mentioned and mentioned["id"] not in text_mentions:
                 text_mentions.append(mentioned["id"])
 
-        has_tool_calls = bool(collected_tool_calls)
+        def evaluate_candidate(target_id: str, source: str) -> dict:
+            candidate = {
+                "source": source,
+                "source_agent_id": agent["id"],
+                "target": target_id,
+                "chain_depth": chain_depth,
+            }
+            return _evaluate_handoff_candidate(candidate, reply, collected_tool_calls, handoff_state, room_settings)
+
+        handoff_candidates = []
         suppressed_handoffs = []
-        suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "repeated_edge"} for mid in repeated_text_mentions])
-        suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "visited_agent"} for mid in visited_text_mentions])
-        if collaboration_mode == "manual":
-            reply_mentions = []
-            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "manual_mode"} for mid in text_mentions])
-        elif collaboration_mode == "strict":
-            reply_mentions = []
-            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "strict_mode"} for mid in text_mentions])
-        elif _is_low_value_handoff_reply(reply, has_tool_calls):
-            reply_mentions = []
-            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "low_value_reply"} for mid in text_mentions])
-        elif collaboration_mode == "guided" and not _is_tasklike_handoff_reply(reply, has_tool_calls):
-            reply_mentions = []
-            suppressed_handoffs.extend([{"target": mid, "source": "text_mention", "reason": "not_tasklike"} for mid in text_mentions])
-        else:
-            reply_mentions = list(text_mentions)
-            for mid in reply_mentions:
+        handoff_decisions = []
+        reply_mentions = []
+        for mid in text_mentions:
+            candidate = {"target": mid, "source": "text_mention"}
+            handoff_candidates.append(candidate)
+            decision = evaluate_candidate(mid, "text_mention")
+            handoff_decisions.append(decision)
+            if decision["decision"] == "allowed":
+                reply_mentions.append(mid)
                 handoff_edges.add((agent["id"], mid))
+            else:
+                suppressed_handoffs.append({"target": mid, "source": "text_mention", "reason": decision["reason"]})
 
         structured_handoff_mentions = []
-        if collaboration_mode != "manual" and not _is_low_value_handoff_reply(reply, has_tool_calls):
-            structured_handoff_mentions = _handoff_mentions(reply, full_agent, all_agents, room_settings, handoff_edges)
+        if collaboration_mode != "manual":
+            structured_handoff_mentions = _handoff_mentions(reply, full_agent, all_agents, room_settings, None)
         visible_handoff_lines = []
         for mid in structured_handoff_mentions:
-            if mid in visited_agents:
-                suppressed_handoffs.append({"target": mid, "source": "structured_rule", "reason": "visited_agent"})
+            if mid in text_mentions:
+                continue
+            candidate = {"target": mid, "source": "structured_rule"}
+            handoff_candidates.append(candidate)
+            decision = evaluate_candidate(mid, "structured_rule")
+            handoff_decisions.append(decision)
+            if decision["decision"] != "allowed":
+                suppressed_handoffs.append({"target": mid, "source": "structured_rule", "reason": decision["reason"]})
                 continue
             if mid not in reply_mentions:
                 reply_mentions.append(mid)
@@ -1380,14 +1587,16 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         if visible_handoff_lines:
             reply = reply.rstrip() + "\n\n" + "\n".join(visible_handoff_lines)
 
-        if text_mentions or structured_handoff_mentions or suppressed_handoffs:
+        if text_mentions or structured_handoff_mentions or suppressed_handoffs or handoff_decisions:
             metadata = _merge_metadata(metadata, {
                 "handoff": {
                     "mode": collaboration_mode,
+                    "candidates": handoff_candidates,
                     "text_mentions": text_mentions,
                     "structured_mentions": structured_handoff_mentions,
                     "targets": reply_mentions,
                     "suppressed": suppressed_handoffs,
+                    "decisions": handoff_decisions,
                     "chain_depth": chain_depth,
                 }
             })
@@ -1408,7 +1617,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # Chain collaboration (skip if interrupted)
         if reply_mentions and room_type == "group" and not is_interrupted:
             await asyncio.sleep(1)
-            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges, visited_agents)
+            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges, visited_agents, handoff_state)
 
         # Self-improvement (skip if interrupted)
         # Default: OFF globally and per-agent. Must be explicitly enabled.

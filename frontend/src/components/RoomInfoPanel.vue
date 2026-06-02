@@ -91,7 +91,7 @@
           <option value="strict">严格</option>
         </select>
       </div>
-      <div class="setting-hint">引导模式允许主动交接，但会抑制感谢、总结、重复 @ 这类无效循环</div>
+      <div class="setting-hint">引导模式允许开发/测试多轮返工，但会抑制无进展、同失败原因重复循环</div>
       <div class="setting-row">
         <label class="setting-label">最大协作轮数</label>
         <input
@@ -101,10 +101,10 @@
           @change="saveSettings"
           min="0"
           max="50"
-          placeholder="5"
+          placeholder="12"
         >
       </div>
-      <div class="setting-hint">设为 0 表示不限制，智能体可自主规划协作深度</div>
+      <div class="setting-hint">默认 12 轮；设为 0 表示不限制，智能体可自主规划协作深度</div>
       <div class="setting-row" style="margin-top:10px">
         <label class="setting-label">上下文策略</label>
         <select
@@ -353,7 +353,7 @@ const form = reactive({
 })
 const roomSettings = reactive({
   collaboration_mode: 'guided',
-  max_chain_depth: 5,
+  max_chain_depth: 12,
   context_strategy: 'inherit',
   context_messages_limit: 0,
   collaboration_guide: '',
