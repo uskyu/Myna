@@ -595,6 +595,32 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   color: white;
   box-shadow: 0 1px 2px var(--accent-glow);
 }
+.msg-group.event {
+  align-items: center;
+  gap: 6px;
+}
+.msg-group.event .msg {
+  align-self: center;
+  max-width: 78%;
+  background: rgba(217, 119, 6, 0.08);
+  color: var(--text-dim);
+  border: 1px solid rgba(217, 119, 6, 0.18);
+  box-shadow: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+}
+.msg-group.event .msg::before {
+  content: '✦';
+  color: var(--accent-soft);
+  margin-right: 6px;
+}
+.msg-group.event .msg .msg-meta-row,
+.msg-group.event .msg .msg-actions {
+  display: none;
+}
 .msg-group .msg:not(:first-child) {
   border-radius: 8px var(--radius-lg) var(--radius-lg) 8px;
 }

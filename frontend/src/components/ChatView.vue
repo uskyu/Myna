@@ -30,8 +30,8 @@
       <div class="messages-area" ref="messagesArea" @scroll="onScroll">
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
-        <div class="msg-group" :class="{ self: group.self }">
-          <div v-for="(msg, mi) in group.messages" :key="msg.id || mi" class="msg" :class="{ self: group.self, streaming: msg.streaming }">
+        <div class="msg-group" :class="{ self: group.self, event: group.event }">
+          <div v-for="(msg, mi) in group.messages" :key="msg.id || mi" class="msg" :class="{ self: group.self, streaming: msg.streaming, event: msg.event }">
             <div v-if="msg.showName" class="sender-name">{{ msg.sender_name }}</div>
             <!-- Text/tools content in chronological order -->
             <template v-if="msg.parts && msg.parts.length">
@@ -300,12 +300,14 @@
         rows="1"
         placeholder="输入消息..."
         v-model="inputText"
-        @keydown.enter.exact.prevent="onEnterKey"
-        @keydown.enter.shift.prevent="onShiftEnter"
+        @keydown.enter.exact.prevent="onEnterKey($event)"
+        @keydown.enter.shift.prevent="onShiftEnter($event)"
         @keydown.down.prevent="moveMention(1)"
         @keydown.up.prevent="moveMention(-1)"
         @keydown.tab.prevent="onTab"
         @keydown.escape="closeMentions"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
         @input="onInput"
         @paste="onPaste"
       ></textarea>
@@ -370,6 +372,8 @@ const mentionIndex = ref(0)
 const mentionStartPos = ref(-1)
 
 let pollTimer = null
+let resizeRaf = 0
+const isComposingText = ref(false)
 
 // Tool expand state per stream
 const toolsExpandedMap = ref({})
@@ -708,7 +712,8 @@ const messageGroups = computed(() => {
   const allMsgs = []
   const replacedInterruptedStreams = new Set()
   messages.value.forEach(m => {
-    const self = m.sender_id === 'user' || m.sender_id === 'system'
+    const event = m.sender_id === 'system'
+    const self = m.sender_id === 'user'
     // Parse metadata for tool_calls and chronological parts
     let toolCalls = null
     let parts = null
@@ -743,18 +748,30 @@ const messageGroups = computed(() => {
       sortTs: m.clientSortTs || metaSortTs || parseMessageTs(m.created_at),
       clientOrder: m.clientOrder || 0,
       self,
-      showName: !self && (props.type === 'group' || !self),
+      event,
+      showName: !self && !event && (props.type === 'group' || !self),
       toolCalls,
       parts,
       toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
     })
   })
+  const latestUserSortTs = allMsgs
+    .filter(m => m.sender_id === 'user' && m.sortTs)
+    .reduce((max, m) => Math.max(max, m.sortTs || 0), 0)
   for (const sid in store.activeStreams) {
     const s = store.activeStreams[sid]
     if (replacedInterruptedStreams.has(sid)) continue
     if (s.roomId !== props.room.id) continue
     if ((s.threadId || null) !== activeThreadId.value) continue
     const startedAt = s.startedAt || Date.now()
+    // Active AI streams are causally triggered by the latest user turn in this
+    // view. Do not sort them purely by backend/browser timestamps: client clock
+    // skew or fast WS delivery can place the stream above the optimistic user
+    // message until the server copy arrives. Anchor live streams after the
+    // latest user message; persisted messages keep normal server ordering.
+    const streamSortTs = s.interrupted
+      ? startedAt
+      : Math.max(startedAt, latestUserSortTs ? latestUserSortTs + 1 : startedAt)
     allMsgs.push({
       id: `stream-${sid}`,
       sender_id: s.agentId,
@@ -763,7 +780,7 @@ const messageGroups = computed(() => {
       rendered: renderMd(s.text),
       time: s.interrupted ? '已中断' : '',
       date: '',
-      sortTs: startedAt,
+      sortTs: streamSortTs,
       clientOrder: s.clientOrder || 0,
       self: false,
       showName: props.type === 'group',
@@ -784,7 +801,7 @@ const messageGroups = computed(() => {
       groups.push({ separator: m.date, self: false, messages: [] })
     }
     if (m.sender_id !== prevSender) {
-      groups.push({ self: m.self, messages: [m] })
+      groups.push({ self: m.self, event: m.event, messages: [m] })
     } else {
       groups[groups.length - 1].messages.push(m)
     }
@@ -1014,9 +1031,21 @@ function scrollToBottomIfNeeded() {
 }
 
 // === Mention logic ===
+function onCompositionStart() {
+  isComposingText.value = true
+  closeMentions()
+}
+
+function onCompositionEnd(e) {
+  isComposingText.value = false
+  onInput(e)
+}
+
 function onInput(e) {
-  autoResize(e)
+  scheduleAutoResize(e?.target || inputEl.value)
+  if (isComposingText.value) return
   const el = inputEl.value
+  if (!el) return
   const pos = el.selectionStart
   const text = inputText.value
   // Find latest @ before cursor with no space between
@@ -1068,7 +1097,8 @@ function closeMentions() {
 
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 
-function onEnterKey() {
+function onEnterKey(e) {
+  if (isComposingText.value || e?.isComposing) return
   if (showMentions.value && mentionCandidates.value[mentionIndex.value]) {
     selectMention(mentionCandidates.value[mentionIndex.value])
     return
@@ -1334,8 +1364,18 @@ async function handleCommand(text) {
   }
 }
 
+function scheduleAutoResize(el) {
+  if (!el) return
+  if (resizeRaf) cancelAnimationFrame(resizeRaf)
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0
+    autoResize({ target: el })
+  })
+}
+
 function autoResize(e) {
-  const el = e.target
+  const el = e?.target
+  if (!el) return
   el.style.height = 'auto'
   el.style.height = Math.min(el.scrollHeight, 120) + 'px'
 }
@@ -1434,6 +1474,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(pollTimer)
+  if (resizeRaf) cancelAnimationFrame(resizeRaf)
   currentRoomId.value = null
   ws.offMessage(handleWS)
 })
