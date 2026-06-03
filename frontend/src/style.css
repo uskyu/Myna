@@ -601,6 +601,10 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .msg-group.event .msg {
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   max-width: 78%;
   background: rgba(217, 119, 6, 0.08);
   color: var(--text-dim);
@@ -615,7 +619,16 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .msg-group.event .msg::before {
   content: '✦';
   color: var(--accent-soft);
-  margin-right: 6px;
+  flex: 0 0 auto;
+}
+.msg-group.event .msg .msg-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+}
+.msg-group.event .msg .msg-text p {
+  margin: 0;
 }
 .msg-group.event .msg .msg-meta-row,
 .msg-group.event .msg .msg-actions {
