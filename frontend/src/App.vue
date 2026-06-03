@@ -52,7 +52,7 @@
       <!-- Admin and Settings should use the full desktop workspace. -->
       <div v-else class="desktop-workspace-panel">
         <AdminCenter v-if="page === 'admin'" />
-        <SettingsPage v-if="page === 'settings'" />
+        <SettingsPage v-if="page === 'settings'" @open-room="openSettingsRoom" />
       </div>
     </template>
 
@@ -62,7 +62,7 @@
         <ChatList v-if="page === 'chats'" @open-chat="openChat" @create-room="showModal('room')" />
         <AgentList v-if="page === 'agents'" @open-detail="openAgentDetail" @create-agent="showModal('agent')" />
         <AdminCenter v-if="page === 'admin'" />
-        <SettingsPage v-if="page === 'settings'" />
+        <SettingsPage v-if="page === 'settings'" @open-room="openSettingsRoom" />
         <ChatView v-if="currentRoom" :key="currentRoom.id" :room="currentRoom" :type="currentRoomType" @close="closeChat" />
         <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
       </div>
@@ -161,6 +161,11 @@ function showModal(name) { modals[name] = true }
 
 function onRoomCreated(room) {
   modals.room = false
+  openChat(room, 'group')
+}
+
+function openSettingsRoom(room) {
+  page.value = 'chats'
   openChat(room, 'group')
 }
 
