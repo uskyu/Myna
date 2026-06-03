@@ -208,9 +208,40 @@ export async function loadConversations() {
     api('GET', '/admin/rooms'),
     api('GET', '/admin/dms'),
   ])
-  store.rooms = (roomData.result || []).filter(r => r.type !== 'dm')
-  store.dms = dmData.result || []
+  const sortConversations = (items) => [...items].sort((a, b) => {
+    const prominentA = (store.unreadCounts[a.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === a.id)
+    const prominentB = (store.unreadCounts[b.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === b.id)
+    if (prominentA !== prominentB) return prominentA ? -1 : 1
+    const timeA = conversationTime(a)
+    const timeB = conversationTime(b)
+    if (timeA !== timeB) return timeB - timeA
+    return String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''))
+  })
+
+  store.rooms = sortConversations((roomData.result || []).filter(r => r.type !== 'dm'))
+  store.dms = sortConversations(dmData.result || [])
   store.initialized = true
+}
+
+function conversationTime(item) {
+  const candidates = [item.last_message?.created_at, item.updated_at, item.created_at]
+  for (const ts of candidates) {
+    const parsed = parseTimestamp(ts)
+    if (parsed) return parsed
+  }
+  return 0
+}
+
+function parseTimestamp(ts) {
+  if (!ts) return 0
+  if (typeof ts === 'number') return ts
+  try {
+    const value = String(ts)
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+    const normalized = value.replace(' ', 'T') + (hasZone ? '' : 'Z')
+    const d = new Date(normalized)
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+  } catch { return 0 }
 }
 
 // WebSocket

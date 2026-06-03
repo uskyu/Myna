@@ -6,17 +6,17 @@
 
     <!-- Tab bar -->
     <div class="tab-bar" :class="{ 'desktop-nav': isDesktop }">
-      <div class="tab-item" :class="{ active: activeTab === 'config' }" @click="activeTab = 'config'">
+      <div class="tab-item" :class="{ active: activeTab === 'config' }" @pointerdown.prevent="setActiveTab('config')" @click="setActiveTab('config')">
         <span class="tab-label">配置</span>
         <span class="tab-helper">执行策略与自主进化</span>
       </div>
-      <div class="tab-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">
-        <span class="tab-label">系统智能体</span>
-        <span class="tab-helper">系统代理与行为</span>
-      </div>
-      <div class="tab-item" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">
+      <div class="tab-item" :class="{ active: activeTab === 'skills' }" @pointerdown.prevent="setActiveTab('skills')" @click="setActiveTab('skills')">
         <span class="tab-label">技能库</span>
         <span class="tab-helper">全局技能资产</span>
+      </div>
+      <div class="tab-item" :class="{ active: activeTab === 'system' }" @pointerdown.prevent="setActiveTab('system')" @click="setActiveTab('system')">
+        <span class="tab-label">系统智能体</span>
+        <span class="tab-helper">系统代理与行为</span>
       </div>
       <div class="tab-indicator" :style="tabIndicatorStyle"></div>
     </div>
@@ -78,11 +78,6 @@
         </div>
       </div>
 
-      <!-- System Agent tab -->
-      <div v-show="activeTab === 'system'" class="tab-panel">
-        <SystemAgentPanel />
-      </div>
-
       <!-- Skills tab -->
       <div v-show="activeTab === 'skills'" class="tab-panel">
         <div class="admin-section skills-section">
@@ -118,6 +113,9 @@
                       <button class="skill-card-btn" @click.stop="viewSkill(skill)" title="查看">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
+                      <button class="skill-card-btn" @click.stop="startEditSkill(skill)" title="编辑">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
                       <button class="skill-card-btn" @click.stop="copySkill(skill)" title="复制到其他智能体">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>
@@ -134,27 +132,52 @@
             </div>
             <aside v-if="isDesktop" class="skill-inspector">
               <template v-if="selectedSkill">
-                <div class="inspector-header">
-                  <div>
-                    <h4>{{ selectedSkill.name }}</h4>
-                    <p>{{ selectedSkill.description || '无描述' }}</p>
+                <template v-if="editingSkill?.id === selectedSkill.id">
+                  <div class="inspector-header edit-mode">
+                    <div class="inspector-edit-fields">
+                      <label>名称<input v-model="editForm.name" /></label>
+                      <label>描述<input v-model="editForm.description" /></label>
+                    </div>
+                    <label class="file-type-field">类型<input v-model="editForm.file_type" /></label>
                   </div>
-                  <span class="skill-card-type">{{ selectedSkill.file_type || 'text' }}</span>
-                </div>
-                <div class="inspector-meta">
-                  <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
-                </div>
-                <pre class="inspector-content">{{ selectedSkill.content || '(空)' }}</pre>
-                <div class="inspector-actions">
-                  <button class="link-btn" @click="viewSkill(selectedSkill)">弹窗查看</button>
-                  <button class="link-btn" @click="copySkill(selectedSkill)">复制</button>
-                  <button class="link-btn" @click="downloadSkill(selectedSkill)">下载</button>
-                </div>
+                  <div class="inspector-meta">
+                    <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
+                  </div>
+                  <textarea class="inspector-editor" v-model="editForm.content" spellcheck="false"></textarea>
+                  <div class="inspector-actions">
+                    <button class="btn-cancel" @click="cancelEditSkill">取消</button>
+                    <button class="btn-save" :disabled="savingSkill || !editForm.name.trim()" @click="saveSkillEdit">{{ savingSkill ? '保存中...' : '保存' }}</button>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="inspector-header">
+                    <div>
+                      <h4>{{ selectedSkill.name }}</h4>
+                      <p>{{ selectedSkill.description || '无描述' }}</p>
+                    </div>
+                    <span class="skill-card-type">{{ selectedSkill.file_type || 'text' }}</span>
+                  </div>
+                  <div class="inspector-meta">
+                    <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
+                  </div>
+                  <pre class="inspector-content">{{ selectedSkill.content || '(空)' }}</pre>
+                  <div class="inspector-actions">
+                    <button class="link-btn" @click="startEditSkill(selectedSkill)">编辑</button>
+                    <button class="link-btn" @click="viewSkill(selectedSkill)">弹窗查看</button>
+                    <button class="link-btn" @click="copySkill(selectedSkill)">复制</button>
+                    <button class="link-btn" @click="downloadSkill(selectedSkill)">下载</button>
+                  </div>
+                </template>
               </template>
               <div v-else class="inspector-empty">选择一个技能查看内容</div>
             </aside>
           </div>
         </div>
+      </div>
+
+      <!-- System Agent tab -->
+      <div v-show="activeTab === 'system'" class="tab-panel">
+        <SystemAgentPanel />
       </div>
 
     </div>
@@ -165,13 +188,50 @@
         <div class="skill-view-modal">
           <div class="skill-view-header">
             <h4>{{ viewingSkill.name }}</h4>
-            <button class="close-btn" @click="viewingSkill = null">×</button>
+            <div class="modal-head-actions">
+              <button class="link-btn" @click="startEditSkill(viewingSkill); viewingSkill = null">编辑</button>
+              <button class="close-btn" @click="viewingSkill = null">×</button>
+            </div>
           </div>
           <div class="skill-view-meta">
             <span>所属: {{ viewingSkill.agent_name || '未知' }}</span>
             <span>类型: {{ viewingSkill.file_type || 'text' }}</span>
           </div>
           <pre class="skill-view-content">{{ viewingSkill.content || '(空)' }}</pre>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Mobile edit skill modal -->
+    <Teleport to="body">
+      <div v-if="editingSkill && !isDesktop" class="skill-view-overlay" @click.self="cancelEditSkill">
+        <div class="skill-view-modal edit-skill-modal">
+          <div class="skill-view-header">
+            <h4>编辑技能</h4>
+            <button class="close-btn" @click="cancelEditSkill">×</button>
+          </div>
+          <div class="create-skill-body">
+            <div class="create-field">
+              <label>名称</label>
+              <input v-model="editForm.name" placeholder="技能名称" />
+            </div>
+            <div class="create-field">
+              <label>描述</label>
+              <input v-model="editForm.description" placeholder="这个技能做什么？" />
+            </div>
+            <div class="create-field">
+              <label>类型</label>
+              <input v-model="editForm.file_type" placeholder="text" />
+            </div>
+            <div class="create-field">
+              <label>内容</label>
+              <textarea v-model="editForm.content" placeholder="技能指令内容..." rows="12"></textarea>
+            </div>
+          </div>
+          <div class="create-skill-footer">
+            <button class="btn-cancel" @click="cancelEditSkill">取消</button>
+            <button class="btn-save" :disabled="savingSkill || !editForm.name.trim()" @click="saveSkillEdit">{{ savingSkill ? '保存中...' : '保存' }}</button>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -246,11 +306,17 @@ const copyingSkill = ref(null)
 const showCreateSkill = ref(false)
 const skillFileInput = ref(null)
 const activeTab = ref('config')
+function setActiveTab(tab) {
+  activeTab.value = tab
+}
 const selectedSkill = ref(null)
 const isDesktop = inject('isDesktop', ref(false))
+const editingSkill = ref(null)
+const savingSkill = ref(false)
+const editForm = reactive({ name: '', description: '', content: '', file_type: '' })
 
 const tabIndicatorStyle = computed(() => {
-  const tabs = ['config', 'system', 'skills']
+  const tabs = ['config', 'skills', 'system']
   const idx = tabs.indexOf(activeTab.value)
   return {
     width: `${100 / tabs.length}%`,
@@ -312,6 +378,8 @@ watch(allSkills, (skills) => {
     selectedSkill.value = skills[0]
   } else if (selectedSkill.value && !skills.some(s => s.id === selectedSkill.value.id)) {
     selectedSkill.value = skills[0] || null
+  } else if (selectedSkill.value) {
+    selectedSkill.value = skills.find(s => s.id === selectedSkill.value.id) || selectedSkill.value
   }
 })
 
@@ -349,6 +417,11 @@ async function loadAllSkills() {
   allSkills.value = data.result || []
 }
 
+async function refreshSkillsKeeping(skillId) {
+  await loadAllSkills()
+  if (skillId) selectedSkill.value = allSkills.value.find(s => s.id === skillId) || selectedSkill.value
+}
+
 async function loadHubSettings() {
   try {
     const data = await api('GET', '/admin/settings')
@@ -364,6 +437,42 @@ function selectSkill(skill) {
   selectedSkill.value = skill
 }
 
+function startEditSkill(skill) {
+  if (!skill) return
+  selectedSkill.value = skill
+  editingSkill.value = skill
+  editForm.name = skill.name || ''
+  editForm.description = skill.description || ''
+  editForm.content = skill.content || ''
+  editForm.file_type = skill.file_type || 'text'
+}
+
+function cancelEditSkill() {
+  editingSkill.value = null
+}
+
+async function saveSkillEdit() {
+  if (!editingSkill.value || !editForm.name.trim()) return
+  savingSkill.value = true
+  const id = editingSkill.value.id
+  try {
+    const res = await api('PUT', `/admin/skills/${id}`, {
+      name: editForm.name.trim(),
+      description: editForm.description.trim(),
+      content: editForm.content,
+      file_type: editForm.file_type.trim() || 'text',
+    })
+    if (res.ok === false) {
+      alert(res.error || '保存失败')
+      return
+    }
+    editingSkill.value = null
+    await refreshSkillsKeeping(id)
+  } finally {
+    savingSkill.value = false
+  }
+}
+
 function copySkill(skill) {
   copyingSkill.value = skill
 }
@@ -372,7 +481,7 @@ async function doCopy(agent) {
   if (agent.id === copyingSkill.value.agent_id) return
   await api('POST', `/admin/skills/${copyingSkill.value.id}/copy`, { target_agent_id: agent.id })
   copyingSkill.value = null
-  loadAllSkills()
+  refreshSkillsKeeping(selectedSkill.value?.id)
 }
 
 function downloadSkill(skill) {
@@ -388,7 +497,7 @@ function downloadSkill(skill) {
 async function deleteSkill(skill) {
   if (!confirm(`确定删除技能「${skill.name}」？`)) return
   await api('DELETE', `/admin/skills/${skill.id}`)
-  loadAllSkills()
+  await refreshSkillsKeeping(selectedSkill.value?.id)
 }
 
 async function doCreateSkill() {
@@ -403,7 +512,7 @@ async function doCreateSkill() {
   createForm.description = ''
   createForm.content = ''
   createForm.agent_id = ''
-  loadAllSkills()
+  refreshSkillsKeeping(selectedSkill.value?.id)
 }
 
 function triggerUpload() {
@@ -425,7 +534,7 @@ async function onSkillFileUpload(e) {
       file_type: file.name.split('.').pop() || 'text',
     })
   }
-  loadAllSkills()
+  refreshSkillsKeeping(selectedSkill.value?.id)
   e.target.value = ''
 }
 
@@ -736,6 +845,11 @@ onMounted(() => {
   border-bottom: 1px solid var(--border);
 }
 .skill-view-header h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .close-btn {
   background: none; border: none; font-size: 22px; color: var(--text-dim); cursor: pointer;
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
@@ -889,6 +1003,9 @@ onMounted(() => {
 }
 .link-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .skill-card-btn.danger:hover { border-color: var(--danger, #e53e3e); color: var(--danger, #e53e3e); }
+.edit-skill-modal {
+  max-height: 88vh;
+}
 
 .skills-workspace,
 .skills-library {
@@ -1069,6 +1186,68 @@ onMounted(() => {
     color: var(--text-dim);
     font-size: 13px;
     line-height: 1.45;
+  }
+
+  .inspector-header.edit-mode {
+    align-items: flex-start;
+  }
+
+  .inspector-edit-fields {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .inspector-edit-fields label,
+  .file-type-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .inspector-edit-fields input,
+  .file-type-field input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface2);
+    color: var(--text);
+    font: inherit;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .file-type-field {
+    width: 90px;
+  }
+
+  .inspector-editor {
+    flex: 1;
+    min-height: 260px;
+    resize: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 18px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .inspector-editor:focus,
+  .inspector-edit-fields input:focus,
+  .file-type-field input:focus {
+    outline: none;
+    border-color: var(--accent);
   }
 
   .inspector-meta {

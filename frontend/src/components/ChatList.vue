@@ -22,8 +22,8 @@
     <div class="chat-list">
       <!-- Group chats -->
       <template v-if="activeTab === 'group'">
-        <div v-for="(r, i) in store.rooms" :key="r.id" class="chat-item" @click="$emit('open-chat', r, 'group')">
-          <div class="avatar" :style="{ background: getAgentColor(i + 2) }">
+        <div v-for="r in sortedRooms" :key="r.id" class="chat-item" @click="$emit('open-chat', r, 'group')">
+          <div class="avatar" :style="{ background: getAgentColor(roomIndex(r.id) + 2) }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div class="info">
@@ -52,7 +52,7 @@
       </template>
       <!-- DMs -->
       <template v-if="activeTab === 'dm'">
-        <div v-for="dm in store.dms" :key="dm.id" class="chat-item" @click="$emit('open-chat', dm, 'dm')">
+        <div v-for="dm in sortedDms" :key="dm.id" class="chat-item" @click="$emit('open-chat', dm, 'dm')">
           <div class="avatar round" :style="{ background: getAgentColor(agentIndex(dm.agent?.id)) }">
             <span v-html="getAgentIcon(agentIndex(dm.agent?.id))"></span>
           </div>
@@ -112,6 +112,43 @@ const groupUnread = computed(() => {
 const dmUnread = computed(() => {
   return store.dms.reduce((sum, dm) => sum + (store.unreadCounts[dm.id] || 0), 0)
 })
+
+const sortedRooms = computed(() => sortConversations(store.rooms))
+const sortedDms = computed(() => sortConversations(store.dms))
+
+function sortConversations(items) {
+  return [...items].sort((a, b) => {
+    const prominentA = (store.unreadCounts[a.id] || 0) > 0 || isRoomActive(a.id)
+    const prominentB = (store.unreadCounts[b.id] || 0) > 0 || isRoomActive(b.id)
+    if (prominentA !== prominentB) return prominentA ? -1 : 1
+    const timeA = conversationTime(a)
+    const timeB = conversationTime(b)
+    if (timeA !== timeB) return timeB - timeA
+    return String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''))
+  })
+}
+
+function conversationTime(item) {
+  for (const ts of [item.last_message?.created_at, item.updated_at, item.created_at]) {
+    const parsed = parseTimestamp(ts)
+    if (parsed) return parsed
+  }
+  return 0
+}
+
+function parseTimestamp(ts) {
+  if (!ts) return 0
+  if (typeof ts === 'number') return ts
+  const value = String(ts)
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+  const normalized = value.replace(' ', 'T') + (hasZone ? '' : 'Z')
+  const d = new Date(normalized)
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+}
+
+function roomIndex(roomId) {
+  return store.rooms.findIndex(r => r.id === roomId)
+}
 
 function isRoomActive(roomId) {
   return Object.values(store.activeStreams).some(s => s.roomId === roomId)

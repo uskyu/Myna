@@ -13,6 +13,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="thread-toggle-count" v-if="threads.length > 0">{{ threads.length + 1 }}</span>
       </button>
+      <button v-if="type === 'group'" class="add-agent-top-btn" @click="openAddAgent" title="添加智能体">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>
+        <span>添加智能体</span>
+      </button>
       <button v-if="type === 'group'" class="more-btn" :class="{ active: showSettings }" @click="showSettings = !showSettings" :title="showSettings ? '返回聊天' : '群聊信息'">
         <svg v-if="!showSettings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -21,13 +25,23 @@
 
     <!-- Group info panel (replaces messages area when active) -->
     <div v-if="type === 'group' && showSettings" class="group-info-panel">
-      <RoomInfoPanel :room="room" @changed="onMembersChanged" @close="showSettings = false" @deleted="$emit('close')" />
+      <RoomInfoPanel ref="roomInfoPanel" :room="room" @changed="onMembersChanged" @close="showSettings = false" @deleted="$emit('close')" />
     </div>
 
     <!-- Chat body with optional thread panel -->
     <div v-if="!(type === 'group' && showSettings)" class="chat-body-wrapper">
       <!-- Messages area -->
       <div class="messages-area" ref="messagesArea" @scroll="onScroll">
+      <div v-if="showEmptyAgentGuide" class="empty-agent-guide">
+        <div class="guide-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><path d="M19 8v6M16 11h6"/></svg>
+        </div>
+        <div class="guide-copy">
+          <strong>这个群聊还没有智能体</strong>
+          <span>点击添加智能体开始协作</span>
+        </div>
+        <button class="guide-cta" @click="openAddAgent">添加智能体</button>
+      </div>
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
         <div class="msg-group" :class="{ self: group.self, event: group.event }">
@@ -331,6 +345,7 @@ const props = defineProps({ room: Object, type: String })
 const emit = defineEmits(['close'])
 
 const messagesArea = ref(null)
+const roomInfoPanel = ref(null)
 const inputEl = ref(null)
 const fileInput = ref(null)
 const imageInput = ref(null)
@@ -351,6 +366,13 @@ const showPlusMenu = ref(false)
 const showShortcutBar = ref(false)
 
 const hasActiveStreamInView = computed(() => Object.values(store.activeStreams).some(s => s.roomId === props.room.id && (s.threadId || null) === activeThreadId.value && !s.interrupted))
+const hasGroupAiMembers = computed(() => props.type === 'group' && (props.room.members || []).some(m => m.id !== 'user' && m.id !== 'system'))
+const showEmptyAgentGuide = computed(() => props.type === 'group' && !showSettings.value && !hasGroupAiMembers.value)
+
+function openAddAgent() {
+  showSettings.value = true
+  nextTick(() => roomInfoPanel.value?.openMemberPicker?.())
+}
 
 // Shortcut commands (like TG Hermes slash commands)
 const shortcutCommands = [

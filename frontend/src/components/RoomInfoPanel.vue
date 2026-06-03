@@ -25,13 +25,17 @@
           <div class="member-cell-name">{{ m.name }}</div>
           <button v-if="m.id !== 'user'" class="member-remove-btn" @click="removeMember(m)" title="移出群聊">×</button>
         </div>
-        <div v-if="available.length" class="member-cell add-cell" @click="showMemberPicker = true">
-          <div class="member-avatar add-avatar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          </div>
-          <div class="member-cell-name">添加</div>
-        </div>
       </div>
+
+      <button v-if="available.length" class="add-agent-card" @click="showMemberPicker = true">
+        <span class="add-agent-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>
+        </span>
+        <span class="add-agent-card-copy">
+          <strong>添加智能体</strong>
+          <small>邀请智能体加入群聊协作</small>
+        </span>
+      </button>
 
       <!-- Member picker modal -->
       <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="showMemberPicker = false">
@@ -363,6 +367,12 @@ const roomSettings = reactive({
 const roomWorkspacePath = ref('')
 const roomWorkspaceMode = ref('default')
 const roomWorkspaceModeLabel = computed(() => roomWorkspaceMode.value === 'custom' ? '绑定目录' : '默认目录')
+
+function openMemberPicker() {
+  showMemberPicker.value = true
+}
+
+defineExpose({ openMemberPicker })
 
 async function load() {
   const data = await api('GET', '/admin/rooms')
@@ -863,6 +873,52 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
   background: transparent !important;
 }
 .add-avatar svg { width: 18px; height: 18px; color: var(--text-dim); }
+
+.add-agent-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(45, 106, 79, 0.22);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface));
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.add-agent-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.add-agent-card-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: white;
+}
+.add-agent-card-icon svg { width: 20px; height: 20px; }
+.add-agent-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.add-agent-card-copy strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.add-agent-card-copy small {
+  font-size: 12px;
+  color: var(--text-dim);
+}
 
 .member-info { flex: 1; min-width: 0; }
 .member-name { font-size: 14px; font-weight: 600; color: var(--text); }
