@@ -1,6 +1,7 @@
 services:
   myna:
     image: myna-local:latest
+    build: .
     container_name: myna-app
     restart: unless-stopped
     ports:

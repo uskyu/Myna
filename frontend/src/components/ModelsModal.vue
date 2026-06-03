@@ -81,19 +81,27 @@
           <div v-if="fetchError" class="fetch-error">{{ fetchError }}</div>
 
           <div v-if="fetchedModels.length" class="field" style="margin-top:12px">
-            <label>选择模型 <span class="muted">({{ fetchedModels.length }} 个可用)</span></label>
+            <label>选择模型 <span class="muted">({{ fetchedModels.length }} 个可用，已选 {{ selectedModels.length }} 个)</span></label>
             <div class="model-search">
               <input v-model="modelFilter" placeholder="搜索模型 ID..." class="search-mini">
+              <div class="select-actions">
+                <button type="button" class="link-mini" @click="selectAllModels">全选</button>
+                <button type="button" class="link-mini" @click="clearAllModels">清空</button>
+                <button type="button" class="link-mini" @click="invertSelection">反选</button>
+              </div>
             </div>
-            <div v-if="!form.model" class="model-options">
+            <div class="model-options">
               <div
                 v-for="m in filteredModels"
                 :key="m.id"
                 class="model-option"
-                :class="{ active: form.model === m.id }"
-                @click="selectModel(m.id)"
+                :class="{ active: selectedModels.includes(m.id) }"
+                @click="toggleModel(m.id)"
               >
-                <div class="opt-id">{{ m.id }}</div>
+                <div class="model-option-content">
+                  <input type="checkbox" :checked="selectedModels.includes(m.id)" @click.stop @change="toggleModel(m.id)">
+                  <div class="opt-id">{{ m.id }}</div>
+                </div>
                 <div v-if="m.meta" class="opt-meta">
                   <span v-if="m.meta.max_input_tokens">{{ formatCtx(m.meta.max_input_tokens) }} ctx</span>
                   <span v-if="m.meta.supports_vision" class="cap-tag">👁 vision</span>
@@ -104,11 +112,13 @@
                 <p style="color:var(--text-dim);font-size:13px">没有匹配的模型</p>
               </div>
             </div>
-            <div v-if="form.model" class="selected-model">
-              <span class="muted">已选：</span>
-              <code>{{ form.model }}</code>
-              <span v-if="form.max_tokens" class="ctx-tag">{{ formatCtx(form.max_tokens) }} ctx</span>
-              <button type="button" class="link-mini" @click="clearSelectedModel">重新选择</button>
+            <div v-if="selectedModels.length" class="selected-model">
+              <span class="muted">已选 {{ selectedModels.length }} 个：</span>
+              <div class="selected-tags">
+                <code v-for="m in selectedModels.slice(0, 5)" :key="m">{{ m }}</code>
+                <span v-if="selectedModels.length > 5" class="muted">...等</span>
+              </div>
+              <button type="button" class="link-mini" @click="clearAllModels">清空</button>
             </div>
           </div>
         </div>
@@ -186,7 +196,10 @@
 
         <div class="btn-row">
           <button class="btn btn-cancel" @click="cancelEdit">取消</button>
-          <button class="btn btn-primary" @click="saveModel" :disabled="!canSave">{{ form.id ? '保存' : '创建' }}</button>
+          <button v-if="selectedModels.length <= 1" class="btn btn-primary" @click="saveModel" :disabled="!canSave">{{ form.id ? '保存' : '创建' }}</button>
+          <button v-else class="btn btn-primary" @click="saveBatchModels" :disabled="!canSaveBatch">
+            批量创建 ({{ selectedModels.length }} 个)
+          </button>
         </div>
       </div>
     </div>
@@ -209,6 +222,7 @@ const fetching = ref(false)
 const fetchError = ref('')
 const fetchedModels = ref([])
 const modelFilter = ref('')
+const selectedModels = ref([])
 
 const form = reactive({
   id: null,
@@ -353,8 +367,36 @@ function clearSelectedModel() {
   form.model = ''
 }
 
+function toggleModel(id) {
+  const index = selectedModels.value.indexOf(id)
+  if (index === -1) {
+    selectedModels.value.push(id)
+  } else {
+    selectedModels.value.splice(index, 1)
+  }
+}
+
+function selectAllModels() {
+  selectedModels.value = filteredModels.value.map(m => m.id)
+}
+
+function clearAllModels() {
+  selectedModels.value = []
+}
+
+function invertSelection() {
+  const allIds = filteredModels.value.map(m => m.id)
+  selectedModels.value = allIds.filter(id => !selectedModels.value.includes(id))
+}
+
 const canSave = computed(() => {
   if (!form.name.trim() || !form.base_url.trim() || !form.model.trim()) return false
+  if (!form.id && !form.api_key) return false
+  return true
+})
+
+const canSaveBatch = computed(() => {
+  if (!form.base_url.trim() || !selectedModels.value.length) return false
   if (!form.id && !form.api_key) return false
   return true
 })
@@ -394,6 +436,53 @@ async function saveModel() {
   } else {
     alert('保存失败：' + (res.error || '未知错误'))
   }
+}
+
+async function saveBatchModels() {
+  if (!canSaveBatch.value) return
+  const params = { api_mode: form.api_mode }
+  const baseUrl = form.base_url.trim()
+  const apiKey = form.api_key
+  const namePrefix = form.name.trim() || baseUrl.split('//')[1]?.split('/')[0] || 'Model'
+  
+  let successCount = 0
+  let failCount = 0
+  
+  for (const modelId of selectedModels.value) {
+    const payload = {
+      name: `${namePrefix} - ${modelId}`,
+      provider: 'openai',
+      base_url: baseUrl,
+      model: modelId,
+      temperature: form.temperature,
+      max_tokens: form.max_tokens,
+      is_default: 0,
+      params_json: JSON.stringify(params),
+    }
+    if (apiKey) payload.api_key = apiKey
+    
+    try {
+      const res = await api('POST', '/admin/models', payload)
+      if (res.ok) {
+        successCount++
+      } else {
+        failCount++
+        console.error(`Failed to save ${modelId}:`, res.error)
+      }
+    } catch(e) {
+      failCount++
+      console.error(`Error saving ${modelId}:`, e)
+    }
+  }
+  
+  if (failCount > 0) {
+    alert(`批量创建完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+  }
+  
+  editingModel.value = false
+  selectedModels.value = []
+  await load()
+  emit('changed')
 }
 
 async function remove(m) {
@@ -578,46 +667,133 @@ onMounted(load)
 }
 
 .search-mini {
-  width: 100%; padding: 7px 10px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  font-size: 13px; background: var(--surface); color: var(--text);
-  margin-bottom: 8px;
+  width: 100%; 
+  padding: 10px 12px;
+  border: 1px solid var(--border); 
+  border-radius: 10px;
+  font-size: 13px; 
+  background: var(--surface); 
+  color: var(--text);
+  transition: all 0.15s ease;
+}
+.search-mini:focus { 
+  outline: none; 
+  border-color: var(--accent); 
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.model-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.select-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.select-actions .link-mini {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.select-actions .link-mini:hover {
+  background: var(--accent-soft);
 }
 .model-options {
-  max-height: 200px; overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  max-height: 240px; overflow-y: auto;
+  border-radius: 12px;
   background: var(--surface);
+  padding: 4px;
 }
 .model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: all 0.15s ease;
 }
-.model-option:last-child { border-bottom: none; }
 .model-option:hover { background: var(--surface2); }
-.model-option.active { background: var(--accent-soft); }
+.model-option.active { 
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
 .model-option.active .opt-id { color: var(--accent); }
-.opt-id { font-family: var(--font-mono); font-size: 13px; color: var(--text); font-weight: 500; }
-.opt-meta { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); }
+.model-option-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.model-option-content input[type="checkbox"] {
+  width: 16px; height: 16px;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.opt-id { 
+  font-family: var(--font-mono); 
+  font-size: 13px; 
+  color: var(--text); 
+  font-weight: 500; 
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.opt-meta { 
+  display: inline-flex; 
+  gap: 6px; 
+  align-items: center; 
+  font-size: 11px; 
+  color: var(--text-dim); 
+  flex-shrink: 0; 
+}
 .cap-tag {
-  background: var(--surface2); border: 1px solid var(--border);
-  padding: 1px 6px; border-radius: 999px;
+  background: var(--surface2); 
+  border: 1px solid var(--border);
+  padding: 2px 8px; 
+  border-radius: 999px;
+  font-size: 11px;
 }
 .selected-model {
-  margin-top: 10px;
-  padding: 8px 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
   background: var(--accent-soft);
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   font-size: 12px;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; 
+  align-items: center; 
+  gap: 8px;
   flex-wrap: wrap;
+  border: 1px solid var(--accent);
 }
 .selected-model code {
   font-family: var(--font-mono);
   color: var(--accent);
   font-weight: 600;
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.selected-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.selected-tags code {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 .link-mini {
   border: none;
@@ -625,9 +801,14 @@ onMounted(load)
   color: var(--accent);
   cursor: pointer;
   font-size: 12px;
-  padding: 0 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
 }
-.link-mini:hover { text-decoration: underline; }
+.link-mini:hover { 
+  background: var(--accent-soft);
+  text-decoration: none;
+}
 
 .advanced-section {
   margin-top: 14px;

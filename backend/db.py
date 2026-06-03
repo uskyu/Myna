@@ -874,23 +874,6 @@ class SQLiteDatabase(BaseDatabase):
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS token_usage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                room_id TEXT,
-                thread_id TEXT,
-                agent_id TEXT,
-                model TEXT DEFAULT NULL,
-                prompt_tokens INTEGER DEFAULT 0,
-                completion_tokens INTEGER DEFAULT 0,
-                total_tokens INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, id);
-            CREATE INDEX IF NOT EXISTS idx_updates_agent ON updates(agent_id, consumed, id);
-            CREATE INDEX IF NOT EXISTS idx_agent_executions_room ON agent_executions(room_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_agent_errors_room ON agent_errors(room_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_token_usage_room ON token_usage(room_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
 
             CREATE TABLE IF NOT EXISTS model_configs (
