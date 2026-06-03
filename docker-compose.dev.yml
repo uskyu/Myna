@@ -1,0 +1,23 @@
+services:
+  myna-dev:
+    image: myna-local:latest
+    container_name: myna-local-dev
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    environment:
+      - PORT=3456
+      - DB_TYPE=sqlite
+    volumes:
+      - ./backend:/app/backend
+      - ./src/web/public:/app/src/web/public
+      - dev_db:/app/db
+      - dev_data:/app/data
+      - dev_profiles:/root/.hermes/profiles
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: python3 main.py
+
+volumes:
+  dev_db:
+  dev_data:
+  dev_profiles:

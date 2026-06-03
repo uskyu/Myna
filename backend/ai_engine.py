@@ -1075,7 +1075,12 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                         system_message=system_prompt,
                         conversation_history=history[:-1] if len(history) > 1 else None,
                     )
-                    return result.get("final_response", "") if isinstance(result, dict) else str(result)
+                    final = result.get("final_response", "") if isinstance(result, dict) else str(result)
+                    # Estimate token usage from input/output text
+                    input_text = system_prompt + "\n".join(m.get("content", "") for m in history)
+                    input_est = _estimate_tokens(input_text)
+                    output_est = _estimate_tokens(final or "")
+                    return {"text": final, "input_tokens": input_est, "output_tokens": output_est}
                 finally:
                     reset_hermes_home_override(token)
                     if old_yolo is None:
@@ -1092,7 +1097,19 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                         from tools.terminal_tool import set_approval_callback
                         set_approval_callback(None)
 
-            final_text = await loop.run_in_executor(_executor, _run_hermes_sync)
+            final_result = await loop.run_in_executor(_executor, _run_hermes_sync)
+
+            # Extract text and token usage from result
+            if isinstance(final_result, dict):
+                final_text = final_result.get("text", "")
+                # Report estimated token usage via callback
+                if callbacks.get("on_token_usage") and final_result.get("input_tokens"):
+                    await callbacks["on_token_usage"](
+                        final_result.get("input_tokens", 0),
+                        final_result.get("output_tokens", 0)
+                    )
+            else:
+                final_text = final_result
 
             # Don't send final_text again — _stream_delta already sent tokens incrementally
             # if final_text and on_token:
@@ -1140,6 +1157,9 @@ async def direct_api_call(base_url: str, api_key: str, model: str,
     messages = [{"role": "system", "content": system_prompt}] + history
     url = base_url.rstrip("/") + "/chat/completions"
 
+    total_input_tokens = 0
+    total_output_tokens = 0
+
     async with httpx.AsyncClient(timeout=120) as client:
         for round_num in range(8):
             body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
@@ -1156,10 +1176,18 @@ async def direct_api_call(base_url: str, api_key: str, model: str,
             choice = data.get("choices", [{}])[0]
             msg = choice.get("message", {})
 
+            # Capture token usage from API response
+            usage = data.get("usage", {})
+            total_input_tokens += usage.get("prompt_tokens", 0)
+            total_output_tokens += usage.get("completion_tokens", 0)
+
             if not msg.get("tool_calls"):
                 text = msg.get("content", "")
                 if text and on_token:
                     await on_token(text)
+                # Record token usage via callback
+                if callbacks.get("on_token_usage"):
+                    await callbacks["on_token_usage"](total_input_tokens, total_output_tokens)
                 return text or None
 
             messages.append(msg)
@@ -1421,6 +1449,22 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             })
 
         callbacks = {"on_token": on_token, "on_tool_call": on_tool_call, "on_tool_result": on_tool_result, "on_approval_request": on_approval_request}
+
+        # Token usage tracking callback
+        model_name = model_config.get("model", "") if model_config else ""
+        async def on_token_usage(input_tokens, output_tokens):
+            try:
+                db.record_token_usage(
+                    agent_id=agent["id"],
+                    agent_name=agent.get("name", ""),
+                    room_id=room_id,
+                    model=model_name,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            except Exception as e:
+                print(f"[AI] Token usage recording error: {e}")
+        callbacks["on_token_usage"] = on_token_usage
 
         # Register cancellation event for this stream
         cancel_event = ws_manager.register_stream_cancel(stream_id)

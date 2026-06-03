@@ -85,11 +85,11 @@ class BaseDatabase:
         api_key = uuid.uuid4().hex + uuid.uuid4().hex
         ph = self._placeholder()
         self.execute(
-            f"INSERT INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            (id, name, api_key, description, "online")
+            f"INSERT INTO agents (id, name, api_key, description, status, self_improve) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (id, name, api_key, description, "online", 1)
         )
         self.commit()
-        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online"}
+        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online", "self_improve": 1}
 
     def get_agent_by_key(self, api_key: str):
         ph = self._placeholder()
@@ -664,6 +664,78 @@ class BaseDatabase:
         rows = self.fetchall("SELECT key, value FROM hub_settings")
         return {r["key"]: r["value"] for r in rows}
 
+    # === Token Usage ===
+    def record_token_usage(self, agent_id: str, agent_name: str, room_id: str,
+                           model: str, input_tokens: int, output_tokens: int):
+        """Record token usage for an agent API call."""
+        ph = self._placeholder()
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        total = input_tokens + output_tokens
+        self.execute(
+            f"INSERT INTO token_usage (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total, today)
+        )
+        self.commit()
+
+    def get_token_usage_daily(self, days: int = 30) -> list:
+        """Get per-agent daily token usage for the last N days."""
+        ph = self._placeholder()
+        return self.fetchall(f"""
+            SELECT agent_id, agent_name, date,
+                   SUM(input_tokens) as input_tokens,
+                   SUM(output_tokens) as output_tokens,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(*) as call_count
+            FROM token_usage
+            WHERE date >= date({self._now_func()}, '-{days} days')
+            GROUP BY agent_id, agent_name, date
+            ORDER BY date DESC, total_tokens DESC
+        """)
+
+    def get_token_usage_summary(self, days: int = 30) -> list:
+        """Get daily total token usage across all agents."""
+        return self.fetchall(f"""
+            SELECT date,
+                   SUM(input_tokens) as input_tokens,
+                   SUM(output_tokens) as output_tokens,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(DISTINCT agent_id) as agent_count,
+                   COUNT(*) as call_count
+            FROM token_usage
+            WHERE date >= date({self._now_func()}, '-{days} days')
+            GROUP BY date
+            ORDER BY date DESC
+        """)
+
+    def get_token_usage_by_agent(self, agent_id: str, days: int = 30) -> list:
+        """Get token usage history for a specific agent."""
+        ph = self._placeholder()
+        return self.fetchall(f"""
+            SELECT date, model,
+                   SUM(input_tokens) as input_tokens,
+                   SUM(output_tokens) as output_tokens,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(*) as call_count
+            FROM token_usage
+            WHERE agent_id = {ph} AND date >= date({self._now_func()}, '-{days} days')
+            GROUP BY date, model
+            ORDER BY date DESC
+        """, (agent_id,))
+
+    def get_token_usage_totals(self) -> dict:
+        """Get overall token usage totals."""
+        row = self.fetchone("""
+            SELECT COALESCE(SUM(input_tokens), 0) as total_input,
+                   COALESCE(SUM(output_tokens), 0) as total_output,
+                   COALESCE(SUM(total_tokens), 0) as total_all,
+                   COUNT(DISTINCT agent_id) as agent_count,
+                   COUNT(*) as call_count
+            FROM token_usage
+        """)
+        return row or {"total_input": 0, "total_output": 0, "total_all": 0, "agent_count": 0, "call_count": 0}
+
 
 class SQLiteDatabase(BaseDatabase):
     """SQLite adapter - default, zero-config."""
@@ -728,7 +800,7 @@ class SQLiteDatabase(BaseDatabase):
                 container_id TEXT DEFAULT NULL,
                 model_config_id TEXT DEFAULT NULL,
                 execution_mode TEXT DEFAULT 'auto',
-                self_improve INTEGER DEFAULT 0,
+                self_improve INTEGER DEFAULT 1,
                 self_improve_threshold INTEGER DEFAULT 2,
                 tools_config TEXT DEFAULT NULL,
                 created_at TEXT DEFAULT (datetime('now')),
@@ -897,12 +969,28 @@ class SQLiteDatabase(BaseDatabase):
                 FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
                 FOREIGN KEY (skill_id) REFERENCES agent_skills(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                agent_name TEXT NOT NULL,
+                room_id TEXT DEFAULT NULL,
+                model TEXT DEFAULT '',
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                date TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_token_usage_date ON token_usage(date);
+            CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent_id, date);
         """)
         # Migration: fix old schema where status DEFAULT was 'offline'
         # Update any existing offline agents to online (they should be online by default)
         self._ensure_column("agents", "model_config_id", "TEXT DEFAULT NULL")
         self._ensure_column("agents", "execution_mode", "TEXT DEFAULT 'auto'")
-        self._ensure_column("agents", "self_improve", "INTEGER DEFAULT 0")
+        self._ensure_column("agents", "self_improve", "INTEGER DEFAULT 1")
         self._ensure_column("agents", "self_improve_threshold", "INTEGER DEFAULT 2")
         self._ensure_column("agents", "tools_config", "TEXT DEFAULT NULL")
         self._ensure_column("rooms", "settings_json", "TEXT DEFAULT '{}'")
@@ -984,7 +1072,7 @@ class MySQLDatabase(BaseDatabase):
                 container_id VARCHAR(128) DEFAULT NULL,
                 model_config_id VARCHAR(36) DEFAULT NULL,
                 execution_mode VARCHAR(32) DEFAULT 'auto',
-                self_improve TINYINT DEFAULT 0,
+                self_improve TINYINT DEFAULT 1,
                 self_improve_threshold INT DEFAULT 2,
                 tools_config TEXT DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1150,6 +1238,21 @@ class MySQLDatabase(BaseDatabase):
                 PRIMARY KEY (room_id, skill_id),
                 FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
                 FOREIGN KEY (skill_id) REFERENCES agent_skills(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+
+            """CREATE TABLE IF NOT EXISTS token_usage (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                agent_id VARCHAR(36) NOT NULL,
+                agent_name VARCHAR(255) NOT NULL,
+                room_id VARCHAR(36) DEFAULT NULL,
+                model VARCHAR(255) DEFAULT '',
+                input_tokens INT DEFAULT 0,
+                output_tokens INT DEFAULT 0,
+                total_tokens INT DEFAULT 0,
+                date VARCHAR(10) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_token_usage_date (date),
+                INDEX idx_token_usage_agent (agent_id, date)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
         ]
         with self.conn.cursor() as cur:
@@ -1158,7 +1261,7 @@ class MySQLDatabase(BaseDatabase):
         self.conn.commit()
         self._ensure_column("agents", "model_config_id", "VARCHAR(36) DEFAULT NULL")
         self._ensure_column("agents", "execution_mode", "VARCHAR(32) DEFAULT 'auto'")
-        self._ensure_column("agents", "self_improve", "TINYINT DEFAULT 0")
+        self._ensure_column("agents", "self_improve", "TINYINT DEFAULT 1")
         self._ensure_column("agents", "self_improve_threshold", "INT DEFAULT 2")
         self._ensure_column("agents", "tools_config", "TEXT DEFAULT NULL")
         self._ensure_column("rooms", "settings_json", "TEXT DEFAULT NULL")

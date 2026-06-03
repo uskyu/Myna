@@ -22,7 +22,7 @@ SESSION_TTL = 7 * 24 * 3600  # 7 days
 SESSION_SETTING_KEY = "auth_sessions"
 _auth_lock = threading.Lock()
 
-DEFAULT_PASSWORD = "admin123"
+DEFAULT_PASSWORD="admin123"
 
 
 def _hash_password(password: str) -> str:
