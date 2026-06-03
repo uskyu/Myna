@@ -26,161 +26,167 @@
         </div>
       </div>
 
-      <!-- Description / system prompt -->
-      <div class="field-block">
-        <label>描述 / 系统提示词</label>
-        <textarea
-          v-model="form.description"
-          @blur="saveField('description')"
-          placeholder="定义智能体的角色和行为..."
-          rows="4"
-        ></textarea>
-      </div>
+      <div class="agent-detail-grid">
+        <div class="agent-detail-main">
+          <!-- Description / system prompt -->
+          <div class="field-block description-block">
+            <label>描述 / 系统提示词</label>
+            <textarea
+              v-model="form.description"
+              @blur="saveField('description')"
+              placeholder="定义智能体的角色和行为..."
+              rows="4"
+            ></textarea>
+          </div>
 
-      <!-- Model picker -->
-      <div class="field-block">
-        <div class="field-head">
-          <label>关联模型</label>
-          <button class="link-btn" @click="showModels = true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            管理供应商
-          </button>
-        </div>
-        <select v-model="form.model_config_id" @change="saveField('model_config_id')" class="model-select">
-          <option value="">使用默认配置</option>
-          <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
-        </select>
-        <div v-if="selectedModel" class="model-preview">
-          <span class="model-preview-tag">{{ selectedModel.model }}</span>
-          <span v-if="selectedModel.max_tokens" class="model-preview-meta">{{ formatCtx(selectedModel.max_tokens) }} ctx</span>
-          <span class="model-preview-base">{{ selectedModel.base_url }}</span>
-        </div>
-      </div>
-
-      <!-- Skills section -->
-      <div class="profile-section">
-        <div class="section-head">
-          <h4>🛠 技能</h4>
-          <button class="link-btn" @click="showSkillPicker = true">+ 装载技能</button>
-        </div>
-        <div v-if="skills.length === 0" class="hint">暂无技能，从技能库中选择装载</div>
-        <div v-else class="skills-list">
-          <div v-for="skill in skills" :key="skill.id" class="skill-item">
-            <div class="skill-info">
-              <span class="skill-name">{{ skill.name }}</span>
-              <span class="skill-desc">{{ skill.description || '无描述' }}</span>
+          <!-- Execution & Self-improvement settings -->
+          <div class="profile-section">
+            <h4>🔐 权限与自我迭代</h4>
+            <div class="field-block">
+              <label>执行模式</label>
+              <select v-model="form.execution_mode" @change="saveField('execution_mode')" class="model-select">
+                <option value="auto">全自动 — 无安全限制，可接收密码直接操作</option>
+                <option value="confirm">需确认 — 危险命令被阻止</option>
+                <option value="readonly">只读 — 不能执行命令/写文件</option>
+              </select>
+              <div class="hint" style="margin-top:4px">
+                {{ form.execution_mode === 'auto' ? '⚡ 完全信任，可执行任何操作' : form.execution_mode === 'confirm' ? '🛡️ 危险命令（rm -rf、reboot等）被拦截' : '👁️ 只能读取信息，不能修改' }}
+              </div>
             </div>
-            <div class="skill-actions">
-              <button class="skill-action-btn" @click="editSkill(skill)" title="查看">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-              <button class="skill-action-btn danger" @click="removeSkill(skill)" title="卸载">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+            <div class="field-block" style="margin-top:12px">
+              <div class="toggle-row">
+                <label>自我迭代学习</label>
+                <button type="button" class="toggle" :class="{ on: form.self_improve }" @click="form.self_improve = !form.self_improve; saveField('self_improve')" aria-label="自我迭代开关"></button>
+              </div>
+              <div class="hint">开启后，智能体在工具调用后自动复盘并提取经验保存为技能</div>
+            </div>
+            <div class="field-block" style="margin-top:12px">
+              <label>工具策略</label>
+              <div class="tool-policy-grid">
+                <label v-for="tool in toolOptions" :key="tool.id" class="tool-policy-item">
+                  <input type="checkbox" :checked="isToolEnabled(tool.id)" @change="toggleTool(tool.id)">
+                  <span>{{ tool.label }}</span>
+                </label>
+              </div>
+              <textarea
+                v-model="form.tool_preference"
+                @blur="saveField('tool_preference')"
+                placeholder="工具偏好，例如：账号池管理优先使用 terminal + Selenium；不要使用 browser 工具。"
+                rows="3"
+              ></textarea>
+              <div class="hint">禁用的工具不会暴露给 Hermes；偏好会注入系统提示。</div>
+            </div>
+            <div v-if="form.self_improve" class="field-block" style="margin-top:8px">
+              <label>触发阈值（工具调用次数 ≥）</label>
+              <input type="number" v-model.number="form.self_improve_threshold" @blur="saveField('self_improve_threshold')" min="1" max="20" class="threshold-input">
+              <div class="hint">工具调用达到此次数后触发自动复盘（默认 2）</div>
             </div>
           </div>
         </div>
+
+        <div class="agent-detail-side">
+          <!-- Model picker -->
+          <div class="field-block model-block">
+            <div class="field-head">
+              <label>关联模型</label>
+              <button class="link-btn" @click="showModels = true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                管理供应商
+              </button>
+            </div>
+            <select v-model="form.model_config_id" @change="saveField('model_config_id')" class="model-select">
+              <option value="">使用默认配置</option>
+              <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
+            </select>
+            <div v-if="selectedModel" class="model-preview">
+              <span class="model-preview-tag">{{ selectedModel.model }}</span>
+              <span v-if="selectedModel.max_tokens" class="model-preview-meta">{{ formatCtx(selectedModel.max_tokens) }} ctx</span>
+              <span class="model-preview-base">{{ selectedModel.base_url }}</span>
+            </div>
+          </div>
+
+          <!-- Skills section -->
+          <div class="profile-section">
+            <div class="section-head">
+              <h4>🛠 技能</h4>
+              <button class="link-btn" @click="showSkillPicker = true">+ 装载技能</button>
+            </div>
+            <div v-if="skills.length === 0" class="hint">暂无技能，从技能库中选择装载</div>
+            <div v-else class="skills-list">
+              <div v-for="skill in skills" :key="skill.id" class="skill-item">
+                <div class="skill-info">
+                  <span class="skill-name">{{ skill.name }}</span>
+                  <span class="skill-desc">{{ skill.description || '无描述' }}</span>
+                </div>
+                <div class="skill-actions">
+                  <button class="skill-action-btn" @click="editSkill(skill)" title="查看">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                  <button class="skill-action-btn danger" @click="removeSkill(skill)" title="卸载">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Knowledge base -->
+          <div class="profile-section">
+            <h4>📚 知识库</h4>
+            <div class="hint">暂无知识库文件</div>
+          </div>
+
+          <!-- Hermes Engine Capabilities -->
+          <div class="profile-section">
+            <h4>🚀 Hermes 引擎能力</h4>
+            <div class="hermes-caps-list">
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">🔧</span>
+                <span class="cap-name">工具调用</span>
+                <span class="cap-desc">函数调用、结构化输出</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">💾</span>
+                <span class="cap-name">持久记忆</span>
+                <span class="cap-desc">跨会话记忆存储</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">📚</span>
+                <span class="cap-name">技能学习</span>
+                <span class="cap-desc">自动提取可复用流程</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">🌐</span>
+                <span class="cap-name">网页浏览</span>
+                <span class="cap-desc">搜索、抓取、交互</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">💻</span>
+                <span class="cap-name">终端命令</span>
+                <span class="cap-desc">Shell 执行、脚本运行</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">📡</span>
+                <span class="cap-name">HTTP 请求</span>
+                <span class="cap-desc">API 调用、Webhook</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">🤝</span>
+                <span class="cap-name">多智能体协作</span>
+                <span class="cap-desc">任务委派、并行执行</span>
+              </div>
+              <div class="hermes-cap-row active">
+                <span class="cap-icon">⏰</span>
+                <span class="cap-name">工作流调度</span>
+                <span class="cap-desc">定时任务、事件触发</span>
+              </div>
+            </div>
+            <div class="hint" style="margin-top:8px">由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间</div>
+          </div>
+        </div>
       </div>
 
-      <!-- Knowledge base -->
-      <div class="profile-section">
-        <h4>📚 知识库</h4>
-        <div class="hint">暂无知识库文件</div>
-      </div>
-
-      <!-- Execution & Self-improvement settings -->
-      <div class="profile-section">
-        <h4>🔐 权限与自我迭代</h4>
-        <div class="field-block">
-          <label>执行模式</label>
-          <select v-model="form.execution_mode" @change="saveField('execution_mode')" class="model-select">
-            <option value="auto">全自动 — 无安全限制，可接收密码直接操作</option>
-            <option value="confirm">需确认 — 危险命令被阻止</option>
-            <option value="readonly">只读 — 不能执行命令/写文件</option>
-          </select>
-          <div class="hint" style="margin-top:4px">
-            {{ form.execution_mode === 'auto' ? '⚡ 完全信任，可执行任何操作' : form.execution_mode === 'confirm' ? '🛡️ 危险命令（rm -rf、reboot等）被拦截' : '👁️ 只能读取信息，不能修改' }}
-          </div>
-        </div>
-        <div class="field-block" style="margin-top:12px">
-          <div class="toggle-row">
-            <label>自我迭代学习</label>
-            <button type="button" class="toggle" :class="{ on: form.self_improve }" @click="form.self_improve = !form.self_improve; saveField('self_improve')" aria-label="自我迭代开关"></button>
-          </div>
-          <div class="hint">开启后，智能体在工具调用后自动复盘并提取经验保存为技能</div>
-        </div>
-        <div class="field-block" style="margin-top:12px">
-          <label>工具策略</label>
-          <div class="tool-policy-grid">
-            <label v-for="tool in toolOptions" :key="tool.id" class="tool-policy-item">
-              <input type="checkbox" :checked="isToolEnabled(tool.id)" @change="toggleTool(tool.id)">
-              <span>{{ tool.label }}</span>
-            </label>
-          </div>
-          <textarea
-            v-model="form.tool_preference"
-            @blur="saveField('tool_preference')"
-            placeholder="工具偏好，例如：账号池管理优先使用 terminal + Selenium；不要使用 browser 工具。"
-            rows="3"
-          ></textarea>
-          <div class="hint">禁用的工具不会暴露给 Hermes；偏好会注入系统提示。</div>
-        </div>
-        <div v-if="form.self_improve" class="field-block" style="margin-top:8px">
-          <label>触发阈值（工具调用次数 ≥）</label>
-          <input type="number" v-model.number="form.self_improve_threshold" @blur="saveField('self_improve_threshold')" min="1" max="20" class="threshold-input">
-          <div class="hint">工具调用达到此次数后触发自动复盘（默认 2）</div>
-        </div>
-      </div>
-
-      <!-- Hermes Engine Capabilities -->
-      <div class="profile-section">
-        <h4>🚀 Hermes 引擎能力</h4>
-        <div class="hermes-caps-list">
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">🔧</span>
-            <span class="cap-name">工具调用</span>
-            <span class="cap-desc">函数调用、结构化输出</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">💾</span>
-            <span class="cap-name">持久记忆</span>
-            <span class="cap-desc">跨会话记忆存储</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">📚</span>
-            <span class="cap-name">技能学习</span>
-            <span class="cap-desc">自动提取可复用流程</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">🌐</span>
-            <span class="cap-name">网页浏览</span>
-            <span class="cap-desc">搜索、抓取、交互</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">💻</span>
-            <span class="cap-name">终端命令</span>
-            <span class="cap-desc">Shell 执行、脚本运行</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">📡</span>
-            <span class="cap-name">HTTP 请求</span>
-            <span class="cap-desc">API 调用、Webhook</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">🤝</span>
-            <span class="cap-name">多智能体协作</span>
-            <span class="cap-desc">任务委派、并行执行</span>
-          </div>
-          <div class="hermes-cap-row active">
-            <span class="cap-icon">⏰</span>
-            <span class="cap-name">工作流调度</span>
-            <span class="cap-desc">定时任务、事件触发</span>
-          </div>
-        </div>
-        <div class="hint" style="margin-top:8px">由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间</div>
-      </div>
-
-      <div v-if="agent.id !== '__system__'" style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border)">
+      <div v-if="agent.id !== '__system__'" class="danger-zone">
         <button class="btn btn-danger" @click="$emit('delete', agent.id)" style="width:100%">删除智能体</button>
       </div>
     </div>
@@ -466,6 +472,11 @@ onMounted(() => {
 .toggle.small { width: 36px; height: 20px; }
 
 .field-block { margin-bottom: 18px; }
+.danger-zone {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
 .field-block label {
   display: block;
   font-size: 12px;
@@ -861,5 +872,66 @@ onMounted(() => {
   color: var(--text-dim);
   font-size: 12px;
   margin-left: auto;
+}
+
+@media (min-width: 768px) {
+  .agent-detail-content {
+    max-width: 1180px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 28px 32px 40px;
+  }
+
+  .profile-head {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+    margin-bottom: 18px;
+  }
+
+  .avatar-large {
+    margin: 0;
+  }
+
+  .agent-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .agent-detail-main,
+  .agent-detail-side {
+    min-width: 0;
+  }
+
+  .description-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+  }
+
+  .model-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+  }
+
+  .description-block textarea {
+    min-height: 220px;
+  }
+
+  .profile-section,
+  .model-block {
+    box-shadow: var(--shadow-sm);
+  }
+
+  .danger-zone {
+    max-width: 420px;
+    margin-left: auto;
+  }
 }
 </style>

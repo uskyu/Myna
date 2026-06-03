@@ -20,23 +20,41 @@
       </div>
     </div>
 
-    <!-- Desktop list panel -->
-    <div class="desktop-list-panel" v-if="isDesktop">
-      <ChatList v-if="page === 'chats'" @open-chat="openChat" @create-room="showModal('room')" />
-      <AgentList v-if="page === 'agents'" @open-detail="openAgentDetail" @create-agent="showModal('agent')" />
-      <AdminCenter v-if="page === 'admin'" />
-      <SettingsPage v-if="page === 'settings'" />
-    </div>
+    <template v-if="isDesktop">
+      <!-- Chat keeps the existing desktop two-pane behavior. -->
+      <template v-if="page === 'chats'">
+        <div class="desktop-list-panel">
+          <ChatList @open-chat="openChat" @create-room="showModal('room')" />
+        </div>
+        <div class="desktop-chat-panel">
+          <ChatView v-if="currentRoom" :key="currentRoom.id" :room="currentRoom" :type="currentRoomType" @close="closeChat" />
+          <div v-else class="desktop-empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <p>选择一个对话开始聊天</p>
+          </div>
+        </div>
+      </template>
 
-    <!-- Desktop chat panel -->
-    <div class="desktop-chat-panel" v-if="isDesktop">
-      <ChatView v-if="currentRoom" :key="currentRoom.id" :room="currentRoom" :type="currentRoomType" @close="closeChat" />
-      <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
-      <div v-if="!currentRoom && !currentAgent" class="desktop-empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <p>选择一个对话开始聊天</p>
+      <!-- Agents use a wider list and dedicated detail pane. -->
+      <template v-else-if="page === 'agents'">
+        <div class="desktop-agent-list-panel">
+          <AgentList :selected-id="currentAgent?.id" @open-detail="openAgentDetail" @create-agent="showModal('agent')" />
+        </div>
+        <div class="desktop-agent-detail-panel">
+          <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
+          <div v-else class="desktop-empty-state agent-empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" width="48" height="48"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+            <p>选择一个智能体查看配置</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- Admin and Settings should use the full desktop workspace. -->
+      <div v-else class="desktop-workspace-panel">
+        <AdminCenter v-if="page === 'admin'" />
+        <SettingsPage v-if="page === 'settings'" />
       </div>
-    </div>
+    </template>
 
     <!-- Mobile layout (original) -->
     <template v-if="!isDesktop">

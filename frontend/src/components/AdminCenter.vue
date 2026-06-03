@@ -5,10 +5,19 @@
     </div>
 
     <!-- Tab bar -->
-    <div class="tab-bar">
-      <div class="tab-item" :class="{ active: activeTab === 'config' }" @click="activeTab = 'config'">配置</div>
-      <div class="tab-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">系统智能体</div>
-      <div class="tab-item" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">技能库</div>
+    <div class="tab-bar" :class="{ 'desktop-nav': isDesktop }">
+      <div class="tab-item" :class="{ active: activeTab === 'config' }" @click="activeTab = 'config'">
+        <span class="tab-label">配置</span>
+        <span class="tab-helper">执行策略与自主进化</span>
+      </div>
+      <div class="tab-item" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">
+        <span class="tab-label">系统智能体</span>
+        <span class="tab-helper">系统代理与行为</span>
+      </div>
+      <div class="tab-item" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">
+        <span class="tab-label">技能库</span>
+        <span class="tab-helper">全局技能资产</span>
+      </div>
       <div class="tab-indicator" :style="tabIndicatorStyle"></div>
     </div>
 
@@ -76,7 +85,7 @@
 
       <!-- Skills tab -->
       <div v-show="activeTab === 'skills'" class="tab-panel">
-        <div class="admin-section">
+        <div class="admin-section skills-section">
           <div class="section-title-row">
             <h3>🛠 全局技能库</h3>
             <span class="badge">{{ allSkills.length }}</span>
@@ -91,34 +100,59 @@
             <p>暂无技能，点击上方按钮创建或上传</p>
           </div>
 
-          <div v-for="group in skillGroups" :key="group.agentId" class="skill-group">
-            <div class="skill-group-header">
-              <span class="skill-group-name">{{ group.agentName }}</span>
-              <span class="skill-group-count">{{ group.skills.length }} 个技能</span>
-            </div>
-            <div class="skill-grid">
-              <div v-for="skill in group.skills" :key="skill.id" class="skill-card">
-                <div class="skill-card-head">
-                  <span class="skill-card-name">{{ skill.name }}</span>
-                  <span class="skill-card-type">{{ skill.file_type || 'text' }}</span>
+          <div class="skills-workspace">
+            <div class="skills-library">
+              <div v-for="group in skillGroups" :key="group.agentId" class="skill-group">
+                <div class="skill-group-header">
+                  <span class="skill-group-name">{{ group.agentName }}</span>
+                  <span class="skill-group-count">{{ group.skills.length }} 个技能</span>
                 </div>
-                <p class="skill-card-desc">{{ skill.description || '无描述' }}</p>
-                <div class="skill-card-actions">
-                  <button class="skill-card-btn" @click="viewSkill(skill)" title="查看">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  </button>
-                  <button class="skill-card-btn" @click="copySkill(skill)" title="复制到其他智能体">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  </button>
-                  <button class="skill-card-btn" @click="downloadSkill(skill)" title="下载">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  </button>
-                  <button class="skill-card-btn danger" @click="deleteSkill(skill)" title="删除">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  </button>
+                <div class="skill-grid">
+                  <div v-for="skill in group.skills" :key="skill.id" class="skill-card" :class="{ selected: selectedSkill?.id === skill.id }" @click="selectSkill(skill)">
+                    <div class="skill-card-head">
+                      <span class="skill-card-name">{{ skill.name }}</span>
+                      <span class="skill-card-type">{{ skill.file_type || 'text' }}</span>
+                    </div>
+                    <p class="skill-card-desc">{{ skill.description || '无描述' }}</p>
+                    <div class="skill-card-actions">
+                      <button class="skill-card-btn" @click.stop="viewSkill(skill)" title="查看">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                      <button class="skill-card-btn" @click.stop="copySkill(skill)" title="复制到其他智能体">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      <button class="skill-card-btn" @click.stop="downloadSkill(skill)" title="下载">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </button>
+                      <button class="skill-card-btn danger" @click.stop="deleteSkill(skill)" title="删除">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+            <aside v-if="isDesktop" class="skill-inspector">
+              <template v-if="selectedSkill">
+                <div class="inspector-header">
+                  <div>
+                    <h4>{{ selectedSkill.name }}</h4>
+                    <p>{{ selectedSkill.description || '无描述' }}</p>
+                  </div>
+                  <span class="skill-card-type">{{ selectedSkill.file_type || 'text' }}</span>
+                </div>
+                <div class="inspector-meta">
+                  <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
+                </div>
+                <pre class="inspector-content">{{ selectedSkill.content || '(空)' }}</pre>
+                <div class="inspector-actions">
+                  <button class="link-btn" @click="viewSkill(selectedSkill)">弹窗查看</button>
+                  <button class="link-btn" @click="copySkill(selectedSkill)">复制</button>
+                  <button class="link-btn" @click="downloadSkill(selectedSkill)">下载</button>
+                </div>
+              </template>
+              <div v-else class="inspector-empty">选择一个技能查看内容</div>
+            </aside>
           </div>
         </div>
       </div>
@@ -202,7 +236,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, inject, onMounted, watch } from 'vue'
 import { api, store, chatSettings, saveChatSettings } from '../store.js'
 import SystemAgentPanel from './SystemAgentPanel.vue'
 
@@ -212,6 +246,8 @@ const copyingSkill = ref(null)
 const showCreateSkill = ref(false)
 const skillFileInput = ref(null)
 const activeTab = ref('config')
+const selectedSkill = ref(null)
+const isDesktop = inject('isDesktop', ref(false))
 
 const tabIndicatorStyle = computed(() => {
   const tabs = ['config', 'system', 'skills']
@@ -271,6 +307,14 @@ const skillGroups = computed(() => {
   return Object.values(map)
 })
 
+watch(allSkills, (skills) => {
+  if (!selectedSkill.value && skills.length) {
+    selectedSkill.value = skills[0]
+  } else if (selectedSkill.value && !skills.some(s => s.id === selectedSkill.value.id)) {
+    selectedSkill.value = skills[0] || null
+  }
+})
+
 function onToolDisplayChange(val) {
   chatSettings.toolCallDisplay = val
   saveChatSettings()
@@ -314,6 +358,10 @@ async function loadHubSettings() {
 
 function viewSkill(skill) {
   viewingSkill.value = skill
+}
+
+function selectSkill(skill) {
+  selectedSkill.value = skill
 }
 
 function copySkill(skill) {
@@ -422,6 +470,8 @@ onMounted(() => {
   transition: color 0.2s;
   user-select: none;
 }
+.tab-label { display: block; }
+.tab-helper { display: none; }
 .tab-item.active {
   color: var(--accent, #2d6a4f);
   font-weight: 600;
@@ -453,7 +503,7 @@ onMounted(() => {
 
 /* Engine Panel -> Config Panel */
 .config-panel {
-  background: var(--bg-card);
+  background: var(--surface);
   border-radius: 12px;
   padding: 16px 20px;
   border: 1px solid var(--border);
@@ -605,8 +655,13 @@ onMounted(() => {
   border-radius: var(--radius);
   background: var(--surface);
   transition: border-color 0.15s ease;
+  cursor: pointer;
 }
 .skill-card:hover { border-color: var(--accent); }
+.skill-card.selected {
+  border-color: rgba(45, 106, 79, 0.4);
+  background: var(--accent-soft);
+}
 .skill-card-head {
   display: flex;
   align-items: center;
@@ -835,6 +890,14 @@ onMounted(() => {
 .link-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .skill-card-btn.danger:hover { border-color: var(--danger, #e53e3e); color: var(--danger, #e53e3e); }
 
+.skills-workspace,
+.skills-library {
+  min-width: 0;
+}
+.skill-inspector {
+  display: none;
+}
+
 /* Mobile: smaller radio options */
 @media (max-width: 480px) {
   .config-options .radio-option {
@@ -846,6 +909,205 @@ onMounted(() => {
   }
   .tab-panel {
     padding: 12px 14px;
+  }
+}
+
+@media (min-width: 768px) {
+  .admin-center {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--bg);
+  }
+
+  .page-header {
+    grid-column: 1 / -1;
+    padding: 22px 28px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .page-header h2 {
+    font-size: 24px;
+    letter-spacing: -0.03em;
+  }
+
+  .tab-bar.desktop-nav {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 18px 14px;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    min-height: 0;
+  }
+
+  .tab-bar.desktop-nav .tab-item {
+    flex: none;
+    text-align: left;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-2);
+  }
+
+  .tab-bar.desktop-nav .tab-item:hover {
+    background: var(--surface2);
+  }
+
+  .tab-bar.desktop-nav .tab-item.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: rgba(45, 106, 79, 0.22);
+  }
+
+  .tab-bar.desktop-nav .tab-label {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .tab-bar.desktop-nav .tab-helper {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+  }
+
+  .tab-bar.desktop-nav .tab-indicator {
+    display: none;
+  }
+
+  .tab-content {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .tab-panel {
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px 28px 36px;
+  }
+
+  .tab-panel > .admin-section,
+  .tab-panel > .config-panel,
+  .tab-panel > :deep(.system-agent-panel) {
+    max-width: 1180px;
+  }
+
+  .tab-panel > .config-panel,
+  .tab-panel > .admin-section.config-panel {
+    max-width: 860px;
+  }
+
+  .config-panel {
+    padding: 20px 22px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .skills-section {
+    max-width: none;
+    margin-bottom: 0;
+  }
+
+  .skills-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .skill-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+
+  .skill-card {
+    min-height: 118px;
+    padding: 14px;
+  }
+
+  .skill-card-name {
+    font-size: 14px;
+  }
+
+  .skill-inspector {
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    max-height: calc(100dvh - 170px);
+    min-width: 0;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .inspector-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inspector-header h4 {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .inspector-header p {
+    margin: 6px 0 0;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .inspector-meta {
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .inspector-content {
+    flex: 1;
+    min-height: 220px;
+    overflow: auto;
+    margin: 0;
+    padding: 16px 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-2);
+  }
+
+  .inspector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+  }
+
+  .inspector-empty {
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: var(--text-dim);
+    font-size: 14px;
   }
 }
 </style>

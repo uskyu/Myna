@@ -13,7 +13,7 @@
       <input type="text" v-model="filter" placeholder="搜索智能体...">
     </div>
     <div class="agent-grid list-view">
-      <div v-for="a in filtered" :key="a.id" class="agent-card" :class="{ 'system-agent': a.id === '__system__' }" @click="$emit('open-detail', a)">
+      <div v-for="a in filtered" :key="a.id" class="agent-card" :class="{ 'system-agent': a.id === '__system__', selected: a.id === selectedId }" @click="$emit('open-detail', a)">
         <div class="avatar-wrap">
           <div class="agent-avatar" :style="{ background: getAgentColor(agentIndex(a.id)) }">
             <span v-html="getAgentIcon(agentIndex(a.id))"></span>
@@ -43,6 +43,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { store, loadAgents, api, getAgentColor, getAgentIcon } from '../store.js'
+
+defineProps({ selectedId: String })
 
 const emit = defineEmits(['open-detail', 'create-agent'])
 const filter = ref('')
@@ -93,7 +95,13 @@ onMounted(loadAgents)
 }
 
 .agent-grid.list-view .agent-card:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface2);
+  border-color: var(--border-strong);
+}
+
+.agent-grid.list-view .agent-card.selected {
+  background: var(--accent-soft);
+  border-color: rgba(45, 106, 79, 0.28);
 }
 
 .avatar-wrap {
@@ -120,7 +128,7 @@ onMounted(loadAgents)
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  border: 1.5px solid var(--bg-primary, #1a1a2e);
+  border: 1.5px solid var(--surface);
   box-sizing: content-box;
 }
 
@@ -166,8 +174,9 @@ onMounted(loadAgents)
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary, #94a3b8);
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,8 +186,9 @@ onMounted(loadAgents)
 }
 
 .btn-dm:hover {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* System agent styling */
@@ -196,5 +206,41 @@ onMounted(loadAgents)
   color: var(--accent, #2d6a4f);
   margin-left: 6px;
   vertical-align: middle;
+}
+
+@media (min-width: 768px) {
+  .agent-grid.list-view {
+    padding: 14px;
+    gap: 8px;
+  }
+
+  .agent-grid.list-view .agent-card {
+    grid-template-columns: 48px 1fr auto;
+    gap: 12px;
+    padding: 12px 14px;
+    min-height: 72px;
+    border-radius: var(--radius);
+  }
+
+  .avatar-wrap,
+  .agent-avatar {
+    width: 48px;
+    height: 48px;
+  }
+
+  .agent-name {
+    font-size: 15px;
+  }
+
+  .agent-desc {
+    font-size: 13px;
+    -webkit-line-clamp: 2;
+  }
+
+  .btn-dm {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+  }
 }
 </style>
