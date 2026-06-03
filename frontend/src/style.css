@@ -179,11 +179,12 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  padding: 6px 24px;
+  padding: 6px clamp(10px, 4vw, 24px);
   border-radius: var(--radius-sm);
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease;
   position: relative;
+  min-width: 48px;
 }
 .nav-item svg {
   width: 22px;

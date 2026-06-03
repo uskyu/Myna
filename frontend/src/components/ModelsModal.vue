@@ -1,9 +1,9 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal models-modal">
+  <div :class="embedded ? 'models-embedded' : 'modal-overlay'" @click.self="!embedded && $emit('close')">
+    <div :class="embedded ? 'models-panel' : 'modal models-modal'">
       <div class="models-header">
         <h3>{{ editingModel ? (form.id ? '编辑供应商' : '新增供应商') : '供应商管理' }}</h3>
-        <button class="close-x" @click="$emit('close')" aria-label="关闭">×</button>
+        <button v-if="!embedded" class="close-x" @click="$emit('close')" aria-label="关闭">×</button>
       </div>
 
       <!-- List view -->
@@ -198,6 +198,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../store.js'
 
 const emit = defineEmits(['close', 'changed'])
+defineProps({ embedded: { type: Boolean, default: false } })
 
 const models = ref([])
 const editingModel = ref(false)
@@ -435,6 +436,17 @@ onMounted(load)
 
 <style scoped>
 .models-modal { max-width: 560px; max-height: 88vh; display: flex; flex-direction: column; }
+.models-embedded { min-height: 0; }
+.models-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #faf9f7;
+  padding: 18px;
+}
+[data-theme="dark"] .models-panel { background: var(--surface2); }
 .models-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .models-header h3 { flex: 1; text-align: left; margin: 0; }
 .close-x {

@@ -18,67 +18,19 @@
       </aside>
 
       <main class="desktop-settings-detail">
-        <section v-if="activeSection === 'quickstart'" class="detail-panel">
-          <div class="detail-heading">
-            <p class="eyebrow">Quick Start</p>
-            <h2>样例模板 / 快速建队</h2>
-            <p>选择一个模板，系统会自动创建或复用智能体，创建群聊并加入成员，完成后直接打开样例群聊。</p>
-          </div>
-          <div class="template-grid">
-            <article v-for="tpl in teamTemplates" :key="tpl.id" class="template-card">
-              <div class="template-card-head">
-                <div>
-                  <h3>{{ tpl.name }}</h3>
-                  <p>{{ tpl.description }}</p>
-                </div>
-                <span class="member-count">{{ tpl.members.length }} 人</span>
-              </div>
-              <div class="role-list">
-                <span v-for="member in tpl.members" :key="member.name" class="role-chip">{{ member.name }}</span>
-              </div>
-              <div v-if="templateResult[tpl.id]" class="template-status success">
-                已创建「{{ templateResult[tpl.id].roomName }}」，{{ templateResult[tpl.id].memberCount }} 名成员已加入。
-              </div>
-              <div v-if="templateErrors[tpl.id]" class="template-status error">{{ templateErrors[tpl.id] }}</div>
-              <button
-                type="button"
-                class="primary-action"
-                :disabled="creatingTemplate === tpl.id"
-                @click="createTemplateTeam(tpl)"
-              >
-                {{ creatingTemplate === tpl.id ? '正在创建...' : '一键创建并打开' }}
-              </button>
-            </article>
-          </div>
-        </section>
-
-        <section v-else-if="activeSection === 'appearance'" class="detail-panel compact-panel">
-          <div class="detail-heading">
-            <p class="eyebrow">Appearance</p>
-            <h2>外观</h2>
-            <p>调整当前设备上的界面显示偏好。</p>
-          </div>
-          <button type="button" class="detail-row" @click="toggleTheme">
-            <span>
-              <strong>深色模式</strong>
-              <small>切换暖白与深色显示，设置会保存在本机。</small>
-            </span>
-            <span class="toggle" :class="{ on: isDark }"></span>
-          </button>
-        </section>
-
-        <section v-else-if="activeSection === 'models'" class="detail-panel compact-panel">
+        <section v-if="activeSection === 'models'" class="detail-panel models-detail-panel">
           <div class="detail-heading">
             <p class="eyebrow">Models</p>
             <h2>模型配置</h2>
-            <p>管理模型供应商和可用配置。当前已有 {{ models.length }} 个配置。</p>
+            <p>管理模型供应商和可用配置。当前已有 {{ models.length }} 个配置，桌面端可在这里直接新增、编辑或删除。</p>
           </div>
-          <div class="action-card">
+          <ModelsModal embedded @changed="onModelsChanged" />
+          <div class="action-card quickstart-summary-card">
             <div>
-              <h3>供应商管理</h3>
-              <p>打开模型配置窗口，新增、修改或删除模型供应商。</p>
+              <h3>快速开始已移到主导航</h3>
+              <p>样例模板现在在左侧主导航和移动底部导航中，可直接创建产品落地、内容创作或代码修复小队。</p>
             </div>
-            <button type="button" class="secondary-action" @click="showModels = true">打开管理</button>
+            <button type="button" class="secondary-action" @click="openQuickStart">前往快速开始</button>
           </div>
         </section>
 
@@ -114,6 +66,29 @@
           </div>
         </section>
 
+        <section v-else-if="activeSection === 'logging'" class="detail-panel logging-panel">
+          <div class="detail-heading">
+            <p class="eyebrow">Logs</p>
+            <h2>日志</h2>
+            <p>手动开启或关闭调试日志设置，查看最近 Myna 运行日志。服务运行日志可能仍会保留，调试日志开关用于后续更详细记录。</p>
+          </div>
+          <div class="logging-controls">
+            <button type="button" class="detail-row logging-switch" @click="toggleLogging" :disabled="logSaving">
+              <span>
+                <strong>记录调试日志</strong>
+                <small>{{ logSettings.enabled ? '已开启，后续调试信息可按设置记录。' : '已关闭，仅保留服务自身运行日志。' }}</small>
+              </span>
+              <span class="toggle" :class="{ on: logSettings.enabled }"></span>
+            </button>
+            <div class="log-actions">
+              <button type="button" class="secondary-action" :disabled="logLoading" @click="loadRecentLogs">{{ logLoading ? '刷新中...' : '刷新最近日志' }}</button>
+              <button type="button" class="danger-action" :disabled="logLoading" @click="clearRecentLogs">清空日志</button>
+            </div>
+          </div>
+          <p class="save-status" :class="logError ? 'error' : 'success'">{{ logStatusText }}</p>
+          <pre class="log-preview"><code>{{ recentLogText || '暂无可显示日志。' }}</code></pre>
+        </section>
+
         <section v-else-if="activeSection === 'security'" class="detail-panel security-panel">
           <div class="detail-heading">
             <p class="eyebrow">Security</p>
@@ -140,6 +115,21 @@
               <button type="button" class="danger-action" @click="doLogout">退出登录</button>
             </div>
           </form>
+        </section>
+
+        <section v-else-if="activeSection === 'appearance'" class="detail-panel compact-panel">
+          <div class="detail-heading">
+            <p class="eyebrow">Appearance</p>
+            <h2>外观</h2>
+            <p>调整当前设备上的界面显示偏好。</p>
+          </div>
+          <button type="button" class="detail-row" @click="toggleTheme">
+            <span>
+              <strong>深色模式</strong>
+              <small>切换暖白与深色显示，设置会保存在本机。</small>
+            </span>
+            <span class="toggle" :class="{ on: isDark }"></span>
+          </button>
         </section>
 
         <section v-else class="detail-panel about-panel">
@@ -188,36 +178,18 @@
       </main>
 
       <div class="mobile-settings-stack">
-        <div class="settings-section quickstart-section">
-          <div class="section-title">快速开始</div>
-          <div class="mobile-template-list">
-            <div v-for="tpl in teamTemplates" :key="tpl.id" class="mobile-template-card">
-              <div>
-                <strong>{{ tpl.name }}</strong>
-                <p>{{ tpl.members.map(m => m.name).join('、') }}</p>
-              </div>
-              <button type="button" class="mini-action" :disabled="creatingTemplate === tpl.id" @click="createTemplateTeam(tpl)">
-                {{ creatingTemplate === tpl.id ? '创建中' : '创建' }}
-              </button>
-              <p v-if="templateResult[tpl.id]" class="template-status success">已创建「{{ templateResult[tpl.id].roomName }}」</p>
-              <p v-if="templateErrors[tpl.id]" class="template-status error">{{ templateErrors[tpl.id] }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="section-title">外观</div>
-          <div class="setting-item" @click="toggleTheme">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <span class="setting-label">深色模式</span>
-            <div class="toggle" :class="{ on: isDark }"></div>
-          </div>
-        </div>
         <div class="settings-section">
           <div class="section-title">模型配置</div>
           <div class="setting-item" @click="showModels = true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             <span class="setting-label">供应商管理</span>
             <span class="setting-value">{{ models.length }} 个配置</span>
+            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>
+          </div>
+          <div class="setting-item" @click="openQuickStart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 10-13h-7l1-7z"/></svg>
+            <span class="setting-label">快速开始</span>
+            <span class="setting-value">主导航入口</span>
             <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>
           </div>
         </div>
@@ -237,6 +209,20 @@
           <p class="setting-hint" :class="perfStatusClass">{{ perfStatusText }}</p>
         </div>
         <div class="settings-section">
+          <div class="section-title">日志</div>
+          <div class="setting-item" @click="toggleLogging">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            <span class="setting-label">记录调试日志</span>
+            <div class="toggle" :class="{ on: logSettings.enabled }"></div>
+          </div>
+          <div class="mobile-log-actions">
+            <button type="button" class="mini-action" :disabled="logLoading" @click="loadRecentLogs">刷新</button>
+            <button type="button" class="mini-action danger" :disabled="logLoading" @click="clearRecentLogs">清空</button>
+          </div>
+          <p class="setting-hint" :class="logError ? 'error' : 'success'">{{ logStatusText }}</p>
+          <pre class="mobile-log-preview"><code>{{ recentLogText || '暂无可显示日志。' }}</code></pre>
+        </div>
+        <div class="settings-section">
           <div class="section-title">安全</div>
           <div class="setting-item" @click="showChangePwd = true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -246,6 +232,14 @@
           <div class="setting-item" @click="doLogout">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             <span class="setting-label">退出登录</span>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="section-title">外观</div>
+          <div class="setting-item" @click="toggleTheme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span class="setting-label">深色模式</span>
+            <div class="toggle" :class="{ on: isDark }"></div>
           </div>
         </div>
         <div class="settings-section">
@@ -331,23 +325,30 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
-import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate, doUpdate, loadAgents, loadConversations, store, ws } from '../store.js'
+import { computed, inject, reactive, ref, onMounted, onUnmounted } from 'vue'
+import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate, doUpdate, ws } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
 
 const emit = defineEmits(['open-room'])
+const page = inject('page', null)
 
 const isDark = ref(false)
 const showModels = ref(false)
 const showChangePwd = ref(false)
 const showUpdateConfirm = ref(false)
 const models = ref([])
-const activeSection = ref('quickstart')
+const activeSection = ref('models')
 const perfSettings = reactive({ agent_concurrency: 10, agent_max_rounds: 50, context_messages_limit: 20 })
 const perfSaving = ref(false)
 const perfDirty = ref(false)
 const perfMessage = ref('已加载当前配置')
 const perfError = ref('')
+const logSettings = reactive({ enabled: false })
+const logSaving = ref(false)
+const logLoading = ref(false)
+const logMessage = ref('已加载日志设置')
+const logError = ref('')
+const recentLogs = ref([])
 
 const currentPwd = ref('')
 const newPwd = ref('')
@@ -355,16 +356,12 @@ const confirmPwd = ref('')
 const pwdError = ref('')
 const pwdSuccess = ref('')
 
-const creatingTemplate = ref('')
-const templateErrors = reactive({})
-const templateResult = reactive({})
-
 const navItems = [
-  { id: 'quickstart', label: '快速开始', desc: '样例模板建队' },
-  { id: 'appearance', label: '外观', desc: '主题显示' },
   { id: 'models', label: '模型配置', desc: '供应商管理' },
   { id: 'performance', label: '系统性能', desc: '并发与上下文' },
+  { id: 'logging', label: '日志', desc: '调试与最近日志' },
   { id: 'security', label: '安全', desc: '密码与登录' },
+  { id: 'appearance', label: '外观', desc: '主题显示' },
   { id: 'about', label: '关于', desc: '版本与更新' },
 ]
 
@@ -372,45 +369,6 @@ const perfItems = [
   { key: 'agent_concurrency', label: 'Agent 并发数', unit: '同时运行', min: 1, max: 100, desc: '控制系统同一时间最多调度多少个 Agent。提高数值可增强吞吐，但会增加模型调用和机器负载，通常重启后完整生效。' },
   { key: 'agent_max_rounds', label: '单次最大轮数', unit: '轮', min: 1, max: 500, desc: '限制一次对话或任务中最多执行多少轮 Agent/API 调用，避免复杂任务无限循环或成本失控。' },
   { key: 'context_messages_limit', label: '上下文消息数', unit: '条最近消息', min: 1, max: 200, desc: '决定智能体默认能看到多少条最近消息。数值越大上下文越完整，但 token 消耗也越高，房间仍可单独覆盖。' },
-]
-
-const teamTemplates = [
-  {
-    id: 'product-launch',
-    name: '产品落地小队',
-    description: '适合把一个想法拆成需求、界面、接口和验收清单。',
-    roomDescription: '样例团队：围绕产品需求、前后端实现和测试验收协作。',
-    members: [
-      { name: '产品经理', description: '负责澄清目标、拆解需求、定义验收标准，并推动团队形成可落地方案。' },
-      { name: '前端工程师', description: '负责页面结构、交互体验、状态管理和前端实现建议。' },
-      { name: '后端工程师', description: '负责接口设计、数据流、服务端边界和轻后端实现建议。' },
-      { name: '测试员', description: '负责测试用例、边界条件、回归验证和发布风险检查。' },
-    ],
-  },
-  {
-    id: 'content-creation',
-    name: '内容创作小队',
-    description: '适合从选题到资料、文案和视觉表达完整产出内容。',
-    roomDescription: '样例团队：围绕内容策划、资料研究、文案编辑和视觉表达协作。',
-    members: [
-      { name: '选题策划', description: '负责定位受众、筛选选题角度、规划内容结构和传播目标。' },
-      { name: '资料研究员', description: '负责收集事实、提炼资料、标注不确定信息并补充背景。' },
-      { name: '文案编辑', description: '负责撰写、润色、统一语气，并把资料整理成可发布文本。' },
-      { name: '视觉设计师', description: '负责画面风格、版式建议、封面方向和视觉素材提示词。' },
-    ],
-  },
-  {
-    id: 'code-fix',
-    name: '代码修复小队',
-    description: '适合定位 bug、实施修复、审查风险并设计回归验证。',
-    roomDescription: '样例团队：围绕问题定位、代码实现、审查和回归测试协作。',
-    members: [
-      { name: '问题定位员', description: '负责复现问题、缩小范围、分析日志和提出根因假设。' },
-      { name: '实现工程师', description: '负责以最小改动实现修复，并说明关键取舍。' },
-      { name: '代码审查员', description: '负责检查行为回归、边界条件、安全风险和维护性。' },
-      { name: '回归测试员', description: '负责设计验证步骤、覆盖关键路径并整理验收结果。' },
-    ],
-  },
 ]
 
 const perfStatusClass = computed(() => ({
@@ -426,8 +384,21 @@ const perfStatusText = computed(() => {
   return perfMessage.value
 })
 
+const recentLogText = computed(() => Array.isArray(recentLogs.value) ? recentLogs.value.join('\n') : String(recentLogs.value || ''))
+
+const logStatusText = computed(() => {
+  if (logError.value) return logError.value
+  if (logSaving.value) return '正在保存日志设置...'
+  if (logLoading.value) return '正在读取最近日志...'
+  return logMessage.value
+})
+
 function selectSection(id) {
   activeSection.value = id
+}
+
+function openQuickStart() {
+  if (page) page.value = 'quickstart'
 }
 
 function toggleTheme() {
@@ -513,6 +484,60 @@ async function loadPerfSettings() {
   }
 }
 
+async function loadLoggingSettings() {
+  const data = await api('GET', '/admin/logging/settings')
+  if (data.ok === false) {
+    logError.value = data.error || '读取日志设置失败'
+    return
+  }
+  logSettings.enabled = !!data.enabled
+  logError.value = ''
+  logMessage.value = '已加载日志设置'
+}
+
+async function toggleLogging() {
+  if (logSaving.value) return
+  logSaving.value = true
+  logError.value = ''
+  const nextEnabled = !logSettings.enabled
+  const res = await api('PUT', '/admin/logging/settings', { enabled: nextEnabled })
+  logSaving.value = false
+  if (res.ok === false) {
+    logError.value = res.error || '保存日志设置失败'
+    return
+  }
+  logSettings.enabled = !!res.enabled
+  logMessage.value = logSettings.enabled ? '调试日志设置已开启' : '调试日志设置已关闭'
+}
+
+async function loadRecentLogs() {
+  logLoading.value = true
+  logError.value = ''
+  const data = await api('GET', '/admin/logging/recent?lines=200')
+  logLoading.value = false
+  if (data.ok === false) {
+    logError.value = data.error || '读取最近日志失败'
+    recentLogs.value = []
+    return
+  }
+  recentLogs.value = data.lines || data.result || []
+  logMessage.value = recentLogs.value.length ? `已读取最近 ${recentLogs.value.length} 行日志，敏感信息已脱敏` : '日志文件暂无内容'
+}
+
+async function clearRecentLogs() {
+  if (!confirm('确定清空受控日志文件？')) return
+  logLoading.value = true
+  logError.value = ''
+  const data = await api('DELETE', '/admin/logging/recent')
+  logLoading.value = false
+  if (data.ok === false) {
+    logError.value = data.error || '清空日志失败'
+    return
+  }
+  recentLogs.value = []
+  logMessage.value = '日志已清空'
+}
+
 function markPerfDirty() {
   perfDirty.value = true
   perfError.value = ''
@@ -544,65 +569,14 @@ async function savePerfSettings() {
   perfMessage.value = '系统性能配置已保存'
 }
 
-function setTemplateError(id, message) {
-  templateErrors[id] = message
-  delete templateResult[id]
-}
-
-function clearTemplateState(id) {
-  templateErrors[id] = ''
-  delete templateResult[id]
-}
-
-async function createTemplateTeam(template) {
-  if (creatingTemplate.value) return
-  creatingTemplate.value = template.id
-  clearTemplateState(template.id)
-  try {
-    const agentData = await api('GET', '/admin/agents')
-    if (agentData.ok === false) throw new Error(agentData.error || '读取智能体失败')
-    const existingAgents = agentData.result || []
-    const createdOrReused = []
-
-    for (const member of template.members) {
-      let agent = existingAgents.find(a => a.name === member.name && a.id !== 'system' && a.id !== 'user')
-      if (!agent) {
-        const created = await api('POST', '/admin/agents', { name: member.name, description: member.description })
-        if (created.ok === false || !created.result) throw new Error(created.error || `创建智能体「${member.name}」失败`)
-        agent = created.result
-        existingAgents.push(agent)
-      }
-      createdOrReused.push(agent)
-    }
-
-    const now = new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-    const roomName = `样例：${template.name} ${now}`
-    const roomData = await api('POST', '/admin/rooms', { name: roomName, description: template.roomDescription })
-    if (roomData.ok === false || !roomData.result) throw new Error(roomData.error || '创建群聊失败')
-    const room = roomData.result
-
-    for (const agent of createdOrReused) {
-      const memberData = await api('POST', `/admin/rooms/${room.id}/members`, { agent_id: agent.id })
-      if (memberData.ok === false) throw new Error(memberData.error || `加入成员「${agent.name}」失败`)
-    }
-
-    await Promise.all([loadAgents(), loadConversations()])
-    const openedRoom = store.rooms.find(r => r.id === room.id) || { ...room, members: createdOrReused }
-    templateResult[template.id] = { roomName, memberCount: createdOrReused.length }
-    emit('open-room', openedRoom)
-  } catch (e) {
-    setTemplateError(template.id, e.message || '创建失败，请稍后重试')
-  } finally {
-    creatingTemplate.value = ''
-  }
-}
-
 let updateHandler
 
 onMounted(async () => {
   isDark.value = localStorage.getItem('hub-theme') === 'dark'
   await loadModels()
   await loadPerfSettings()
+  await loadLoggingSettings()
+  await loadRecentLogs()
 
   updateHandler = (msg) => {
     if (msg.type === 'update_available' && updateInfo.isDocker) {
@@ -798,9 +772,34 @@ onUnmounted(() => {
 .mini-action.save {
   background: #d97706;
 }
+.mini-action.danger {
+  background: #9b2c2c;
+}
 .mini-action:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.mobile-log-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.mobile-log-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin: 10px 14px 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1f1f1c;
+  color: #f3f0e9;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 .template-status {
   border-radius: 10px;
@@ -1128,6 +1127,51 @@ onUnmounted(() => {
   .performance-panel {
     display: flex;
     flex-direction: column;
+  }
+
+  .models-detail-panel,
+  .logging-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .quickstart-summary-card {
+    margin-top: 2px;
+  }
+
+  .logging-controls {
+    display: grid;
+    gap: 12px;
+  }
+
+  .logging-switch:disabled,
+  .log-actions button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .log-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .log-preview {
+    flex: 1;
+    min-height: 260px;
+    max-height: 480px;
+    overflow: auto;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: #1f1f1c;
+    color: #f3f0e9;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
   }
 
   .perf-grid {
