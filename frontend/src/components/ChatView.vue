@@ -132,6 +132,25 @@
             </div>
             <!-- Stop button for streaming messages -->
             <button v-if="msg.streaming" class="stop-stream-btn" @click.stop="cancelStream(msg)">⏹ 停止</button>
+            <!-- P0: Handoff chain status bubble -->
+            <div v-if="msg.handoffInfo && !msg.self" class="handoff-bubble" :class="{ suppressed: msg.handoffInfo.suppressed && msg.handoffInfo.suppressed.length > 0 }">
+              <template v-if="msg.handoffInfo.targets && msg.handoffInfo.targets.length > 0">
+                <span class="handoff-arrow">→</span>
+                <span class="handoff-targets">{{ msg.handoffInfo.targets.map(id => { const a = store.agents.find(x => x.id === id); return a ? '@' + a.name : id.slice(0,8) }).join(' → ') }}</span>
+                <span class="handoff-depth" v-if="msg.handoffInfo.chain_depth > 0">第{{ msg.handoffInfo.chain_depth + 1 }}轮</span>
+              </template>
+              <template v-if="msg.handoffInfo.suppressed && msg.handoffInfo.suppressed.length > 0">
+                <div class="handoff-suppressed">
+                  <span v-for="(s, si) in msg.handoffInfo.suppressed" :key="si" class="suppressed-item">
+                    <template v-if="store.agents.find(x => x.id === s.target)">
+                      @{{ store.agents.find(x => x.id === s.target).name }}
+                    </template>
+                    <template v-else>{{ (s.target || '').slice(0,8) }}</template>
+                    已抑制: {{ s.reason }}
+                  </span>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
       </template>
@@ -743,9 +762,10 @@ const messageGroups = computed(() => {
   messages.value.forEach(m => {
     const event = m.sender_id === 'system'
     const self = m.sender_id === 'user'
-    // Parse metadata for tool_calls and chronological parts
+    // Parse metadata for tool_calls, chronological parts, and handoff info
     let toolCalls = null
     let parts = null
+    let handoffInfo = null
     if (m.metadata) {
       try {
         const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
@@ -757,6 +777,10 @@ const messageGroups = computed(() => {
         }
         if (meta.interrupted && meta.stream_id && store.activeStreams[meta.stream_id]?.interrupted) {
           replacedInterruptedStreams.add(meta.stream_id)
+        }
+        // P0: Extract handoff info from metadata
+        if (meta.handoff) {
+          handoffInfo = meta.handoff
         }
       } catch {}
     }
@@ -782,6 +806,7 @@ const messageGroups = computed(() => {
       toolCalls,
       parts,
       toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
+      handoffInfo,
     })
   })
   const latestUserSortTs = allMsgs
@@ -1470,6 +1495,14 @@ function handleWS(msg) {
   } else if (msg.type === 'typing' && msg.room_id === props.room.id) {
     typingAgent.value = msg.from?.name || null
     setTimeout(() => { typingAgent.value = null }, 3000)
+  } else if (msg.type === 'handoff_status' && msg.room_id === props.room.id) {
+    // P0: Show handoff in-progress indicator
+    const names = (msg.to_agent_names || []).join(' → ')
+    if (names) {
+      typingAgent.value = `→ ${names}`
+      nextTick(scrollToBottomIfNeeded)
+      setTimeout(() => { typingAgent.value = null }, 4000)
+    }
   } else if (msg.type === 'approval_request' && msg.room_id === props.room.id) {
     // Show approval dialog
     pendingApproval.value = {

@@ -66,6 +66,7 @@ export const store = reactive({
   activeStreams: {},
   cancelledStreamIds: {},
   unreadCounts: {},
+  handoffEvents: [],
   initialized: false,
 })
 
@@ -394,6 +395,24 @@ function _globalWSHandler(msg) {
     if (msg.room_id && msg.room_id !== currentRoomId.value) {
       store.unreadCounts[msg.room_id] = (store.unreadCounts[msg.room_id] || 0) + 1
       _persistUnread()
+    }
+  } else if (msg.type === 'handoff_status') {
+    // P0: Chain visualization — track handoff events for inline display
+    store.handoffEvents = store.handoffEvents || []
+    store.handoffEvents.push({
+      roomId: msg.room_id,
+      threadId: msg.thread_id || null,
+      fromAgentId: msg.from_agent_id,
+      fromAgentName: msg.from_agent_name,
+      toAgentIds: msg.to_agent_ids,
+      toAgentNames: msg.to_agent_names,
+      chainDepth: msg.chain_depth,
+      suppressed: msg.suppressed || [],
+      timestamp: Date.now(),
+    })
+    // Keep only last 50 handoff events to avoid memory bloat
+    if (store.handoffEvents.length > 50) {
+      store.handoffEvents = store.handoffEvents.slice(-50)
     }
   } else if (msg.type === 'update_available') {
     // Backend detected a new version

@@ -1251,12 +1251,43 @@ async def _execute_tool(name: str, args: dict) -> dict:
         return {"ok": False, "output": f"Error: {str(e)}"}
 
 
+def _build_handoff_context(from_agent: dict, reply_text: str, tool_calls: list, chain_depth: int) -> str:
+    """Build a compact context summary for the next agent in the chain."""
+    parts = []
+    agent_name = from_agent.get("name", "Agent")
+    parts.append(f"[交接上下文 — 来自 @{agent_name}，链深度 {chain_depth}]")
+    if tool_calls:
+        tool_summary = []
+        for tc in tool_calls:
+            name = tc.get("name", "?")
+            summary = tc.get("summary", "")
+            status = tc.get("status", "?")
+            result = tc.get("result", "")
+            line = f"- {name}: {summary}" if summary else f"- {name}"
+            if status == "done":
+                line += " ✅"
+                if result:
+                    line += f" → {result[:150]}"
+            elif status == "error":
+                line += " ❌"
+                if result:
+                    line += f" → {result[:150]}"
+            else:
+                line += f" ({status})"
+            tool_summary.append(line)
+        parts.append("上游工具调用结果：\n" + "\n".join(tool_summary))
+    else:
+        parts.append("上游未调用工具。")
+    return "\n".join(parts)
+
+
 async def process_message(db, ws_manager, room_id: str, sender_id: str, text: str,
                             mentions: list = None, room_type: str = "group",
                             chain_depth: int = 0, thread_id: str = None,
                             handoff_edges: set | None = None,
                             visited_agents: set | None = None,
-                            handoff_state: dict | None = None):
+                            handoff_state: dict | None = None,
+                            handoff_context: str | None = None):
     """
     Process a message and generate AI replies from mentioned agents.
     Core orchestration logic.
@@ -1370,6 +1401,9 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                                             agent_skills,
                                             prompt_room_settings,
                                             room)
+        # Inject handoff context from upstream agent (P3: context passing)
+        if handoff_context:
+            system_prompt += f"\n\n{handoff_context}\n注意：你可以利用上述上游工具的结果，避免重复执行相同的操作。"
 
         stream_started_at = int(datetime.now().timestamp() * 1000)
         stream_id = f"stream_{stream_started_at}_{agent['id'][:8]}"
@@ -1616,8 +1650,27 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         # Chain collaboration (skip if interrupted)
         if reply_mentions and room_type == "group" and not is_interrupted:
+            # Notify UI about handoff status before recursion
+            target_names = []
+            for mid in reply_mentions:
+                target_agent = next((a for a in all_agents if a.get("id") == mid), None)
+                if target_agent:
+                    target_names.append(target_agent.get("name", mid[:8]))
+            await ws_manager.notify_ui({
+                "type": "handoff_status",
+                "room_id": room_id,
+                "thread_id": thread_id,
+                "from_agent_id": agent["id"],
+                "from_agent_name": agent.get("name") or full_agent.get("name", ""),
+                "to_agent_ids": reply_mentions,
+                "to_agent_names": target_names,
+                "chain_depth": chain_depth,
+                "suppressed": suppressed_handoffs,
+            })
             await asyncio.sleep(1)
-            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges, visited_agents, handoff_state)
+            # Pass tool context to next agent
+            handoff_context = _build_handoff_context(agent, reply, collected_tool_calls, chain_depth)
+            await process_message(db, ws_manager, room_id, agent["id"], reply, reply_mentions, room_type, chain_depth + 1, thread_id, handoff_edges, visited_agents, handoff_state, handoff_context=handoff_context)
 
         # Self-improvement (skip if interrupted)
         # Default: OFF globally and per-agent. Must be explicitly enabled.
