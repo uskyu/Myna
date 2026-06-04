@@ -36,7 +36,7 @@
           <strong>这个群聊还没有智能体</strong>
           <span>点击添加智能体开始协作</span>
         </div>
-        <button class="guide-cta" @pointerdown.prevent="openAddAgent" @click="openAddAgent">添加智能体</button>
+        <button class="guide-cta" @click.stop="openAddAgent">添加智能体</button>
       </div>
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
@@ -334,6 +334,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, clearUnread, currentRoomId, chatSettings, saveChatSettings, markStreamInterrupted } from '../store.js'
 import RoomInfoPanel from './RoomInfoPanel.vue'
 
@@ -594,16 +595,18 @@ const agentColorIdx = (id) => store.agents.findIndex(a => a.id === id)
 // Mention candidates: room members (group) or all agents (dm)
 const mentionCandidates = computed(() => {
   let pool = []
-  if (props.type === 'group' && props.room.members) {
+  const isGroup = props.type === 'group' && props.room.members
+  if (isGroup) {
     pool = props.room.members.filter(m => m.id !== 'user')
   } else {
     pool = store.agents
   }
-  // Add @全部 option at the top
+  // @全部 only makes sense in group chats with multiple members
+  const showAll = isGroup && pool.filter(m => m.id !== 'system').length > 1
   const allOption = { id: '__all__', name: '全部', description: '通知所有智能体' }
   const q = mentionQuery.value.toLowerCase()
-  if (!q) return [allOption, ...pool.slice(0, 8)]
-  if ('全部'.includes(q) || 'all'.includes(q)) {
+  if (!q) return [...(showAll ? [allOption] : []), ...pool.slice(0, 8)]
+  if (showAll && ('全部'.includes(q) || 'all'.includes(q))) {
     return [allOption, ...pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 7)]
   }
   return pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 8)
@@ -722,6 +725,14 @@ function renderMd(text) {
     let html = marked.parse(processed)
     html = html.replace(/<table>/g, '<div class="table-wrapper"><table>').replace(/<\/table>/g, '</table></div>')
     html = html.replace(/<img /g, '<img style="max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;display:block;margin:4px 0" onclick="window.open(this.src)" ')
+    // Sanitize with DOMPurify to prevent XSS while keeping rich content
+    html = DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['a','b','i','em','strong','code','pre','p','br','ul','ol','li','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td','div','span','img','video','source','blockquote','details','summary','del','ins','sup','sub','hr','ruby','rt','rp'],
+      ALLOWED_ATTR: ['href','target','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script','style','iframe','object','embed','form','input','textarea','select','button','link','meta','noscript'],
+      FORBID_ATTR: ['onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
+    })
     return html
   } catch { return escapeHtml(text) }
 }
@@ -1270,13 +1281,16 @@ async function send() {
     else body += `\n[${a.name}](${a.url})`
   }
 
-  // Extract mentions
+  // Extract mentions — only resolve names that are actual room members
   const mentions = []
   const memberMap = {}
-  if (props.room.members) {
+  if (props.type === 'group' && props.room.members) {
+    // In group chats, only allow @mentions for members of this room
     props.room.members.forEach(m => { memberMap[m.name] = m.id })
+  } else {
+    // In DMs, resolve against all agents (DM partner is always present)
+    store.agents.forEach(a => { memberMap[a.name] = a.id })
   }
-  store.agents.forEach(a => { memberMap[a.name] = a.id })
   const mentionRegex = /@([^\s@,，.。;；:：!！?？]+)/g
   let match
   while ((match = mentionRegex.exec(text)) !== null) {

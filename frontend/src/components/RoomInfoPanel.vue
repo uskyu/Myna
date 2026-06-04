@@ -822,7 +822,7 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
 }
 .member-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 60px);
+  grid-template-columns: repeat(auto-fill, 68px);
   gap: 12px;
   justify-content: start;
 }
@@ -832,20 +832,21 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
   align-items: center;
   gap: 4px;
   position: relative;
+  padding-top: 6px;
 }
 .member-cell-name {
   font-size: 11px;
   color: var(--text-dim);
   text-align: center;
-  max-width: 60px;
+  max-width: 68px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .member-remove-btn {
   position: absolute;
-  top: -4px;
-  right: 2px;
+  top: 0;
+  right: 4px;
   width: 16px;
   height: 16px;
   border-radius: 50%;

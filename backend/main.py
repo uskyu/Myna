@@ -20,7 +20,7 @@ if HERMES_AGENT_PATH.exists():
 
 from db import get_database
 from ws_manager import WSManager
-from routes.admin import router as admin_router
+from routes.admin import router as admin_router, MYNA_VERSION
 from routes.gateway import router as gateway_router
 from routes.upload import router as upload_router
 from routes.auth import router as auth_router, is_authenticated, ensure_password_initialized
@@ -54,7 +54,23 @@ async def lifespan(app: FastAPI):
 
     # Initialize credential store and system agent
     # Use a stable secret for encryption (derived from DB path + machine id)
-    encryption_secret = os.environ.get("MYNA_ENCRYPTION_KEY", "myna-default-key-change-me")
+    encryption_secret = os.environ.get("MYNA_ENCRYPTION_KEY", "")
+    if not encryption_secret:
+        import warnings
+        IS_DOCKER = os.path.exists("/.dockerenv")
+        if IS_DOCKER:
+            print("⚠️  WARNING: MYNA_ENCRYPTION_KEY not set! Running with auto-generated key.")
+            print("⚠️  Credential encryption will NOT survive container recreation.")
+            print("⚠️  Set MYNA_ENCRYPTION_KEY in docker-compose.yml environment for production use.")
+        # Auto-generate a stable key from DB path + machine id so credentials
+        # survive restarts (but NOT container recreation in Docker).
+        try:
+            with open("/etc/machine-id") as f:
+                machine_id = f.read().strip()
+        except (FileNotFoundError, PermissionError):
+            machine_id = str(Path(__file__).resolve())
+        import hashlib
+        encryption_secret = hashlib.sha256(f"myna-{machine_id}-{DB_ROOT}".encode()).hexdigest()
     credential_store = CredentialStore(db, encryption_secret)
     system_agent = SystemAgent(credential_store)
     
@@ -69,7 +85,7 @@ async def lifespan(app: FastAPI):
     port = int(os.environ.get("PORT", "3456"))
     print(f"""
 ╔══════════════════════════════════════════╗
-║           Myna v0.5.0                   ║
+║           Myna v{MYNA_VERSION}                   ║
 ╠══════════════════════════════════════════╣
 ║  Web UI:    http://localhost:{port}        ║
 ║  Gateway:   http://localhost:{port}/bot*   ║
@@ -121,12 +137,17 @@ async def lifespan(app: FastAPI):
     db.close()
 
 
-app = FastAPI(title="Myna", version="0.3.8", lifespan=lifespan)
+app = FastAPI(title="Myna", version=MYNA_VERSION, lifespan=lifespan)
 
-# CORS
+# CORS — configurable via MYNA_CORS_ORIGINS env var (comma-separated)
+_cors_origins_str = os.environ.get("MYNA_CORS_ORIGINS", "")
+if _cors_origins_str:
+    _cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
+else:
+    _cors_origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -197,6 +218,26 @@ async def websocket_endpoint(websocket: WebSocket):
     api_key = params.get("api_key")
     
     if is_ui:
+        # Wait for auth message from UI client (token no longer in URL for security)
+        # Allow a short grace period for the auth message, but also support legacy
+        # query-param auth_token for backward compatibility
+        auth_token = params.get("auth_token")
+        ui_authenticated = bool(auth_token)
+        
+        if not ui_authenticated:
+            # Wait for first message which should be auth
+            try:
+                import json as _json
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+                msg = _json.loads(raw)
+                if msg.get("type") == "auth" and msg.get("token"):
+                    auth_token = msg["token"]
+                    ui_authenticated = True
+            except (asyncio.TimeoutError, Exception):
+                # No auth received — still allow unauthenticated UI connections
+                # (the UI may not have a token yet, e.g. on login page)
+                pass
+        
         app.state.ws_manager.add_ui(websocket)
         try:
             await websocket.send_json({"type": "connected", "client": "ui"})

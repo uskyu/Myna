@@ -196,7 +196,19 @@ function startUpdateRecoveryPoll() {
 // Clear unread count for a room
 export function clearUnread(roomId) {
   store.unreadCounts[roomId] = 0
+  _persistUnread()
 }
+
+function _persistUnread() {
+  try { localStorage.setItem('myna_unread', JSON.stringify(store.unreadCounts)) } catch {}
+}
+function _loadUnread() {
+  try {
+    const raw = localStorage.getItem('myna_unread')
+    if (raw) store.unreadCounts = JSON.parse(raw)
+  } catch {}
+}
+_loadUnread()
 
 export async function loadAgents() {
   const data = await api('GET', '/admin/agents')
@@ -252,10 +264,13 @@ export const ws = {
   connected: ref(false),
   connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const authParam = auth.token ? `&auth_token=${auth.token}` : ''
-    this._ws = new WebSocket(`${proto}//${location.host}/ws?ui=1${authParam}`)
+    this._ws = new WebSocket(`${proto}//${location.host}/ws?ui=1`)
     this._ws.onopen = () => {
       console.log('[WS] Connected')
+      // Send auth token as first message instead of URL param (avoids logging token in access logs)
+      if (auth.token) {
+        try { this._ws.send(JSON.stringify({ type: 'auth', token: auth.token })) } catch {}
+      }
       this.connected.value = true
     }
     this._ws.onclose = () => {
@@ -323,6 +338,7 @@ function _globalWSHandler(msg) {
     // Increment unread if not the current room
     if (msg.room_id && msg.room_id !== currentRoomId.value) {
       store.unreadCounts[msg.room_id] = (store.unreadCounts[msg.room_id] || 0) + 1
+      _persistUnread()
     }
   } else if (msg.type === 'tool_call') {
     // Handle tool_call at store level so reconnecting clients get them regardless of which ChatView is mounted
@@ -377,6 +393,7 @@ function _globalWSHandler(msg) {
     // Increment unread if not the current room
     if (msg.room_id && msg.room_id !== currentRoomId.value) {
       store.unreadCounts[msg.room_id] = (store.unreadCounts[msg.room_id] || 0) + 1
+      _persistUnread()
     }
   } else if (msg.type === 'update_available') {
     // Backend detected a new version
