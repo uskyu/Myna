@@ -1255,3 +1255,33 @@ async def token_usage_single_agent(agent_id: str, request: Request):
     usage = db.get_token_daily_for_agent(agent_id, days)
     agent = db.get_agent_by_id(agent_id)
     return {"ok": True, "result": {"agent": agent, "usage": usage}}
+
+
+# === Data Directory Management (requires auth) ===
+
+@router.get("/data-dir")
+async def get_data_dir(request: Request):
+    """Get current data directory information. Requires auth."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    from paths import get_data_dir_info, _migration_pending
+    info = get_data_dir_info()
+    if _migration_pending:
+        info["migration_pending"] = _migration_pending
+    return {"ok": True, "result": info}
+
+
+@router.post("/data-dir/migrate")
+async def migrate_data_dir(request: Request):
+    """Migrate data to a new directory. Requires auth. App must restart after."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    body = await request.json()
+    new_dir = body.get("new_dir", "").strip()
+    if not new_dir:
+        return JSONResponse({"ok": False, "error": "请提供新目录路径"}, status_code=400)
+    from paths import migrate_data_dir as do_migrate
+    result = do_migrate(new_dir)
+    return result

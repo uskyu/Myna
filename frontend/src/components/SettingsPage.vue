@@ -117,6 +117,61 @@
           </form>
         </section>
 
+        <section v-else-if="activeSection === 'data-storage'" class="detail-panel data-storage-panel">
+          <div class="detail-heading">
+            <p class="eyebrow">Data Storage</p>
+            <h2>数据存储</h2>
+            <p>查看和管理数据存储位置。Windows 用户可将数据迁移到非系统盘以节省 C 盘空间。</p>
+          </div>
+          <div class="storage-info">
+            <div class="storage-row">
+              <span>当前数据目录</span>
+              <code>{{ dataDirInfo.current_dir || '加载中...' }}</code>
+            </div>
+            <div class="storage-row">
+              <span>数据库大小</span>
+              <strong>{{ dataDirInfo.db_size || '-' }}</strong>
+            </div>
+            <div class="storage-row">
+              <span>上传文件</span>
+              <strong>{{ dataDirInfo.uploads_size || '-' }}</strong>
+            </div>
+            <div class="storage-row">
+              <span>工作空间</span>
+              <strong>{{ dataDirInfo.workspaces_size || '-' }}</strong>
+            </div>
+            <div class="storage-row">
+              <span>配置文件</span>
+              <strong>{{ dataDirInfo.profiles_size || '-' }}</strong>
+            </div>
+          </div>
+          <div v-if="dataDirInfo.platform === 'Windows'" class="migrate-section">
+            <h3>迁移数据目录</h3>
+            <p>将所有数据迁移到新目录（如 D:\\Myna）。迁移后需重启 Myna。</p>
+            <div class="migrate-form">
+              <input
+                type="text"
+                v-model="migrateTarget"
+                placeholder="D:\Myna"
+                :disabled="migrating"
+              >
+              <button
+                type="button"
+                class="primary-action narrow"
+                :disabled="migrating || !migrateTarget"
+                @click="doMigrate"
+              >
+                {{ migrating ? '迁移中...' : '开始迁移' }}
+              </button>
+            </div>
+            <p v-if="migrateError" class="error-text">{{ migrateError }}</p>
+            <p v-if="migrateSuccess" class="success-text">{{ migrateSuccess }}</p>
+          </div>
+          <div v-else class="migrate-note">
+            <p>当前运行在 {{ dataDirInfo.platform || 'Linux' }} 环境。如需更改数据目录，请设置环境变量 <code>MYNA_DATA_DIR</code> 后重启服务。</p>
+          </div>
+        </section>
+
         <section v-else-if="activeSection === 'appearance'" class="detail-panel compact-panel">
           <div class="detail-heading">
             <p class="eyebrow">Appearance</p>
@@ -235,6 +290,25 @@
           </div>
         </div>
         <div class="settings-section">
+          <div class="section-title">数据存储</div>
+          <div class="setting-item" style="cursor:default; flex-direction:column; align-items:flex-start; gap:4px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span class="setting-label">当前目录</span>
+            <code style="font-size:11px;color:var(--text-muted,#888);word-break:break-all">{{ dataDirInfo.current_dir || '加载中...' }}</code>
+          </div>
+          <div class="setting-item" style="cursor:default">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            <span class="setting-label">数据库</span>
+            <span class="setting-value">{{ dataDirInfo.db_size || '-' }}</span>
+          </div>
+          <div v-if="dataDirInfo.platform === 'Windows'" class="mobile-migrate">
+            <input type="text" v-model="migrateTarget" placeholder="D:\Myna" :disabled="migrating" class="mini-input" style="width:100%">
+            <button type="button" class="mini-action save" :disabled="migrating || !migrateTarget" @click="doMigrate">{{ migrating ? '迁移中' : '迁移数据' }}</button>
+          </div>
+          <p v-if="migrateError" class="setting-hint error">{{ migrateError }}</p>
+          <p v-if="migrateSuccess" class="setting-hint success">{{ migrateSuccess }}</p>
+        </div>
+        <div class="settings-section">
           <div class="section-title">外观</div>
           <div class="setting-item" @click="toggleTheme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -350,6 +424,13 @@ const logMessage = ref('已加载日志设置')
 const logError = ref('')
 const recentLogs = ref([])
 
+// Data storage
+const dataDirInfo = reactive({ current_dir: '', db_size: '-', uploads_size: '-', workspaces_size: '-', profiles_size: '-', platform: '', is_default: true })
+const migrateTarget = ref('')
+const migrating = ref(false)
+const migrateError = ref('')
+const migrateSuccess = ref('')
+
 const currentPwd = ref('')
 const newPwd = ref('')
 const confirmPwd = ref('')
@@ -359,6 +440,7 @@ const pwdSuccess = ref('')
 const navItems = [
   { id: 'models', label: '模型配置', desc: '供应商管理' },
   { id: 'performance', label: '系统性能', desc: '并发与上下文' },
+  { id: 'data-storage', label: '数据存储', desc: '目录与迁移' },
   { id: 'logging', label: '日志', desc: '调试与最近日志' },
   { id: 'security', label: '安全', desc: '密码与登录' },
   { id: 'appearance', label: '外观', desc: '主题显示' },
@@ -571,12 +653,51 @@ async function savePerfSettings() {
 
 let updateHandler
 
+// Data storage functions
+async function loadDataDirInfo() {
+  try {
+    const resp = await fetch('/admin/data-dir', { headers: authHeaders() })
+    const data = await resp.json()
+    if (data.ok) {
+      Object.assign(dataDirInfo, data.result)
+    }
+  } catch (e) {
+    // Silently fail - non-critical
+  }
+}
+
+async function doMigrate() {
+  if (!migrateTarget.value.trim()) return
+  migrating.value = true
+  migrateError.value = ''
+  migrateSuccess.value = ''
+  try {
+    const resp = await fetch('/admin/data-dir/migrate', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_dir: migrateTarget.value.trim() })
+    })
+    const data = await resp.json()
+    if (data.ok) {
+      migrateSuccess.value = data.note || '迁移成功！请重启 Myna 以使新目录生效。'
+      await loadDataDirInfo()
+    } else {
+      migrateError.value = data.error || '迁移失败'
+    }
+  } catch (e) {
+    migrateError.value = '网络错误: ' + e.message
+  } finally {
+    migrating.value = false
+  }
+}
+
 onMounted(async () => {
   isDark.value = localStorage.getItem('hub-theme') === 'dark'
   await loadModels()
   await loadPerfSettings()
   await loadLoggingSettings()
   await loadRecentLogs()
+  await loadDataDirInfo()
 
   updateHandler = (msg) => {
     if (msg.type === 'update_available' && updateInfo.isDocker) {
@@ -1313,5 +1434,79 @@ onUnmounted(() => {
   .detail-heading {
     margin-bottom: 16px;
   }
+}
+
+/* Data Storage */
+.storage-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--card-bg, #1a1a2e);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.storage-row code {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  word-break: break-all;
+  max-width: 60%;
+  text-align: right;
+}
+
+.migrate-section {
+  border-top: 1px solid var(--border, #2a2a3e);
+  padding-top: 20px;
+}
+
+.migrate-section h3 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.migrate-section p {
+  font-size: 13px;
+  color: var(--text-muted, #888);
+  margin-bottom: 12px;
+}
+
+.migrate-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.migrate-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #2a2a3e);
+  background: var(--card-bg, #1a1a2e);
+  color: var(--text, #e0e0e0);
+  font-size: 14px;
+}
+
+.migrate-note {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--card-bg, #1a1a2e);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted, #888);
+}
+
+.migrate-note code {
+  background: var(--border, #2a2a3e);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 </style>
