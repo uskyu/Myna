@@ -534,6 +534,11 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   flex: 1;
   color: var(--text);
 }
+.branch-badge {
+  font-size: 14px;
+  margin-right: 4px;
+  opacity: 0.8;
+}
 
 .group-info-panel {
   flex: 1;
@@ -814,6 +819,15 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .msg-action-btn.retry-btn:hover {
   background: rgba(217, 119, 6, 0.1);
   color: var(--amber, #d97706);
+  opacity: 1;
+}
+.msg-action-btn.fork-btn {
+  color: var(--accent);
+  opacity: 0.6;
+}
+.msg-action-btn.fork-btn:hover {
+  background: rgba(45, 106, 79, 0.12);
+  color: var(--accent);
   opacity: 1;
 }
 .msg-group.self .msg .msg-action-btn {
@@ -2252,6 +2266,23 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   margin-top: 2px;
 }
 .thread-status-icon { margin-right: 4px; }
+
+/* === Branch thread items === */
+.thread-item.branch-item {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+.thread-item.main-line {
+  border-left: 2px solid var(--text-faint);
+  padding-left: 10px;
+}
+.branch-icon {
+  margin-right: 4px;
+  font-size: 12px;
+}
+.thread-item.branch-item .thread-item-title {
+  color: var(--accent);
+}
 
 /* === Chat Settings Dropdown === */
 .settings-btn {

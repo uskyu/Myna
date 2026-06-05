@@ -329,11 +329,12 @@ class BaseDatabase:
         self.commit()
 
     # === Threads ===
-    def create_thread(self, room_id: str, title: str, workflow_id: str = None) -> dict:
+    def create_thread(self, room_id: str, title: str, workflow_id: str = None,
+                      fork_from_message_id: int = None) -> dict:
         ph = self._placeholder()
         id = str(uuid.uuid4())
-        self.execute(f"INSERT INTO threads (id, room_id, title, workflow_id) VALUES ({ph}, {ph}, {ph}, {ph})",
-                     (id, room_id, title, workflow_id))
+        self.execute(f"INSERT INTO threads (id, room_id, title, workflow_id, fork_from_message_id) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+                     (id, room_id, title, workflow_id, fork_from_message_id))
         self.commit()
         return self.fetchone(f"SELECT * FROM threads WHERE id = {ph}", (id,))
 
@@ -365,6 +366,48 @@ class BaseDatabase:
         self.execute(f"DELETE FROM messages WHERE thread_id = {ph}", (thread_id,))
         self.execute(f"DELETE FROM threads WHERE id = {ph}", (thread_id,))
         self.commit()
+
+    def fork_thread(self, room_id: str, from_message_id: int, title: str = None) -> dict:
+        """Create a branch thread from a specific message, copying all messages up to and including it."""
+        # Get the source message to determine context
+        ph = self._placeholder()
+        source_msg = self.fetchone(f"SELECT * FROM messages WHERE id = {ph}", (from_message_id,))
+        if not source_msg:
+            return None
+
+        # Determine source thread_id (could be main line = NULL, or an existing thread)
+        source_thread_id = source_msg.get("thread_id")
+
+        # Create the new branch thread
+        if not title:
+            title = f"分支 (从消息 #{from_message_id})"
+        thread = self.create_thread(room_id, title, fork_from_message_id=from_message_id)
+
+        # Copy messages up to and including from_message_id from the source context
+        if source_thread_id:
+            source_messages = self.fetchall(f"""
+                SELECT m.* FROM messages m
+                WHERE m.thread_id = {ph} AND m.id <= {ph}
+                ORDER BY m.id ASC
+            """, (source_thread_id, from_message_id))
+        else:
+            # Main line messages (thread_id IS NULL)
+            source_messages = self.fetchall(f"""
+                SELECT m.* FROM messages m
+                WHERE m.room_id = {ph} AND m.thread_id IS NULL AND m.id <= {ph}
+                ORDER BY m.id ASC
+            """, (room_id, from_message_id))
+
+        # Insert copies into the new thread
+        for m in source_messages:
+            self.execute(f"""
+                INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, metadata, thread_id, created_at)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (room_id, m["sender_id"], m["text"], m.get("parse_mode", "markdown"),
+                  m.get("reply_to_message_id"), m.get("mentions", "[]"), m.get("metadata"), thread["id"],
+                  m.get("created_at")))
+        self.commit()
+        return thread
 
     def get_thread_messages(self, thread_id: str, limit: int = 30) -> list:
         ph = self._placeholder()
@@ -841,6 +884,7 @@ class SQLiteDatabase(BaseDatabase):
                 title TEXT NOT NULL,
                 status TEXT DEFAULT 'active',
                 workflow_id TEXT DEFAULT NULL,
+                fork_from_message_id INTEGER DEFAULT NULL,
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
@@ -908,6 +952,7 @@ class SQLiteDatabase(BaseDatabase):
         self._ensure_column("rooms", "settings_json", "TEXT DEFAULT '{}'")
         self._ensure_column("messages", "thread_id", "TEXT DEFAULT NULL")
         self._ensure_column("messages", "metadata", "TEXT DEFAULT NULL")
+        self._ensure_column("threads", "fork_from_message_id", "INTEGER DEFAULT NULL")
         self.conn.execute("UPDATE agents SET status = 'online' WHERE status = 'offline'")
         self.conn.commit()
 
@@ -1095,6 +1140,7 @@ class MySQLDatabase(BaseDatabase):
                 title VARCHAR(512) NOT NULL,
                 status VARCHAR(32) DEFAULT 'active',
                 workflow_id VARCHAR(36) DEFAULT NULL,
+                fork_from_message_id BIGINT DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,

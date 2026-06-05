@@ -561,6 +561,28 @@ async def create_thread(room_id: str, request: Request):
     return {"ok": True, "result": thread}
 
 
+@router.post("/rooms/{room_id}/fork")
+async def fork_thread(room_id: str, request: Request):
+    """Create a branch conversation from a specific message point."""
+    db = get_db(request)
+    ws_manager = get_ws(request)
+    body = await request.json()
+    from_message_id = body.get("from_message_id")
+    if not from_message_id:
+        return JSONResponse({"ok": False, "error": "from_message_id is required"}, status_code=400)
+    title = body.get("title")
+    thread = db.fork_thread(room_id, int(from_message_id), title)
+    if not thread:
+        return JSONResponse({"ok": False, "error": "Message not found"}, status_code=404)
+    # Notify UI about the new branch
+    await ws_manager.notify_ui({
+        "type": "thread_created",
+        "room_id": room_id,
+        "thread": thread
+    })
+    return {"ok": True, "result": thread}
+
+
 @router.patch("/threads/{thread_id}")
 @router.put("/threads/{thread_id}")
 async def update_thread(thread_id: str, request: Request):

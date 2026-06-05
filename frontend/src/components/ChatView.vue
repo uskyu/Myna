@@ -5,6 +5,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <span class="title">
+        <span v-if="activeThreadInfo?.fork_from_message_id" class="branch-badge" title="这是一个分支会话">🔀</span>
         {{ title }}
         <span v-if="subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">{{ subtitle }}</span>
       </span>
@@ -103,8 +104,11 @@
             </template>
             <div class="msg-meta-row">
               <span class="msg-time">{{ msg.streaming ? (msg.text ? '生成中...' : '思考中...') : msg.time }}</span>
-              <!-- Message actions (edit/delete/mention/retry/copy) — always visible for non-streaming -->
+              <!-- Message actions (edit/delete/mention/retry/copy/fork) — always visible for non-streaming -->
               <span v-if="!msg.streaming && !String(msg.id).startsWith('tmp-') && !String(msg.id).startsWith('stream-')" class="msg-actions">
+                <button class="msg-action-btn fork-btn" @click.stop="forkFromMsg(msg)" title="分支会话">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="4" r="2"/><circle cx="5" cy="20" r="2"/><circle cx="19" cy="20" r="2"/><path d="M12 6v4M12 10L5 18M12 10l7 8"/></svg>
+                </button>
                 <button class="msg-action-btn danger" @click.stop="deleteMsg(msg)" title="删除">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
@@ -177,46 +181,77 @@
             </button>
             <div class="thread-list">
               <div
-                class="thread-item"
+                class="thread-item main-line"
                 :class="{ active: !activeThreadId }"
                 @click="selectThread(null); threadDrawerOpen = false"
               >
-                <div class="thread-item-title">主线</div>
+                <div class="thread-item-title">📍 主线</div>
                 <div class="thread-item-preview">默认对话</div>
               </div>
-              <div
-                v-for="t in threads"
-                :key="t.id"
-                class="thread-item"
-                :class="{ active: activeThreadId === t.id }"
-                @click="selectThread(t.id); threadDrawerOpen = false"
-              >
-                <div class="thread-item-header">
-                  <div class="thread-item-title" @dblclick.stop="startRenameThread(t)">
-                    <span v-if="t.status === 'workflow_running'" class="thread-status-icon">🔄</span>
-                    <template v-if="renamingThreadId === t.id">
-                      <input
-                        class="thread-rename-input"
-                        v-model="renameThreadTitle"
-                        @click.stop
-                        @keydown.enter.stop="finishRenameThread(t)"
-                        @keydown.escape.stop="cancelRenameThread"
-                        @blur="finishRenameThread(t)"
-                        ref="renameInput"
-                      >
-                    </template>
-                    <template v-else>{{ t.title }}</template>
+              <template v-for="t in threads" :key="t.id">
+                <!-- Branch thread indicator -->
+                <div v-if="t.fork_from_message_id" class="thread-item branch-item"
+                  :class="{ active: activeThreadId === t.id }"
+                  @click="selectThread(t.id); threadDrawerOpen = false"
+                >
+                  <div class="thread-item-header">
+                    <div class="thread-item-title" @dblclick.stop="startRenameThread(t)">
+                      <span class="branch-icon">🔀</span>
+                      <template v-if="renamingThreadId === t.id">
+                        <input
+                          class="thread-rename-input"
+                          v-model="renameThreadTitle"
+                          @click.stop
+                          @keydown.enter.stop="finishRenameThread(t)"
+                          @keydown.escape.stop="cancelRenameThread"
+                          @blur="finishRenameThread(t)"
+                          ref="renameInput"
+                        >
+                      </template>
+                      <template v-else>{{ t.title }}</template>
+                    </div>
+                    <button class="thread-item-edit" @click.stop="startRenameThread(t)" title="重命名">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="thread-item-delete" @click.stop="deleteThread(t.id)" title="删除对话">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
                   </div>
-                  <button class="thread-item-edit" @click.stop="startRenameThread(t)" title="重命名">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  </button>
-                  <button class="thread-item-delete" @click.stop="deleteThread(t.id)" title="删除对话">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
+                  <div class="thread-item-preview">{{ t.last_message || '暂无消息' }}</div>
+                  <div v-if="t.updated_at" class="thread-item-time">{{ formatThreadTime(t.updated_at) }}</div>
                 </div>
-                <div class="thread-item-preview">{{ t.last_message || '暂无消息' }}</div>
-                <div v-if="t.updated_at" class="thread-item-time">{{ formatThreadTime(t.updated_at) }}</div>
-              </div>
+                <!-- Regular thread -->
+                <div v-else class="thread-item"
+                  :class="{ active: activeThreadId === t.id }"
+                  @click="selectThread(t.id); threadDrawerOpen = false"
+                >
+                  <div class="thread-item-header">
+                    <div class="thread-item-title" @dblclick.stop="startRenameThread(t)">
+                      <span v-if="t.status === 'workflow_running'" class="thread-status-icon">🔄</span>
+                      <template v-if="renamingThreadId === t.id">
+                        <input
+                          class="thread-rename-input"
+                          v-model="renameThreadTitle"
+                          @click.stop
+                          @keydown.enter.stop="finishRenameThread(t)"
+                          @keydown.escape.stop="cancelRenameThread"
+                          @blur="finishRenameThread(t)"
+                          ref="renameInput"
+                        >
+                      </template>
+                      <template v-else>{{ t.title }}</template>
+                    </div>
+                    <button class="thread-item-edit" @click.stop="startRenameThread(t)" title="重命名">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="thread-item-delete" @click.stop="deleteThread(t.id)" title="删除对话">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  <div class="thread-item-preview">{{ t.last_message || '暂无消息' }}</div>
+                  <div v-if="t.updated_at" class="thread-item-time">{{ formatThreadTime(t.updated_at) }}</div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -380,6 +415,11 @@ const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
 const showShortcutBar = ref(false)
+
+const activeThreadInfo = computed(() => {
+  if (!activeThreadId.value) return null
+  return threads.value.find(t => t.id === activeThreadId.value) || null
+})
 
 const hasActiveStreamInView = computed(() => Object.values(store.activeStreams).some(s => s.roomId === props.room.id && (s.threadId || null) === activeThreadId.value && !s.interrupted))
 const hasGroupAiMembers = computed(() => props.type === 'group' && (props.room.members || []).some(m => m.id !== 'user' && m.id !== 'system'))
@@ -933,6 +973,22 @@ async function deleteThread(threadId) {
   }
   await fetchThreads()
   fetchMessages({ forceScroll: true })
+}
+
+// === Branch (fork) conversation from a message ===
+async function forkFromMsg(msg) {
+  const senderLabel = msg.sender_name || '用户'
+  const preview = msg.text.length > 20 ? msg.text.slice(0, 20) + '…' : msg.text
+  const defaultTitle = `分支 · ${senderLabel}: ${preview}`
+  const data = await api('POST', `/admin/rooms/${props.room.id}/fork`, {
+    from_message_id: msg.id,
+    title: defaultTitle
+  })
+  if (data.ok) {
+    await fetchThreads()
+    selectThread(data.result.id)
+    threadDrawerOpen.value = false
+  }
 }
 
 // === Task 3: Thread rename ===
