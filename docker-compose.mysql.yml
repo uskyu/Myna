@@ -1,4 +1,3 @@
-# MySQL version - for production deployments with higher concurrency
 services:
   mysql:
     image: mysql:8.0
@@ -9,34 +8,24 @@ services:
       MYSQL_DATABASE: myna
       MYSQL_USER: myna
       MYSQL_PASSWORD: myna
-    ports:
-      - "3307:3306"
+    network_mode: host
     volumes:
       - mysql_data:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   myna:
     image: ghcr.io/uskyu/myna:latest
     container_name: myna-app
     restart: unless-stopped
-    ports:
-      - "3456:3456"
+    network_mode: host
     environment:
       - PORT=3456
       - DB_TYPE=mysql
-      - MYSQL_HOST=mysql
+      - MYSQL_HOST=127.0.0.1
       - MYSQL_PORT=3306
       - MYSQL_USER=myna
       - MYSQL_PASSWORD=myna
       - MYSQL_DATABASE=myna
-    depends_on:
-      mysql:
-        condition: service_healthy
     volumes:
       - app_data:/app/data
       - hermes_profiles:/root/.hermes/profiles
