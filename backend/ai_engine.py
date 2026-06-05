@@ -1140,6 +1140,9 @@ async def direct_api_call(base_url: str, api_key: str, model: str,
     messages = [{"role": "system", "content": system_prompt}] + history
     url = base_url.rstrip("/") + "/chat/completions"
 
+    total_input_tokens = 0
+    total_output_tokens = 0
+
     async with httpx.AsyncClient(timeout=120) as client:
         for round_num in range(8):
             body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
@@ -1156,10 +1159,18 @@ async def direct_api_call(base_url: str, api_key: str, model: str,
             choice = data.get("choices", [{}])[0]
             msg = choice.get("message", {})
 
+            # Capture real token usage from API response
+            usage = data.get("usage", {})
+            total_input_tokens += usage.get("prompt_tokens", 0)
+            total_output_tokens += usage.get("completion_tokens", 0)
+
             if not msg.get("tool_calls"):
                 text = msg.get("content", "")
                 if text and on_token:
                     await on_token(text)
+                # Report token usage via callback
+                if callbacks.get("on_token_usage"):
+                    await callbacks["on_token_usage"](total_input_tokens, total_output_tokens)
                 return text or None
 
             messages.append(msg)
@@ -1455,6 +1466,22 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             })
 
         callbacks = {"on_token": on_token, "on_tool_call": on_tool_call, "on_tool_result": on_tool_result, "on_approval_request": on_approval_request}
+
+        # Token usage tracking callback
+        model_name = model_config.get("model", "") if model_config else ""
+        async def on_token_usage(input_tokens, output_tokens):
+            try:
+                db.record_token_daily(
+                    agent_id=agent["id"],
+                    agent_name=agent.get("name", ""),
+                    room_id=room_id,
+                    model=model_name,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            except Exception as e:
+                print(f"[AI] Token usage recording error: {e}")
+        callbacks["on_token_usage"] = on_token_usage
 
         # Register cancellation event for this stream
         cancel_event = ws_manager.register_stream_cancel(stream_id)

@@ -1215,3 +1215,43 @@ def _parse_size(s: str) -> int:
     unit = m.group(2)
     multipliers = {'': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
     return int(val * multipliers.get(unit, 1))
+
+
+# === Token Usage Stats (requires auth) ===
+
+@router.get("/token-usage/summary")
+async def token_usage_summary(request: Request):
+    """Get daily total token usage summary (last N days). Requires auth."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    db = get_db(request)
+    days = int(request.query_params.get("days", "30"))
+    summary = db.get_token_daily_summary(days)
+    totals = db.get_token_daily_totals()
+    return {"ok": True, "result": {"daily": summary, "totals": totals}}
+
+
+@router.get("/token-usage/by-agent")
+async def token_usage_by_agent(request: Request):
+    """Get per-agent daily token usage breakdown. Requires auth."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    db = get_db(request)
+    days = int(request.query_params.get("days", "30"))
+    daily = db.get_token_daily_by_agent(days)
+    return {"ok": True, "result": daily}
+
+
+@router.get("/token-usage/agent/{agent_id}")
+async def token_usage_single_agent(agent_id: str, request: Request):
+    """Get token usage history for a specific agent. Requires auth."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    db = get_db(request)
+    days = int(request.query_params.get("days", "30"))
+    usage = db.get_token_daily_for_agent(agent_id, days)
+    agent = db.get_agent_by_id(agent_id)
+    return {"ok": True, "result": {"agent": agent, "usage": usage}}
