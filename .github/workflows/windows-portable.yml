@@ -63,6 +63,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force vendor | Out-Null
           git clone --depth 1 https://github.com/NousResearch/hermes-agent.git vendor\hermes-agent
+          & "runtime\python\python.exe" -m pip install --no-warn-script-location setuptools wheel --target "runtime\python\Lib\site-packages"
           & "runtime\python\python.exe" -m pip install --no-warn-script-location vendor\hermes-agent --target "runtime\python\Lib\site-packages"
 
       - name: Assemble portable package
@@ -129,7 +130,11 @@ jobs:
           $releaseDir = "dist\release"
           New-Item -ItemType Directory -Force $releaseDir | Out-Null
           Copy-Item "dist\Myna-Windows-x64.zip" "$releaseDir\Myna-Windows-x64-$tag.zip"
-          Copy-Item "dist\Myna-Setup-x64.exe" "$releaseDir\Myna-Setup-x64-$tag.exe"
-          gh release create $tag $releaseDir\* --title "Myna $tag" --notes "Windows portable and installer builds for Myna $tag"
+          if (Test-Path "dist\Myna-Setup-x64.exe") {
+            Copy-Item "dist\Myna-Setup-x64.exe" "$releaseDir\Myna-Setup-x64-$tag.exe"
+          }
+          # Create release if not exists, then upload assets
+          try { gh release view $tag } catch { gh release create $tag --title "Myna $tag" --notes "Windows portable and installer builds for Myna $tag" }
+          gh release upload $tag $releaseDir\* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
