@@ -134,7 +134,10 @@ jobs:
             Copy-Item "dist\Myna-Setup-x64.exe" "$releaseDir\Myna-Setup-x64-$tag.exe"
           }
           # Create release if not exists, then upload assets
-          try { gh release view $tag } catch { gh release create $tag --title "Myna $tag" --notes "Windows portable and installer builds for Myna $tag" }
+          $existing = gh release view $tag 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Myna $tag" --notes "Windows portable and installer builds for Myna $tag"
+          }
           gh release upload $tag $releaseDir\* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
