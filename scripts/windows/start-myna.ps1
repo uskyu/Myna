@@ -1,6 +1,6 @@
 param(
   [int]$Port = 3456,
-  [string]$DataDir = "$env:APPDATA\Myna",
+  [string]$DataDir = "$env:LOCALAPPDATA\Myna",
   [switch]$NoBrowser,
   [switch]$Background,
   [switch]$Stop

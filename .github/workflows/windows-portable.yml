@@ -7,21 +7,21 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_EMBED_VERSION: '3.11.9'
-  PYTHON_EMBED_TAG: 'python-3.11.9-embed-amd64'
+  PYTHON_EMBED_VERSION: '3.12.9'
+  PYTHON_EMBED_TAG: 'python-3.12.9-embed-amd64'
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - uses: actions/setup-node@v4
         with:
@@ -63,6 +63,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force vendor | Out-Null
           git clone --depth 1 https://github.com/NousResearch/hermes-agent.git vendor\hermes-agent
+          & "runtime\python\python.exe" -m pip install --no-warn-script-location setuptools wheel --target "runtime\python\Lib\site-packages"
           & "runtime\python\python.exe" -m pip install --no-warn-script-location vendor\hermes-agent --target "runtime\python\Lib\site-packages"
 
       - name: Assemble portable package
@@ -70,15 +71,25 @@ jobs:
         run: |
           $dist = "dist\Myna-Windows-x64"
           New-Item -ItemType Directory -Force $dist | Out-Null
-          New-Item -ItemType Directory -Force "$dist\scripts" | Out-Null
+          New-Item -ItemType Directory -Force "$dist\scripts\windows" | Out-Null
+          # Backend
           Copy-Item backend $dist\backend -Recurse
-          Copy-Item src $dist\src -Recurse
+          # Frontend source + built assets
+          Copy-Item frontend\src $dist\frontend\src -Recurse
+          if (Test-Path "frontend\dist") {
+            Copy-Item frontend\dist $dist\frontend\dist -Recurse
+          }
+          # Windows scripts
           Copy-Item scripts\windows $dist\scripts\windows -Recurse
+          # Vendor + runtime
           Copy-Item vendor $dist\vendor -Recurse
           Copy-Item runtime $dist\runtime -Recurse
-          Copy-Item README.md $dist\README.md
-          Copy-Item LICENSE $dist\LICENSE
+          # Docs
+          if (Test-Path "README.md") { Copy-Item README.md $dist\README.md }
+          if (Test-Path "LICENSE") { Copy-Item LICENSE $dist\LICENSE }
+          # Version file
           Set-Content -Encoding ASCII -Path "$dist\VERSION" -Value "${{ github.ref_name }}"
+          # Top-level batch launchers
           Set-Content -Encoding ASCII -Path "$dist\Myna.bat" -Value @(
             '@echo off',
             'call "%~dp0scripts\windows\start-myna.bat"'
@@ -110,3 +121,23 @@ jobs:
         with:
           name: Myna-Setup-x64
           path: dist/Myna-Setup-x64.exe
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $releaseDir = "dist\release"
+          New-Item -ItemType Directory -Force $releaseDir | Out-Null
+          Copy-Item "dist\Myna-Windows-x64.zip" "$releaseDir\Myna-Windows-x64-$tag.zip"
+          if (Test-Path "dist\Myna-Setup-x64.exe") {
+            Copy-Item "dist\Myna-Setup-x64.exe" "$releaseDir\Myna-Setup-x64-$tag.exe"
+          }
+          # Create release if not exists, then upload assets
+          $existing = gh release view $tag 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Myna $tag" --notes "Windows portable and installer builds for Myna $tag"
+          }
+          gh release upload $tag $releaseDir\* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -664,37 +664,41 @@ class BaseDatabase:
         rows = self.fetchall("SELECT key, value FROM hub_settings")
         return {r["key"]: r["value"] for r in rows}
 
-    # === Token Usage ===
-    def record_token_usage(self, agent_id: str, agent_name: str, room_id: str,
+    # === Token Usage (v2 — per-agent daily aggregation) ===
+    def record_token_daily(self, agent_id: str, agent_name: str, room_id: str,
                            model: str, input_tokens: int, output_tokens: int):
-        """Record token usage for an agent API call."""
+        """Record token usage for an agent API call into daily aggregation table."""
+
         ph = self._placeholder()
         from datetime import date as _date
         today = _date.today().isoformat()
         total = input_tokens + output_tokens
         self.execute(
-            f"INSERT INTO token_usage (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date) "
+            f"INSERT INTO token_usage_daily (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date) "
+
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
             (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total, today)
         )
         self.commit()
 
-    def get_token_usage_daily(self, days: int = 30) -> list:
+    def get_token_daily_by_agent(self, days: int = 30) -> list:
         """Get per-agent daily token usage for the last N days."""
-        ph = self._placeholder()
+
         return self.fetchall(f"""
             SELECT agent_id, agent_name, date,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens,
                    COUNT(*) as call_count
-            FROM token_usage
+            FROM token_usage_daily
+
             WHERE date >= date({self._now_func()}, '-{days} days')
             GROUP BY agent_id, agent_name, date
             ORDER BY date DESC, total_tokens DESC
         """)
 
-    def get_token_usage_summary(self, days: int = 30) -> list:
+    def get_token_daily_summary(self, days: int = 30) -> list:
+
         """Get daily total token usage across all agents."""
         return self.fetchall(f"""
             SELECT date,
@@ -703,13 +707,15 @@ class BaseDatabase:
                    SUM(total_tokens) as total_tokens,
                    COUNT(DISTINCT agent_id) as agent_count,
                    COUNT(*) as call_count
-            FROM token_usage
+            FROM token_usage_daily
+
             WHERE date >= date({self._now_func()}, '-{days} days')
             GROUP BY date
             ORDER BY date DESC
         """)
 
-    def get_token_usage_by_agent(self, agent_id: str, days: int = 30) -> list:
+    def get_token_daily_for_agent(self, agent_id: str, days: int = 30) -> list:
+
         """Get token usage history for a specific agent."""
         ph = self._placeholder()
         return self.fetchall(f"""
@@ -718,13 +724,15 @@ class BaseDatabase:
                    SUM(output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens,
                    COUNT(*) as call_count
-            FROM token_usage
+            FROM token_usage_daily
+
             WHERE agent_id = {ph} AND date >= date({self._now_func()}, '-{days} days')
             GROUP BY date, model
             ORDER BY date DESC
         """, (agent_id,))
 
-    def get_token_usage_totals(self) -> dict:
+    def get_token_daily_totals(self) -> dict:
+
         """Get overall token usage totals."""
         row = self.fetchone("""
             SELECT COALESCE(SUM(input_tokens), 0) as total_input,
@@ -732,7 +740,8 @@ class BaseDatabase:
                    COALESCE(SUM(total_tokens), 0) as total_all,
                    COUNT(DISTINCT agent_id) as agent_count,
                    COUNT(*) as call_count
-            FROM token_usage
+            FROM token_usage_daily
+
         """)
         return row or {"total_input": 0, "total_output": 0, "total_all": 0, "agent_count": 0, "call_count": 0}
 
@@ -953,7 +962,8 @@ class SQLiteDatabase(BaseDatabase):
                 FOREIGN KEY (skill_id) REFERENCES agent_skills(id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS token_usage (
+            CREATE TABLE IF NOT EXISTS token_usage_daily (
+
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id TEXT NOT NULL,
                 agent_name TEXT NOT NULL,
@@ -966,8 +976,9 @@ class SQLiteDatabase(BaseDatabase):
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
-            CREATE INDEX IF NOT EXISTS idx_token_usage_date ON token_usage(date);
-            CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent_id, date);
+            CREATE INDEX IF NOT EXISTS idx_token_daily_date ON token_usage_daily(date);
+            CREATE INDEX IF NOT EXISTS idx_token_daily_agent ON token_usage_daily(agent_id, date);
+
         """)
         # Migration: fix old schema where status DEFAULT was 'offline'
         # Update any existing offline agents to online (they should be online by default)
@@ -1223,7 +1234,8 @@ class MySQLDatabase(BaseDatabase):
                 FOREIGN KEY (skill_id) REFERENCES agent_skills(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 
-            """CREATE TABLE IF NOT EXISTS token_usage (
+            """CREATE TABLE IF NOT EXISTS token_usage_daily (
+
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 agent_id VARCHAR(36) NOT NULL,
                 agent_name VARCHAR(255) NOT NULL,
@@ -1232,10 +1244,11 @@ class MySQLDatabase(BaseDatabase):
                 input_tokens INT DEFAULT 0,
                 output_tokens INT DEFAULT 0,
                 total_tokens INT DEFAULT 0,
-                date VARCHAR(10) NOT NULL,
+                date DATE NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_token_usage_date (date),
-                INDEX idx_token_usage_agent (agent_id, date)
+                INDEX idx_token_daily_date (date),
+                INDEX idx_token_daily_agent (agent_id, date)
+
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
         ]
         with self.conn.cursor() as cur:

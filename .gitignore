@@ -10,3 +10,5 @@ cloud-data-platform-demo/
 db/*.sqlite-shm
 db/*.sqlite-wal
 db/
+backend/venv/
+node_modules/

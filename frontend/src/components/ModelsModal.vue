@@ -120,7 +120,7 @@
               </div>
               <button type="button" class="link-mini" @click="clearAllModels">清空</button>
             </div>
-          </div>
+           </div>
         </div>
 
         <!-- Manual mode -->
@@ -258,6 +258,7 @@ function startNew() {
   fetchedModels.value = []
   fetchError.value = ''
   modelFilter.value = ''
+  selectedModels.value = []
   mode.value = 'fetch'
   showAdvanced.value = false
   testResult.value = null
@@ -287,6 +288,7 @@ function startEdit(m) {
   fetchedModels.value = []
   fetchError.value = ''
   modelFilter.value = ''
+  selectedModels.value = [m.model || '']
   mode.value = 'fetch'
   showAdvanced.value = false
   testResult.value = null
@@ -365,6 +367,38 @@ async function selectModel(id) {
 
 function clearSelectedModel() {
   form.model = ''
+  selectedModels.value = []
+}
+
+function toggleModel(id) {
+  const index = selectedModels.value.indexOf(id)
+  if (index === -1) {
+    selectedModels.value.push(id)
+  } else {
+    selectedModels.value.splice(index, 1)
+  }
+  // Sync single model selection for backward compat
+  if (selectedModels.value.length === 1) {
+    form.model = selectedModels.value[0]
+  } else if (selectedModels.value.length === 0) {
+    form.model = ''
+  }
+}
+
+function selectAllModels() {
+  selectedModels.value = filteredModels.value.map(m => m.id)
+  if (selectedModels.value.length === 1) form.model = selectedModels.value[0]
+}
+
+function clearAllModels() {
+  selectedModels.value = []
+  form.model = ''
+}
+
+function invertSelection() {
+  const allIds = filteredModels.value.map(m => m.id)
+  selectedModels.value = allIds.filter(id => !selectedModels.value.includes(id))
+  if (selectedModels.value.length === 1) form.model = selectedModels.value[0]
 }
 
 function toggleModel(id) {
@@ -431,6 +465,7 @@ async function saveModel() {
   }
   if (res.ok) {
     editingModel.value = false
+    selectedModels.value = []
     await load()
     emit('changed')
   } else {
@@ -438,16 +473,20 @@ async function saveModel() {
   }
 }
 
+
+
 async function saveBatchModels() {
   if (!canSaveBatch.value) return
   const params = { api_mode: form.api_mode }
   const baseUrl = form.base_url.trim()
   const apiKey = form.api_key
   const namePrefix = form.name.trim() || baseUrl.split('//')[1]?.split('/')[0] || 'Model'
+
   
   let successCount = 0
   let failCount = 0
   
+
   for (const modelId of selectedModels.value) {
     const payload = {
       name: `${namePrefix} - ${modelId}`,
@@ -460,7 +499,9 @@ async function saveBatchModels() {
       params_json: JSON.stringify(params),
     }
     if (apiKey) payload.api_key = apiKey
+
     
+
     try {
       const res = await api('POST', '/admin/models', payload)
       if (res.ok) {
@@ -474,11 +515,13 @@ async function saveBatchModels() {
       console.error(`Error saving ${modelId}:`, e)
     }
   }
+
   
   if (failCount > 0) {
     alert(`批量创建完成：成功 ${successCount} 个，失败 ${failCount} 个`)
   }
   
+
   editingModel.value = false
   selectedModels.value = []
   await load()
@@ -667,6 +710,7 @@ onMounted(load)
 }
 
 .search-mini {
+
   width: 100%; 
   padding: 10px 12px;
   border: 1px solid var(--border); 
@@ -702,14 +746,28 @@ onMounted(load)
 }
 .select-actions .link-mini:hover {
   background: var(--accent-soft);
+
 }
+.model-search {
+  display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;
+}
+.select-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.select-actions .link-mini {
+  font-size: 12px; padding: 4px 8px; border-radius: 6px;
+}
+.select-actions .link-mini:hover { background: var(--accent-soft); text-decoration: none; }
 .model-options {
   max-height: 240px; overflow-y: auto;
+
   border-radius: 12px;
+
   background: var(--surface);
   padding: 4px;
 }
 .model-option {
+
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -717,6 +775,7 @@ onMounted(load)
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
+
 }
 .model-option:hover { background: var(--surface2); }
 .model-option.active { 
@@ -725,6 +784,7 @@ onMounted(load)
 }
 .model-option.active .opt-id { color: var(--accent); }
 .model-option-content {
+
   display: flex;
   align-items: center;
   gap: 10px;
@@ -755,6 +815,7 @@ onMounted(load)
   color: var(--text-dim); 
   flex-shrink: 0; 
 }
+
 .cap-tag {
   background: var(--surface2); 
   border: 1px solid var(--border);
@@ -778,6 +839,7 @@ onMounted(load)
   font-family: var(--font-mono);
   color: var(--accent);
   font-weight: 600;
+
   background: var(--surface2);
   padding: 2px 6px;
   border-radius: 4px;
@@ -794,6 +856,7 @@ onMounted(load)
   background: var(--surface2);
   border-radius: 4px;
   border: 1px solid var(--border);
+
 }
 .link-mini {
   border: none;
@@ -801,6 +864,7 @@ onMounted(load)
   color: var(--accent);
   cursor: pointer;
   font-size: 12px;
+
   padding: 2px 6px;
   border-radius: 4px;
   transition: all 0.15s ease;
@@ -808,6 +872,7 @@ onMounted(load)
 .link-mini:hover { 
   background: var(--accent-soft);
   text-decoration: none;
+
 }
 
 .advanced-section {

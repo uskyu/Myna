@@ -36,7 +36,7 @@
           <strong>这个群聊还没有智能体</strong>
           <span>点击添加智能体开始协作</span>
         </div>
-        <button class="guide-cta" @pointerdown.prevent="openAddAgent" @click="openAddAgent">添加智能体</button>
+        <button class="guide-cta" @click.stop="openAddAgent">添加智能体</button>
       </div>
       <template v-for="(group, gi) in messageGroups" :key="gi">
         <div v-if="group.separator" class="time-separator"><span>{{ group.separator }}</span></div>
@@ -132,6 +132,25 @@
             </div>
             <!-- Stop button for streaming messages -->
             <button v-if="msg.streaming" class="stop-stream-btn" @click.stop="cancelStream(msg)">⏹ 停止</button>
+            <!-- P0: Handoff chain status bubble -->
+            <div v-if="msg.handoffInfo && !msg.self" class="handoff-bubble" :class="{ suppressed: msg.handoffInfo.suppressed && msg.handoffInfo.suppressed.length > 0 }">
+              <template v-if="msg.handoffInfo.targets && msg.handoffInfo.targets.length > 0">
+                <span class="handoff-arrow">→</span>
+                <span class="handoff-targets">{{ msg.handoffInfo.targets.map(id => { const a = store.agents.find(x => x.id === id); return a ? '@' + a.name : id.slice(0,8) }).join(' → ') }}</span>
+                <span class="handoff-depth" v-if="msg.handoffInfo.chain_depth > 0">第{{ msg.handoffInfo.chain_depth + 1 }}轮</span>
+              </template>
+              <template v-if="msg.handoffInfo.suppressed && msg.handoffInfo.suppressed.length > 0">
+                <div class="handoff-suppressed">
+                  <span v-for="(s, si) in msg.handoffInfo.suppressed" :key="si" class="suppressed-item">
+                    <template v-if="store.agents.find(x => x.id === s.target)">
+                      @{{ store.agents.find(x => x.id === s.target).name }}
+                    </template>
+                    <template v-else>{{ (s.target || '').slice(0,8) }}</template>
+                    已抑制: {{ s.reason }}
+                  </span>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
       </template>
@@ -334,6 +353,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, clearUnread, currentRoomId, chatSettings, saveChatSettings, markStreamInterrupted } from '../store.js'
 import RoomInfoPanel from './RoomInfoPanel.vue'
 
@@ -594,16 +614,18 @@ const agentColorIdx = (id) => store.agents.findIndex(a => a.id === id)
 // Mention candidates: room members (group) or all agents (dm)
 const mentionCandidates = computed(() => {
   let pool = []
-  if (props.type === 'group' && props.room.members) {
+  const isGroup = props.type === 'group' && props.room.members
+  if (isGroup) {
     pool = props.room.members.filter(m => m.id !== 'user')
   } else {
     pool = store.agents
   }
-  // Add @全部 option at the top
+  // @全部 only makes sense in group chats with multiple members
+  const showAll = isGroup && pool.filter(m => m.id !== 'system').length > 1
   const allOption = { id: '__all__', name: '全部', description: '通知所有智能体' }
   const q = mentionQuery.value.toLowerCase()
-  if (!q) return [allOption, ...pool.slice(0, 8)]
-  if ('全部'.includes(q) || 'all'.includes(q)) {
+  if (!q) return [...(showAll ? [allOption] : []), ...pool.slice(0, 8)]
+  if (showAll && ('全部'.includes(q) || 'all'.includes(q))) {
     return [allOption, ...pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 7)]
   }
   return pool.filter(m => (m.name || '').toLowerCase().includes(q)).slice(0, 8)
@@ -722,6 +744,14 @@ function renderMd(text) {
     let html = marked.parse(processed)
     html = html.replace(/<table>/g, '<div class="table-wrapper"><table>').replace(/<\/table>/g, '</table></div>')
     html = html.replace(/<img /g, '<img style="max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;display:block;margin:4px 0" onclick="window.open(this.src)" ')
+    // Sanitize with DOMPurify to prevent XSS while keeping rich content
+    html = DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['a','b','i','em','strong','code','pre','p','br','ul','ol','li','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td','div','span','img','video','source','blockquote','details','summary','del','ins','sup','sub','hr','ruby','rt','rp'],
+      ALLOWED_ATTR: ['href','target','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script','style','iframe','object','embed','form','input','textarea','select','button','link','meta','noscript'],
+      FORBID_ATTR: ['onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
+    })
     return html
   } catch { return escapeHtml(text) }
 }
@@ -732,9 +762,10 @@ const messageGroups = computed(() => {
   messages.value.forEach(m => {
     const event = m.sender_id === 'system'
     const self = m.sender_id === 'user'
-    // Parse metadata for tool_calls and chronological parts
+    // Parse metadata for tool_calls, chronological parts, and handoff info
     let toolCalls = null
     let parts = null
+    let handoffInfo = null
     if (m.metadata) {
       try {
         const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
@@ -746,6 +777,10 @@ const messageGroups = computed(() => {
         }
         if (meta.interrupted && meta.stream_id && store.activeStreams[meta.stream_id]?.interrupted) {
           replacedInterruptedStreams.add(meta.stream_id)
+        }
+        // P0: Extract handoff info from metadata
+        if (meta.handoff) {
+          handoffInfo = meta.handoff
         }
       } catch {}
     }
@@ -771,6 +806,7 @@ const messageGroups = computed(() => {
       toolCalls,
       parts,
       toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
+      handoffInfo,
     })
   })
   const latestUserSortTs = allMsgs
@@ -1270,13 +1306,16 @@ async function send() {
     else body += `\n[${a.name}](${a.url})`
   }
 
-  // Extract mentions
+  // Extract mentions — only resolve names that are actual room members
   const mentions = []
   const memberMap = {}
-  if (props.room.members) {
+  if (props.type === 'group' && props.room.members) {
+    // In group chats, only allow @mentions for members of this room
     props.room.members.forEach(m => { memberMap[m.name] = m.id })
+  } else {
+    // In DMs, resolve against all agents (DM partner is always present)
+    store.agents.forEach(a => { memberMap[a.name] = a.id })
   }
-  store.agents.forEach(a => { memberMap[a.name] = a.id })
   const mentionRegex = /@([^\s@,，.。;；:：!！?？]+)/g
   let match
   while ((match = mentionRegex.exec(text)) !== null) {
@@ -1456,6 +1495,14 @@ function handleWS(msg) {
   } else if (msg.type === 'typing' && msg.room_id === props.room.id) {
     typingAgent.value = msg.from?.name || null
     setTimeout(() => { typingAgent.value = null }, 3000)
+  } else if (msg.type === 'handoff_status' && msg.room_id === props.room.id) {
+    // P0: Show handoff in-progress indicator
+    const names = (msg.to_agent_names || []).join(' → ')
+    if (names) {
+      typingAgent.value = `→ ${names}`
+      nextTick(scrollToBottomIfNeeded)
+      setTimeout(() => { typingAgent.value = null }, 4000)
+    }
   } else if (msg.type === 'approval_request' && msg.room_id === props.room.id) {
     // Show approval dialog
     pendingApproval.value = {

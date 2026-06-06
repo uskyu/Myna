@@ -1217,6 +1217,7 @@ def _parse_size(s: str) -> int:
     return int(val * multipliers.get(unit, 1))
 
 
+
 # === Token Usage Stats ===
 
 @router.get("/token-dashboard")
@@ -1236,23 +1237,28 @@ async def token_usage_summary(request: Request):
     days = int(request.query_params.get("days", "30"))
     summary = db.get_token_usage_summary(days)
     totals = db.get_token_usage_totals()
+
     return {"ok": True, "result": {"daily": summary, "totals": totals}}
 
 
 @router.get("/token-usage/by-agent")
 async def token_usage_by_agent(request: Request):
+
     """Get per-agent daily token usage breakdown."""
     db = get_db(request)
     days = int(request.query_params.get("days", "30"))
     daily = db.get_token_usage_daily(days)
+
     return {"ok": True, "result": daily}
 
 
 @router.get("/token-usage/agent/{agent_id}")
 async def token_usage_single_agent(agent_id: str, request: Request):
+
     """Get token usage history for a specific agent."""
     db = get_db(request)
     days = int(request.query_params.get("days", "30"))
     usage = db.get_token_usage_by_agent(agent_id, days)
     agent = db.get_agent_by_id(agent_id)
     return {"ok": True, "result": {"agent": agent, "usage": usage}}
+
