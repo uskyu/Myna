@@ -1,15 +1,13 @@
 services:
   myna:
-    image: myna-local:latest
-    build: .
+    image: ghcr.io/uskyu/myna:latest
     container_name: myna-app
     restart: unless-stopped
-    ports:
-      - "3456:3456"
+    network_mode: host
     environment:
       - PORT=3456
       - DB_TYPE=sqlite
-      - WATCHTOWER_UPDATE_URL=http://watchtower:8080/v1/update
+      - WATCHTOWER_UPDATE_URL=http://localhost:8080/v1/update
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN:-myna-local-update-token}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -23,8 +21,9 @@ services:
     image: containrrr/watchtower:latest
     container_name: watchtower
     restart: unless-stopped
+    network_mode: host
     environment:
-      - DOCKER_API_VERSION=1.40
+      - DOCKER_API_VERSION=1.44
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN:-myna-local-update-token}
     command:
       - --label-enable
