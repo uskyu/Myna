@@ -367,6 +367,7 @@ const fileInput = ref(null)
 const imageInput = ref(null)
 const renameInput = ref(null)
 const inputText = ref('')
+const draftKey = computed(() => `draft_${props.room.id}_${activeThreadId.value || 'main'}`)
 const messages = ref([])
 const typingAgent = ref(null)
 const showSettings = ref(false)
@@ -913,6 +914,10 @@ async function fetchThreads() {
 function selectThread(threadId) {
   activeThreadId.value = threadId
   messages.value = []
+  nextTick(() => {
+    const d = localStorage.getItem(draftKey.value)
+    inputText.value = d || ''
+  })
   fetchMessages({ forceScroll: true })
 }
 
@@ -1094,6 +1099,14 @@ function onCompositionEnd(e) {
   isComposingText.value = false
   onInput(e)
 }
+
+watch(inputText, (val) => {
+  if (val.trim()) {
+    localStorage.setItem(draftKey.value, val)
+  } else {
+    localStorage.removeItem(draftKey.value)
+  }
+})
 
 function onInput(e) {
   scheduleAutoResize(e?.target || inputEl.value)
@@ -1347,6 +1360,7 @@ async function send() {
 
   inputText.value = ''
   attachments.value = []
+  localStorage.removeItem(draftKey.value)
   if (inputEl.value) inputEl.value.style.height = 'auto'
 
   // Auto-interrupt: keep the old stream in-place and mark it interrupted so the
@@ -1523,6 +1537,8 @@ function handleWS(msg) {
 onMounted(() => {
   clearUnread(props.room.id)
   currentRoomId.value = props.room.id
+  const savedDraft = localStorage.getItem(draftKey.value)
+  if (savedDraft) inputText.value = savedDraft
   fetchMessages({ forceScroll: true })
   fetchThreads()
   pollTimer = setInterval(() => {
