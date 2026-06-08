@@ -401,28 +401,6 @@ function invertSelection() {
   if (selectedModels.value.length === 1) form.model = selectedModels.value[0]
 }
 
-function toggleModel(id) {
-  const index = selectedModels.value.indexOf(id)
-  if (index === -1) {
-    selectedModels.value.push(id)
-  } else {
-    selectedModels.value.splice(index, 1)
-  }
-}
-
-function selectAllModels() {
-  selectedModels.value = filteredModels.value.map(m => m.id)
-}
-
-function clearAllModels() {
-  selectedModels.value = []
-}
-
-function invertSelection() {
-  const allIds = filteredModels.value.map(m => m.id)
-  selectedModels.value = allIds.filter(id => !selectedModels.value.includes(id))
-}
-
 const canSave = computed(() => {
   if (!form.name.trim() || !form.base_url.trim() || !form.model.trim()) return false
   if (!form.id && !form.api_key) return false
