@@ -8,9 +8,13 @@
 
       <!-- List view -->
       <div v-if="!editingModel" class="models-list">
+        <button class="btn btn-primary add-btn" @click="startNew" style="width:100%;margin-bottom:14px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+          新增供应商
+        </button>
         <div v-if="!models.length" class="empty-mini">
           <p>还没有模型配置</p>
-          <p style="font-size:12px;color:var(--text-dim)">点击下方添加你的第一个 OpenAI 兼容供应商</p>
+          <p style="font-size:12px;color:var(--text-dim)">点击上方添加你的第一个 OpenAI 兼容供应商</p>
         </div>
         <div v-for="m in models" :key="m.id" class="model-row">
           <div class="model-info">
@@ -32,10 +36,7 @@
           </div>
         </div>
 
-        <button class="btn btn-primary add-btn" @click="startNew" style="width:100%;margin-top:14px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
-          新增供应商
-        </button>
+
       </div>
 
       <!-- Edit form -->
