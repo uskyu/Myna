@@ -19,6 +19,16 @@
         <span v-if="dmUnread > 0" class="tab-badge">{{ dmUnread }}</span>
       </button>
     </div>
+    <div class="sort-bar">
+      <span class="sort-label">排序</span>
+      <button
+        v-for="option in sortOptions"
+        :key="option.key"
+        class="sort-btn"
+        :class="{ active: sortBy === option.key }"
+        @click="setSort(option.key)"
+      >{{ option.label }}{{ sortBy === option.key ? (sortDesc ? ' ↓' : ' ↑') : '' }}</button>
+    </div>
     <div class="chat-list">
       <!-- Group chats -->
       <template v-if="activeTab === 'group'">
@@ -105,6 +115,26 @@ const activeTab = ref('group')
 const agentIndex = (id) => store.agents.findIndex(a => a.id === id)
 const renamingRoom = ref(null)
 const renameText = ref('')
+const sortOptions = [
+  { key: 'lastTime', label: '最后对话' },
+  { key: 'name', label: '聊天框名' },
+  { key: 'createdAt', label: '创建时间' },
+]
+const sortBy = ref(localStorage.getItem('chat_sort_by') || 'lastTime')
+const sortDesc = ref(localStorage.getItem('chat_sort_desc') !== 'false')
+const lastClickedSort = ref('')
+
+function setSort(key) {
+  if (lastClickedSort.value === key) {
+    sortDesc.value = !sortDesc.value
+  } else {
+    sortBy.value = key
+    sortDesc.value = false
+    lastClickedSort.value = key
+  }
+  localStorage.setItem('chat_sort_by', sortBy.value)
+  localStorage.setItem('chat_sort_desc', String(sortDesc.value))
+}
 
 const groupUnread = computed(() => {
   return store.rooms.reduce((sum, r) => sum + (store.unreadCounts[r.id] || 0), 0)
@@ -121,11 +151,25 @@ function sortConversations(items) {
     const prominentA = (store.unreadCounts[a.id] || 0) > 0 || isRoomActive(a.id)
     const prominentB = (store.unreadCounts[b.id] || 0) > 0 || isRoomActive(b.id)
     if (prominentA !== prominentB) return prominentA ? -1 : 1
-    const timeA = conversationTime(a)
-    const timeB = conversationTime(b)
-    if (timeA !== timeB) return timeB - timeA
-    return String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''))
+
+    let result
+    if (sortBy.value === 'name') {
+      result = String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''), 'zh-CN')
+    } else if (sortBy.value === 'createdAt') {
+      result = conversationCreateTime(a) - conversationCreateTime(b)
+    } else {
+      result = conversationTime(a) - conversationTime(b)
+    }
+
+    if (result === 0) {
+      result = String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''), 'zh-CN')
+    }
+    return sortDesc.value ? -result : result
   })
+}
+
+function conversationCreateTime(item) {
+  return parseTimestamp(item.created_at)
 }
 
 function conversationTime(item) {
@@ -240,6 +284,36 @@ onUnmounted(() => clearInterval(timer))
   align-items: center;
   justify-content: center;
   font-weight: 700;
+}
+
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sort-label {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.sort-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 9px;
+  transition: all 0.15s ease;
+}
+.sort-btn.active,
+.sort-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sort-btn.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Item action buttons */
