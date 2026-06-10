@@ -15,7 +15,7 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from workspaces import get_room_workspace_dir
-from paths import DB_ROOT, HERMES_PATH, PROFILES_ROOT
+from paths import DB_ROOT, HERMES_PATH, PROFILES_ROOT, DATA_ROOT
 
 # Hermes Agent imports
 sys.path.insert(0, str(HERMES_PATH))
@@ -27,6 +27,103 @@ try:
 except ImportError:
     HERMES_AVAILABLE = False
     print("[AI] WARNING: Hermes Agent not importable, falling back to direct API calls")
+
+# === Vision/Image Support Functions ===
+
+import base64
+import mimetypes as _mimetypes
+
+# Regex to match markdown image references: ![name](/uploads/filename.png)
+_IMAGE_REF_RE = re.compile(r'!\[([^\]]*)\]\((/uploads/[^)]+)\)')
+
+# Supported image MIME types
+_IMAGE_MIMES = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.svg': 'image/svg+xml',
+}
+
+
+def _is_image_file(filepath: str) -> bool:
+    """Check if a file is an image based on extension."""
+    ext = Path(filepath).suffix.lower()
+    return ext in _IMAGE_MIMES
+
+
+def _read_image_as_base64(filepath: str):
+    """Read an image file and return (base64_data, mime_type) or None."""
+    p = Path(filepath)
+    if not p.is_absolute():
+        p = DATA_ROOT / filepath.lstrip('/')
+    if not p.exists() or not p.is_file():
+        return None
+
+    ext = p.suffix.lower()
+    mime = _IMAGE_MIMES.get(ext)
+    if not mime:
+        mime, _ = _mimetypes.guess_type(str(p))
+        if not mime or not mime.startswith('image/'):
+            return None
+
+    try:
+        data = p.read_bytes()
+        b64 = base64.b64encode(data).decode('ascii')
+        return b64, mime
+    except Exception:
+        return None
+
+
+def _build_multimodal_content(text: str):
+    """Parse message text for image references and build multimodal content.
+
+    If the message contains ![name](/uploads/...) image references,
+    returns a list of content parts (OpenAI multimodal format).
+    Otherwise returns the original text string.
+    """
+    matches = list(_IMAGE_REF_RE.finditer(text))
+    if not matches:
+        return text
+
+    parts = []
+    last_end = 0
+
+    for match in matches:
+        text_before = text[last_end:match.start()].strip()
+        if text_before:
+            parts.append({"type": "text", "text": text_before})
+
+        alt_text = match.group(1)
+        img_path = match.group(2)
+        full_path = DATA_ROOT / img_path.lstrip('/')
+
+        img_data = _read_image_as_base64(str(full_path))
+        if img_data:
+            b64_data, mime = img_data
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64_data}"}
+            })
+        else:
+            parts.append({"type": "text", "text": f"[图片: {alt_text}]"})
+
+        last_end = match.end()
+
+    text_after = text[last_end:].strip()
+    if text_after:
+        parts.append({"type": "text", "text": text_after})
+
+    if not parts:
+        return text
+    if len(parts) == 1 and parts[0].get("type") == "text":
+        return parts[0]["text"]
+    return parts
+
+
+# === End Vision Functions ===
 
 # Thread pool for running sync Hermes Agent calls
 # Default 10, configurable via hub_settings 'agent_concurrency'
@@ -1146,6 +1243,8 @@ async def direct_api_call(base_url: str, api_key: str, model: str,
     async with httpx.AsyncClient(timeout=120) as client:
         for round_num in range(8):
             body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+            # Ensure multimodal content is properly serialized
+            # OpenAI API accepts list-type content for vision models
             if TOOL_DEFINITIONS:
                 body["tools"] = TOOL_DEFINITIONS
                 body["tool_choice"] = "auto"
@@ -1366,15 +1465,21 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         context_limit = _resolve_context_limit(db, room_settings, model_config)
         recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
 
-        # Build conversation history
+        # Build conversation history (with vision/image support)
         history = []
         # Track interrupted metadata but do not auto-continue it. User-initiated stop means
         # "stop talking", not "resume this partial reply next turn".
         for m in recent_messages:
             role = "assistant" if m["sender_id"] == agent["id"] else "user"
-            content = m["text"]
-            if m.get("sender_name") and m["sender_id"] != agent["id"]:
+            content = _build_multimodal_content(m["text"])
+            if isinstance(content, str) and m.get("sender_name") and m["sender_id"] != agent["id"]:
                 content = f"[{m['sender_name']}]: {content}"
+            elif isinstance(content, list) and m.get("sender_name") and m["sender_id"] != agent["id"]:
+                # Prepend sender name to the first text part
+                if content and content[0].get("type") == "text":
+                    content[0]["text"] = f"[{m['sender_name']}]: {content[0]['text']}"
+                else:
+                    content.insert(0, {"type": "text", "text": f"[{m['sender_name']}]: "})
             history.append({"role": role, "content": content})
 
         # No automatic continuation for interrupted messages. If the user wants to

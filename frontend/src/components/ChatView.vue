@@ -519,7 +519,9 @@ function applyShortcut(cmd) {
 
   // Direct-execute commands that don't need agent interaction
   if (cmd.command === '/clear') {
-    handleCommand('/clear')
+    if (confirm('是否清除对话？')) {
+      handleCommand('/clear')
+    }
     return
   }
   if (cmd.command === '/stop') {
