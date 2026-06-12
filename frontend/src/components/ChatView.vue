@@ -102,6 +102,7 @@
               <div v-else class="msg-text" v-html="msg.streaming ? (msg.rendered + '<span class=stream-cursor>▊</span>') : msg.rendered"></div>
             </template>
             <div class="msg-meta-row">
+              <span v-if="msg.modelInfo && !msg.self" class="msg-model">model {{ msg.modelInfo.name }}</span>
               <span class="msg-time">{{ msg.streaming ? (msg.text ? '生成中...' : '思考中...') : msg.time }}</span>
               <!-- Message actions (edit/delete/mention/retry/copy) — always visible for non-streaming -->
               <span v-if="!msg.streaming && !String(msg.id).startsWith('tmp-') && !String(msg.id).startsWith('stream-')" class="msg-actions">
@@ -765,10 +766,11 @@ const messageGroups = computed(() => {
   messages.value.forEach(m => {
     const event = m.sender_id === 'system'
     const self = m.sender_id === 'user'
-    // Parse metadata for tool_calls, chronological parts, and handoff info
+    // Parse metadata for tool_calls, chronological parts, handoff info, and model info
     let toolCalls = null
     let parts = null
     let handoffInfo = null
+    let modelInfo = null
     if (m.metadata) {
       try {
         const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
@@ -784,6 +786,11 @@ const messageGroups = computed(() => {
         // P0: Extract handoff info from metadata
         if (meta.handoff) {
           handoffInfo = meta.handoff
+        }
+        if (meta.model || meta.model_name) {
+          modelInfo = {
+            name: meta.model_name || meta.model,
+          }
         }
       } catch {}
     }
@@ -810,6 +817,7 @@ const messageGroups = computed(() => {
       parts,
       toolsExpanded: toolCalls ? getToolsExpanded(`saved-${m.id}`, false) : false,
       handoffInfo,
+      modelInfo,
     })
   })
   const latestUserSortTs = allMsgs

@@ -771,6 +771,11 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .msg-meta-row .msg-time {
   margin-top: 0;
 }
+.msg-model {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-weight: 500;
+}
 .msg-actions {
   display: flex;
   gap: 2px;
