@@ -37,7 +37,7 @@
               <div class="preview">{{ r.last_message ? r.last_message.sender_name + ': ' + r.last_message.text.slice(0, 30) : (r.members?.length || 0) + ' 个成员' }}</div>
             </div>
             <div class="meta">
-              <span class="time">{{ r.last_message?.created_at?.slice(11, 16) || '' }}</span>
+              <span class="time">{{ formatTime(r.last_message?.created_at || r.updated_at || r.created_at) }}</span>
               <span v-if="store.unreadCounts[r.id] > 0" class="unread-badge">{{ store.unreadCounts[r.id] }}</span>
               <span v-else-if="isRoomActive(r.id)" class="active-badge"><span class="pulse-dot"></span>生成中</span>
             </div>
@@ -68,7 +68,7 @@
               <div class="preview">{{ dm.last_message?.text?.slice(0, 30) || '开始对话' }}</div>
             </div>
             <div class="meta">
-              <span class="time">{{ dm.last_message?.created_at?.slice(11, 16) || '' }}</span>
+              <span class="time">{{ formatTime(dm.last_message?.created_at || dm.updated_at || dm.created_at) }}</span>
               <span v-if="store.unreadCounts[dm.id] > 0" class="unread-badge">{{ store.unreadCounts[dm.id] }}</span>
               <span v-else-if="isRoomActive(dm.id)" class="active-badge"><span class="pulse-dot"></span>生成中</span>
             </div>
@@ -167,6 +167,21 @@ function parseTimestamp(ts) {
 
 function roomIndex(roomId) { return store.rooms.findIndex(r => r.id === roomId) }
 function isRoomActive(roomId) { return Object.values(store.activeStreams).some(s => s.roomId === roomId) }
+
+function formatTime(ts) {
+  const parsed = parseTimestamp(ts)
+  if (!parsed) return ''
+  const date = new Date(parsed)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const timePart = String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+  if (date >= today) return timePart
+  if (date >= yesterday) return '昨天 ' + timePart
+  if (date.getFullYear() === now.getFullYear()) return (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + timePart
+  return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + timePart
+}
 
 function startRename(room) { renamingRoom.value = room; renameText.value = room.name || '' }
 async function confirmRename() {
