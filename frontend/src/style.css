@@ -2647,9 +2647,9 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 
 /* === Shortcut Command Floating Card === */
 .shortcut-trigger-btn {
-  position: absolute;
+  position: fixed;
   right: 60px;
-  bottom: calc(100% + 10px);
+  bottom: 100px;
   z-index: 75;
   height: 32px;
   padding: 0 12px;
@@ -2657,7 +2657,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-radius: 10px;
   background: var(--surface);
   color: var(--accent);
-  cursor: pointer;
+  cursor: grab;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2665,8 +2665,11 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   font-size: 12px;
   font-weight: 700;
   box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  touch-action: none;
+  user-select: none;
 }
+.shortcut-trigger-btn:active { cursor: grabbing; }
 .shortcut-trigger-btn:hover,
 .shortcut-trigger-btn.active {
   background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface));
@@ -2675,9 +2678,9 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .shortcut-trigger-btn svg { width: 15px; height: 15px; }
 .shortcut-card {
-  position: absolute;
+  position: fixed;
   right: 60px;
-  bottom: calc(100% + 48px);
+  bottom: 142px;
   width: min(440px, calc(100vw - 28px));
   padding: 10px;
   border: 1px solid var(--border);
@@ -2739,14 +2742,14 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 @media (max-width: 767px) {
   .shortcut-trigger-btn {
     right: 60px;
-    bottom: calc(100% + 8px);
+    bottom: 100px;
     height: 30px;
     padding: 0 10px;
     font-size: 12px;
   }
   .shortcut-card {
     right: 10px;
-    bottom: calc(100% + 44px);
+    bottom: 142px;
     width: min(360px, calc(100vw - 20px));
   }
   .shortcut-card-grid {
