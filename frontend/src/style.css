@@ -948,8 +948,26 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg .msg-text strong { font-weight: 700; }
-.msg .msg-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.msg-group.self .msg .msg-text a { color: #ffffff; text-decoration: underline; text-underline-offset: 2px; opacity: 0.95; }
+.msg .msg-text a.message-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.msg .msg-text a.message-link:hover {
+  color: var(--accent-hover);
+}
+.msg-group.self .msg .msg-text a.message-link {
+  color: #bbf7d0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.msg-group.self .msg .msg-text a.message-link:hover {
+  color: #dcfce7;
+}
 .msg .msg-text .at-mention {
   color: var(--accent);
   font-weight: 600;
