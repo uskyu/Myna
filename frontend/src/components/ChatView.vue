@@ -728,7 +728,11 @@ function autoLinkUrls(text) {
     .replace(/`[^`\n]+`/g, protect)
     .replace(/!?\[[^\]\n]+\]\([^\)\n]+\)/g, protect)
 
-  linked = linked.replace(/(^|[\s>（(])((?:(?:https?:\/\/|www\.)[^\s<>()]+)|(?:localhost(?::\d+)?(?:[/?#][^\s<>()]*)?)|(?:(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#][^\s<>()]*)?)|(?:(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#][^\s<>()]*)?))/gi, (match, prefix, rawUrl) => {
+  const urlChars = String.raw`[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]`
+  const urlTail = String.raw`(?:${urlChars}+)?`
+  const urlPattern = new RegExp(String.raw`(^|[\s>（(])((?:(?:https?:\/\/|www\.)${urlChars}+)|(?:localhost(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#]${urlTail})?))`, 'gi')
+
+  linked = linked.replace(urlPattern, (match, prefix, rawUrl) => {
     const trailingMatch = rawUrl.match(/[),.，。！？!?;；:：]+$/)
     const trailing = trailingMatch ? trailingMatch[0] : ''
     const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
