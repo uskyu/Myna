@@ -42,47 +42,51 @@
             <h4>添加智能体到群聊</h4>
             <button class="close-btn" @click="closeMemberPicker">×</button>
           </div>
-          <div class="create-agent-entry">
-            <button class="create-agent-toggle" @click="showCreateAgentForm = !showCreateAgentForm">
-              <span class="create-agent-toggle-icon">+</span>
-              <span>新增智能体</span>
-            </button>
-          </div>
-          <div v-if="showCreateAgentForm" class="create-agent-card">
-            <div class="create-agent-title">新建系统中没有的智能体</div>
-            <input class="create-agent-input" v-model.trim="newAgentName" placeholder="智能体名称">
-            <textarea class="create-agent-textarea" v-model.trim="newAgentDescription" placeholder="描述 / 系统提示词（可选）" rows="3"></textarea>
-            <label class="create-agent-label">模型配置</label>
-            <select class="create-agent-select" v-model="newAgentModelConfigId">
-              <option value="">使用默认模型配置</option>
-              <option v-for="m in modelConfigs" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
-            </select>
-            <div v-if="selectedNewAgentModel" class="create-agent-model-preview">
-              <span>{{ selectedNewAgentModel.provider }}</span>
-              <span>{{ selectedNewAgentModel.base_url }}</span>
-            </div>
-            <div v-else-if="modelConfigs.length === 0" class="create-agent-model-preview">暂无可选模型，将使用默认配置</div>
-            <div class="create-agent-actions">
-              <span class="create-agent-status">{{ createAgentStatus }}</span>
-              <button class="btn-sm primary" :disabled="creatingAgent || !newAgentName" @click="createAgentAndAdd">
-                {{ creatingAgent ? '创建中...' : '创建并加入群聊' }}
+          <div class="skill-picker-body">
+            <div class="create-agent-entry">
+              <button class="create-agent-toggle" @click="showCreateAgentForm = !showCreateAgentForm">
+                <span class="create-agent-toggle-icon">+</span>
+                <span>新增智能体</span>
               </button>
             </div>
-          </div>
-          <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
-          <div v-else class="skill-picker-list">
-            <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
-              <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
-                <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
+            <div v-if="showCreateAgentForm" class="create-agent-card">
+              <div class="create-agent-title">新建系统中没有的智能体</div>
+              <input class="create-agent-input" v-model.trim="newAgentName" placeholder="智能体名称">
+              <textarea class="create-agent-textarea" v-model.trim="newAgentDescription" placeholder="描述 / 系统提示词（可选）" rows="3"></textarea>
+              <label class="create-agent-label">模型配置</label>
+              <select class="create-agent-select" v-model="newAgentModelConfigId">
+                <option value="">使用默认模型配置</option>
+                <option v-for="m in modelConfigs" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
+              </select>
+              <div v-if="selectedNewAgentModel" class="create-agent-model-preview">
+                <span>{{ selectedNewAgentModel.provider }}</span>
+                <span>{{ selectedNewAgentModel.base_url }}</span>
               </div>
-              <div class="skill-picker-info">
-                <span class="skill-picker-name">{{ a.name }}</span>
-                <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
+              <div v-else-if="modelConfigs.length === 0" class="create-agent-model-preview">暂无可选模型，将使用默认配置</div>
+              <div class="create-agent-actions">
+                <span class="create-agent-status">{{ createAgentStatus }}</span>
+                <button class="btn-sm primary" :disabled="creatingAgent || !newAgentName" @click="createAgentAndAdd">
+                  {{ creatingAgent ? '创建中...' : '创建并加入群聊' }}
+                </button>
               </div>
-              <button class="icon-btn add">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-              </button>
             </div>
+            <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
+            <template v-else>
+              <div class="skill-picker-list">
+                <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
+                  <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
+                    <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
+                  </div>
+                  <div class="skill-picker-info">
+                    <span class="skill-picker-name">{{ a.name }}</span>
+                    <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
+                  </div>
+                  <button class="icon-btn add">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
           <div class="skill-picker-footer">
             <span></span>
@@ -1242,8 +1246,14 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 }
 .skill-picker-header h4 { margin: 0; font-size: 15px; }
 .skill-picker-hint { padding: 10px 20px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.skill-picker-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0;
+}
 .skill-picker-empty { padding: 30px 20px; text-align: center; color: var(--text-dim); }
-.skill-picker-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+.skill-picker-list { padding: 0; }
 .skill-picker-item {
   display: flex; align-items: flex-start; gap: 10px; padding: 10px 20px; cursor: pointer;
 }
