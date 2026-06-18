@@ -63,7 +63,7 @@ async def create_agent(request: Request):
     name = body.get("name")
     if not name:
         return JSONResponse({"ok": False, "error": "name is required"}, status_code=400)
-    agent = db.create_agent(name, body.get("description", ""))
+    agent = db.create_agent(name, body.get("description", ""), body.get("model_config_id"))
     return {"ok": True, "result": agent}
 
 

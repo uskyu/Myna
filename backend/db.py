@@ -80,16 +80,16 @@ class BaseDatabase:
             print(f"[DB] Column migration skipped for {table}.{column}: {e}")
 
     # === Agents ===
-    def create_agent(self, name: str, description: str = "") -> dict:
+    def create_agent(self, name: str, description: str = "", model_config_id: str | None = None) -> dict:
         id = str(uuid.uuid4())
         api_key = uuid.uuid4().hex + uuid.uuid4().hex
         ph = self._placeholder()
         self.execute(
-            f"INSERT INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            (id, name, api_key, description, "online")
+            f"INSERT INTO agents (id, name, api_key, description, status, model_config_id) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (id, name, api_key, description, "online", model_config_id)
         )
         self.commit()
-        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online"}
+        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online", "model_config_id": model_config_id}
 
     def get_agent_by_key(self, api_key: str):
         ph = self._placeholder()
