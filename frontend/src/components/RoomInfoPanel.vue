@@ -37,7 +37,7 @@
 
       <!-- Member picker modal -->
       <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="closeMemberPicker">
-        <div class="skill-picker-modal">
+        <div class="skill-picker-modal member-picker-modal">
           <div class="skill-picker-header">
             <h4>添加智能体到群聊</h4>
             <button class="close-btn" @click="closeMemberPicker">×</button>
@@ -1238,22 +1238,41 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 }
 .skill-picker-modal {
   background: var(--bg); border-radius: 12px; width: 90%; max-width: 480px;
-  max-height: 70vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  height: 70vh; max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  overflow: hidden;
 }
 .skill-picker-header {
+  flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
 .skill-picker-header h4 { margin: 0; font-size: 15px; }
 .skill-picker-hint { padding: 10px 20px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
 .skill-picker-body {
-  overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 8px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.create-agent-entry {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.member-picker-modal .skill-picker-body {
+  display: flex;
+  flex-direction: column;
+}
+.member-picker-modal .skill-picker-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .skill-picker-empty { padding: 30px 20px; text-align: center; color: var(--text-dim); }
-.skill-picker-list { padding: 0; }
+.skill-picker-list { padding: 8px 0; }
 .skill-picker-item {
   display: flex; align-items: flex-start; gap: 10px; padding: 10px 20px; cursor: pointer;
 }
