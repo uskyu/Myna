@@ -322,8 +322,22 @@
     <div class="info-section danger-zone">
       <h4>危险操作</h4>
       <button class="btn btn-danger" @click="clearMessages" style="width:100%;margin-bottom:8px">清空对话记录</button>
-      <button class="btn btn-danger" @click="deleteRoom" style="width:100%">删除群聊</button>
+      <button class="btn btn-danger" @click="openDeleteConfirm" style="width:100%">删除群聊</button>
     </div>
+
+    <Teleport to="body">
+      <div v-if="showDeleteConfirm" class="delete-confirm-overlay" @click.self="closeDeleteConfirm">
+        <div class="delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-room-title">
+          <div class="delete-confirm-icon" aria-hidden="true">!</div>
+          <h4 id="delete-room-title">确认删除群聊？</h4>
+          <p>即将删除「{{ form.name }}」。所有消息和成员关系将被永久删除，此操作不可撤销。</p>
+          <div class="delete-confirm-actions">
+            <button class="btn-cancel" @click="closeDeleteConfirm">取消</button>
+            <button class="btn btn-danger" @click="confirmDeleteRoom">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -348,6 +362,7 @@ const allSkills = ref([])
 const showSkillPicker = ref(false)
 const showMemberPicker = ref(false)
 const showGuideEditor = ref(false)
+const showDeleteConfirm = ref(false)
 const guideText = ref('')
 const form = reactive({
   name: props.room.name || '',
@@ -577,10 +592,18 @@ async function clearMessages() {
   }
 }
 
-async function deleteRoom() {
-  if (!confirm(`确定删除群聊「${form.name}」？所有消息和成员关系将被永久删除。`)) return
+function openDeleteConfirm() {
+  showDeleteConfirm.value = true
+}
+
+function closeDeleteConfirm() {
+  showDeleteConfirm.value = false
+}
+
+async function confirmDeleteRoom() {
   const res = await api('DELETE', `/admin/rooms/${props.room.id}`)
   if (res && (res.ok || res.ok === undefined)) {
+    showDeleteConfirm.value = false
     await loadConversations()
     emit('deleted')
   }
@@ -1173,6 +1196,77 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
 }
 .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-dim); }
 .close-btn:hover { color: var(--text); }
+
+.delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.52);
+}
+.delete-confirm-modal {
+  width: min(100%, 420px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
+  padding: 24px;
+  text-align: center;
+}
+.delete-confirm-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 22px;
+  font-weight: 800;
+}
+.delete-confirm-modal h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 18px;
+}
+.delete-confirm-modal p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.delete-confirm-actions .btn,
+.delete-confirm-actions .btn-cancel {
+  min-width: 96px;
+}
+
+@media (max-width: 480px) {
+  .delete-confirm-modal {
+    padding: 22px 18px;
+  }
+
+  .delete-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .delete-confirm-actions .btn,
+  .delete-confirm-actions .btn-cancel {
+    width: 100%;
+    min-height: 40px;
+  }
+}
 
 /* Collaboration Guide */
 .guide-preview {
