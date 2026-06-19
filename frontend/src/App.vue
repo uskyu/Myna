@@ -113,7 +113,7 @@ import AdminCenter from './components/AdminCenter.vue'
 import RoomModal from './components/RoomModal.vue'
 import AgentModal from './components/AgentModal.vue'
 import LoginPage from './components/LoginPage.vue'
-import { api, ws, auth, setAuthToken, clearAuth, updateInfo, checkForUpdate } from './store.js'
+import { api, ws, auth, setAuthToken, clearAuth, updateInfo, checkForUpdate, store, loadConversations, loadAgents } from './store.js'
 
 const isAuthenticated = ref(false)
 const page = ref('chats')
@@ -192,6 +192,7 @@ function onAuthenticated() {
   isAuthenticated.value = true
   // Connect WS after auth
   ws.connect()
+  restoreRouteFromHash()
   // Auto check for updates
   checkForUpdate()
 }
@@ -202,6 +203,7 @@ async function checkAuth() {
     if (res.authenticated) {
       isAuthenticated.value = true
       ws.connect()
+      restoreRouteFromHash()
       checkForUpdate()
       return
     }
@@ -215,6 +217,40 @@ async function deleteAgent(id) {
   currentAgent.value = null
 }
 
+async function restoreRouteFromHash() {
+  const match = window.location.hash.match(/^#(chat|agent)\/([^?&]+)/)
+  if (!match) {
+    history.replaceState({ view: 'list' }, '', '#')
+    return
+  }
+
+  const [, route, id] = match
+  if (route === 'chat') {
+    if (!store.initialized) await loadConversations()
+    const room = [...store.rooms, ...store.dms].find(item => item.id === id)
+    if (room) {
+      page.value = 'chats'
+      currentRoom.value = room
+      currentRoomType.value = store.dms.some(item => item.id === id) ? 'dm' : 'group'
+      history.replaceState({ view: 'chat', roomId: id }, '', `#chat/${id}`)
+      return
+    }
+  }
+
+  if (route === 'agent') {
+    if (!store.agents.length) await loadAgents()
+    const agent = store.agents.find(item => item.id === id)
+    if (agent) {
+      page.value = 'agents'
+      currentAgent.value = agent
+      history.replaceState({ view: 'agent', agentId: id }, '', `#agent/${id}`)
+      return
+    }
+  }
+
+  history.replaceState({ view: 'list' }, '', '#')
+}
+
 onMounted(() => {
   // Init theme
   const dark = localStorage.getItem('hub-theme') === 'dark'
@@ -225,8 +261,10 @@ onMounted(() => {
   window.addEventListener('popstate', onPopState)
   // Listen for resize (desktop detection)
   window.addEventListener('resize', onResize)
-  // Set initial state
-  history.replaceState({ view: 'list' }, '', '#')
+  // Set initial state only when there is no deep link to restore after auth
+  if (!/^#(chat|agent)\//.test(window.location.hash)) {
+    history.replaceState({ view: 'list' }, '', '#')
+  }
 })
 
 onUnmounted(() => {
