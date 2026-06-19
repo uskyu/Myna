@@ -1570,17 +1570,53 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 "stream_id": stream_id,
             })
 
-        callbacks = {"on_token": on_token, "on_tool_call": on_tool_call, "on_tool_result": on_tool_result, "on_approval_request": on_approval_request}
+        configured_model_name = model_config.get("model", "") if model_config else ""
+        configured_provider_name = model_config.get("name", "") if model_config else ""
+
+        def _display_model_name(model_name: str | None = None) -> str:
+            concrete_model = (model_name or configured_model_name or "").strip()
+            provider_label = (configured_provider_name or "").strip()
+            if provider_label and concrete_model and provider_label.lower() != concrete_model.lower():
+                return f"{provider_label}/{concrete_model}"
+            return concrete_model or provider_label
+
+        runtime_model_name = _display_model_name()
+        provider_model_markers = {"qw", "qwe", "qwen", "openai", "custom"}
+
+        def _set_runtime_model_name(value):
+            nonlocal runtime_model_name
+            if not value:
+                return
+            candidate = str(value).strip()
+            if not candidate or candidate.lower() in provider_model_markers:
+                return
+            runtime_model_name = _display_model_name(candidate)
+
+        def _model_metadata() -> dict:
+            return {
+                "actual_model": runtime_model_name,
+                "model_name": runtime_model_name,
+                "model": runtime_model_name,
+                "configured_model": configured_model_name,
+                "provider_name": configured_provider_name,
+            }
+
+        callbacks = {
+            "on_token": on_token,
+            "on_tool_call": on_tool_call,
+            "on_tool_result": on_tool_result,
+            "on_approval_request": on_approval_request,
+            "on_actual_model": _set_runtime_model_name,
+        }
 
         # Token usage tracking callback
-        model_name = model_config.get("model", "") if model_config else ""
         async def on_token_usage(input_tokens, output_tokens):
             try:
                 db.record_token_daily(
                     agent_id=agent["id"],
                     agent_name=agent.get("name", ""),
                     room_id=room_id,
-                    model=model_name,
+                    model=runtime_model_name,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
@@ -1645,7 +1681,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
             elapsed_ms = int((time.perf_counter() - execution_started) * 1000)
             db.record_agent_execution(
                 room_id, thread_id, agent["id"],
-                model=(model_config or {}).get("model"),
+                model=runtime_model_name,
                 elapsed_ms=elapsed_ms,
                 tool_calls_count=len(collected_tool_calls),
                 interrupted=cancel_event.is_set(),
@@ -1669,6 +1705,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 continue
             reply = f"⏹ 已停止（已执行 {len(collected_tool_calls)} 个工具调用）"
             metadata = {
+                **_model_metadata(),
                 "interrupted": True,
                 "stream_id": stream_id,
                 "sort_ts": stream_started_at,
@@ -1677,7 +1714,11 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 "interrupted_tool_calls": collected_tool_calls,
             }
         else:
-            metadata = {"tool_calls": collected_tool_calls, "parts": stream_parts} if (collected_tool_calls or stream_parts) else None
+            metadata = {
+                **_model_metadata(),
+                "tool_calls": collected_tool_calls,
+                "parts": stream_parts,
+            }
 
         if not reply and not collected_tool_calls and not stream_parts:
             # Send stream_end before continuing (no message to save)
