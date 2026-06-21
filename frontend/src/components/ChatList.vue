@@ -8,6 +8,10 @@
         </button>
       </div>
     </div>
+    <div class="search-bar">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" v-model.trim="filter" placeholder="搜索聊天/room..." aria-label="搜索聊天或 room">
+    </div>
     <div class="msg-tabs">
       <button class="msg-tab" :class="{ active: activeTab === 'group' }" @click="activeTab = 'group'">
         群聊 <span v-if="groupUnread > 0" class="tab-badge">{{ groupUnread }}</span>
@@ -48,9 +52,9 @@
             <button class="swipe-action-btn delete" @click.stop="deleteRoom(r)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button>
           </div>
         </div>
-        <div v-if="!store.rooms.length" class="empty">
+        <div v-if="!sortedRooms.length" class="empty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <p>还没有群聊</p><p>点击右上角 + 创建</p>
+          <p>{{ filter ? '没有匹配的群聊' : '还没有群聊' }}</p><p v-if="!filter">点击右上角 + 创建</p>
         </div>
       </template>
       <template v-if="activeTab === 'dm'">
@@ -78,9 +82,9 @@
             <button class="swipe-action-btn delete" @click.stop="deleteRoom(dm)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button>
           </div>
         </div>
-        <div v-if="!store.dms.length" class="empty">
+        <div v-if="!sortedDms.length" class="empty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <p>还没有私信</p><p>在智能体列表中点击消息图标开始</p>
+          <p>{{ filter ? '没有匹配的私信' : '还没有私信' }}</p><p v-if="!filter">在智能体列表中点击消息图标开始</p>
         </div>
       </template>
     </div>
@@ -97,6 +101,20 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="deletingRoom" class="delete-confirm-overlay" @click.self="closeDeleteConfirm">
+        <div class="delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-room-title">
+          <div class="delete-confirm-icon" aria-hidden="true">!</div>
+          <h4 id="delete-room-title">确认删除对话？</h4>
+          <p>即将删除「{{ deletingRoomName }}」。消息将被清除，此操作不可撤销，请确认是否继续。</p>
+          <div class="delete-confirm-actions">
+            <button class="btn-cancel" @click="closeDeleteConfirm">取消</button>
+            <button class="btn btn-danger" @click="confirmDeleteRoom">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -107,9 +125,11 @@ import { store, api, loadConversations, loadAgents, getAgentColor, getAgentIcon 
 const emit = defineEmits(['open-chat', 'create-room'])
 
 const activeTab = ref('group')
+const filter = ref('')
 const agentIndex = (id) => store.agents.findIndex(a => a.id === id)
 const renamingRoom = ref(null)
 const renameText = ref('')
+const deletingRoom = ref(null)
 const sortOptions = [
   { key: 'lastTime', label: '最后对话' },
   { key: 'name', label: '聊天框名' },
@@ -117,7 +137,17 @@ const sortOptions = [
 ]
 const sortBy = ref(localStorage.getItem('chat_sort_by') || 'lastTime')
 const sortDesc = ref(localStorage.getItem('chat_sort_desc') !== 'false')
-const lastClickedSort = ref('')
+const lastClickedSort = ref(sortBy.value)
+
+function normalizeSearch(value) {
+  return String(value || '').toLowerCase()
+}
+
+function matchesSearch(values) {
+  const q = normalizeSearch(filter.value)
+  if (!q) return true
+  return values.some(value => normalizeSearch(value).includes(q))
+}
 
 function setSort(key) {
   if (lastClickedSort.value === key) {
@@ -134,9 +164,25 @@ function setSort(key) {
 const groupUnread = computed(() => store.rooms.reduce((sum, r) => sum + (store.unreadCounts[r.id] || 0), 0))
 const dmUnread = computed(() => store.dms.reduce((sum, dm) => sum + (store.unreadCounts[dm.id] || 0), 0))
 
-const sortedRooms = computed(() => sortConversations(store.rooms))
-const sortedDms = computed(() => sortConversations(store.dms))
-
+const sortedRooms = computed(() => {
+  const rooms = store.rooms.filter(r => matchesSearch([
+    r.name,
+    r.last_message?.text,
+    r.last_message?.sender_name,
+    ...(r.members || []).map(member => member?.name || member?.agent_name || member?.display_name || member?.id),
+  ]))
+  return sortConversations(rooms)
+})
+const sortedDms = computed(() => {
+  const dms = store.dms.filter(dm => matchesSearch([
+    dm.name,
+    dm.agent?.name,
+    dm.agent?.description,
+    dm.last_message?.text,
+    dm.last_message?.sender_name,
+  ]))
+  return sortConversations(dms)
+})
 function sortConversations(items) {
   return [...items].sort((a, b) => {
     const pa = (store.unreadCounts[a.id] || 0) > 0 || isRoomActive(a.id)
@@ -190,10 +236,21 @@ async function confirmRename() {
   renamingRoom.value.name = renameText.value.trim()
   renamingRoom.value = null
 }
-async function deleteRoom(room) {
-  const name = room.name || room.agent?.name || '此对话'
-  if (!confirm(`确定删除「${name}」？消息将被清除。`)) return
-  await api('DELETE', `/admin/rooms/${room.id}`)
+const deletingRoomName = computed(() => deletingRoom.value?.name || deletingRoom.value?.agent?.name || '此对话')
+
+function deleteRoom(room) {
+  deletingRoom.value = room
+}
+
+function closeDeleteConfirm() {
+  deletingRoom.value = null
+}
+
+async function confirmDeleteRoom() {
+  if (!deletingRoom.value) return
+  const roomId = deletingRoom.value.id
+  closeDeleteConfirm()
+  await api('DELETE', `/admin/rooms/${roomId}`)
   loadConversations()
 }
 function toggleUnread(room) {
@@ -210,7 +267,7 @@ function onItemClick(item, type) {
 
 const swipeOffsets = reactive({})
 
-function closeAllSwipes() {
+function closeAllSwipes(exceptId = null) {
   for (const key of Object.keys(swipeOffsets)) {
     if (key !== exceptId) swipeOffsets[key] = 0
   }
@@ -332,4 +389,74 @@ onUnmounted(() => { clearInterval(timer); document.removeEventListener('click', 
 .btn-save { padding:8px 16px; border:none; border-radius:var(--radius); background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
 .btn-save:disabled { opacity:.5; cursor:not-allowed; }
 .btn-save:not(:disabled):hover { opacity:.9; }
+
+.delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.52);
+}
+.delete-confirm-modal {
+  width: min(100%, 420px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
+  padding: 24px;
+  text-align: center;
+}
+.delete-confirm-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 22px;
+  font-weight: 800;
+}
+.delete-confirm-modal h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 18px;
+}
+.delete-confirm-modal p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.delete-confirm-actions .btn,
+.delete-confirm-actions .btn-cancel {
+  min-width: 96px;
+}
+@media (max-width: 480px) {
+  .delete-confirm-modal {
+    padding: 22px 18px;
+  }
+
+  .delete-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .delete-confirm-actions .btn,
+  .delete-confirm-actions .btn-cancel {
+    width: 100%;
+    min-height: 40px;
+  }
+}
 </style>
