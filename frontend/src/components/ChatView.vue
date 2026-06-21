@@ -711,17 +711,16 @@ function renderMd(text) {
     // Supports: MEDIA:/path, MEDIA:`/path`, **MEDIA:** `/path`
     let processed = text.replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
       const ext = filePath.split('.').pop().toLowerCase()
+      const fileName = filePath.split('/').pop()
       const mediaUrl = `/admin/media${filePath}`
+      const downloadUrl = `${mediaUrl}?download=1`
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
-        return `![image](${mediaUrl})`
+        return `<div class="media-file-card"><a href="${mediaUrl}" target="_blank" class="media-preview-link" title="打开原图"><img src="${mediaUrl}" alt="${fileName}" class="media-preview-image"></a><div class="media-file-actions"><span class="media-file-name">${fileName}</span><a href="${mediaUrl}" target="_blank">打开</a><a href="${downloadUrl}" download="${fileName}">下载</a></div></div>`
       } else if (['mp4', 'webm'].includes(ext)) {
         return `<video src="${mediaUrl}" controls style="max-width:100%;border-radius:8px"></video>`
       } else if (ext === 'pdf') {
-        const fileName = filePath.split('/').pop()
         return `<a href="${mediaUrl}" target="_blank" class="file-card"><span class="file-card-icon">📄</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">PDF 文档 · 点击预览</span></span></a>`
       } else {
-        const fileName = filePath.split('/').pop()
-        const downloadUrl = `${mediaUrl}?download=1`
         const icons = { zip: '🗜️', tar: '🗜️', gz: '🗜️', '7z': '🗜️', rar: '🗜️', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', txt: '📃', md: '📃', json: '📋', csv: '📊', sql: '🗃️' }
         const icon = icons[ext] || '📎'
         return `<a href="${downloadUrl}" download="${fileName}" class="file-card"><span class="file-card-icon">${icon}</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">${ext.toUpperCase()} 文件 · 点击下载</span></span><span class="file-card-dl">⬇</span></a>`
@@ -751,10 +750,10 @@ function renderMd(text) {
     // Sanitize with DOMPurify to prevent XSS while keeping rich content
     html = DOMPurify.sanitize(html, {
       ALLOWED_TAGS: ['a','b','i','em','strong','code','pre','p','br','ul','ol','li','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td','div','span','img','video','source','blockquote','details','summary','del','ins','sup','sub','hr','ruby','rt','rp'],
-      ALLOWED_ATTR: ['href','target','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
+      ALLOWED_ATTR: ['href','target','rel','style','class','id','src','alt','title','controls','download','colspan','rowspan','width','height','align','valign'],
       ALLOW_DATA_ATTR: false,
       FORBID_TAGS: ['script','style','iframe','object','embed','form','input','textarea','select','button','link','meta','noscript'],
-      FORBID_ATTR: ['onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
+      FORBID_ATTR: ['onclick','onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
     })
     return html
   } catch { return escapeHtml(text) }
