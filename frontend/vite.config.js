@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   build: {
+    cssMinify: false,
     outDir: '../src/web/public',
     emptyOutDir: true,
     rollupOptions: {

@@ -771,6 +771,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .msg-meta-row .msg-time {
   margin-top: 0;
 }
+.msg-speaker,
 .msg-model {
   font-size: 11px;
   color: var(--text-faint);
@@ -2805,3 +2806,35 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-color: var(--accent);
 }
 .clone-btn.confirm:hover { background: var(--accent-hover); }
+
+@media (max-width: 767px) {
+  .msg-meta-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    column-gap: 6px;
+    row-gap: 2px;
+    margin-top: 6px;
+  }
+
+  .msg-speaker,
+  .msg-model,
+  .msg-meta-row .msg-time {
+    display: block;
+    grid-column: 1;
+    max-width: 100%;
+    white-space: nowrap;
+  }
+
+  .msg-meta-row .msg-time {
+    color: var(--text-dim);
+  }
+
+  .msg-meta-row .msg-actions {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: end;
+    margin-left: 0;
+    margin-top: 0;
+  }
+}
