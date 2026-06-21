@@ -187,9 +187,23 @@
       </div>
 
       <div v-if="agent.id !== '__system__'" class="danger-zone">
-        <button class="btn btn-danger" @click="$emit('delete', agent.id)" style="width:100%">删除智能体</button>
+        <button class="btn btn-danger" @click="openDeleteConfirm" style="width:100%">删除智能体</button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="showDeleteConfirm" class="delete-confirm-overlay" @click.self="closeDeleteConfirm">
+        <div class="delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-agent-title">
+          <div class="delete-confirm-icon" aria-hidden="true">!</div>
+          <h4 id="delete-agent-title">确认删除智能体？</h4>
+          <p>即将删除「{{ agent.name }}」。此操作不可撤销，请确认是否继续。</p>
+          <div class="delete-confirm-actions">
+            <button class="btn-cancel" @click="closeDeleteConfirm">取消</button>
+            <button class="btn btn-danger" @click="confirmDeleteAgent">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <ModelsModal v-if="showModels" @close="onModelsClose" @changed="onModelsChanged" />
 
@@ -248,6 +262,7 @@ const emit = defineEmits(['close', 'delete'])
 
 const models = ref([])
 const showModels = ref(false)
+const showDeleteConfirm = ref(false)
 const saving = ref(false)
 const lastSavedTag = ref('')
 
@@ -374,6 +389,19 @@ async function startDM() {
     emit('close')
     window.dispatchEvent(new CustomEvent('open-dm', { detail: { agentId: props.agent.id, roomId: data.result?.room_id } }))
   }
+}
+
+function openDeleteConfirm() {
+  showDeleteConfirm.value = true
+}
+
+function closeDeleteConfirm() {
+  showDeleteConfirm.value = false
+}
+
+function confirmDeleteAgent() {
+  showDeleteConfirm.value = false
+  emit('delete', props.agent.id)
 }
 
 // === Skills ===
@@ -792,6 +820,75 @@ onMounted(() => {
   cursor: pointer;
 }
 .btn-cancel:hover { background: var(--surface2); }
+.delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.52);
+}
+.delete-confirm-modal {
+  width: min(100%, 420px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
+  padding: 24px;
+  text-align: center;
+}
+.delete-confirm-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 22px;
+  font-weight: 800;
+}
+.delete-confirm-modal h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 18px;
+}
+.delete-confirm-modal p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.delete-confirm-actions .btn,
+.delete-confirm-actions .btn-cancel {
+  min-width: 96px;
+}
+@media (max-width: 480px) {
+  .delete-confirm-modal {
+    padding: 22px 18px;
+  }
+
+  .delete-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .delete-confirm-actions .btn,
+  .delete-confirm-actions .btn-cancel {
+    width: 100%;
+    min-height: 40px;
+  }
+}
 .btn-save {
   padding: 8px 18px;
   border: none;
