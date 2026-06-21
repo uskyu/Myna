@@ -52,7 +52,7 @@
             <div v-if="showCreateAgentForm" class="create-agent-card">
               <div class="create-agent-title">新建系统中没有的智能体</div>
               <input class="create-agent-input" v-model.trim="newAgentName" placeholder="智能体名称">
-              <textarea class="create-agent-textarea" v-model.trim="newAgentDescription" placeholder="描述 / 系统提示词（可选）" rows="3"></textarea>
+              <textarea class="create-agent-textarea" v-model.trim="newAgentDescription" placeholder="描述 / 系统提示词（可选）" rows="2"></textarea>
               <label class="create-agent-label">模型配置</label>
               <select class="create-agent-select" v-model="newAgentModelConfigId">
                 <option value="">使用默认模型配置</option>
@@ -1270,6 +1270,10 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+.create-agent-textarea {
+  min-height: 46px;
+  line-height: 1.45;
 }
 .skill-picker-empty { padding: 30px 20px; text-align: center; color: var(--text-dim); }
 .skill-picker-list { padding: 8px 0; }
