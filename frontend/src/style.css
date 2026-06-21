@@ -518,6 +518,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .chat-header .back-btn:hover,
@@ -528,6 +529,10 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .chat-header .back-btn svg { width: 22px; height: 22px; }
 .chat-header .more-btn svg { width: 18px; height: 18px; }
 .chat-header .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -2602,41 +2607,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 [data-theme="dark"] .file-card:hover {
   border-color: var(--accent);
   background: rgba(45,106,79,0.15);
-}
-.media-file-card {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 340px;
-  margin: 6px 0;
-}
-.media-preview-link {
-  display: block;
-  line-height: 0;
-}
-.msg .msg-text .media-preview-image {
-  display: block;
-  max-width: 100%;
-  max-height: 300px;
-  border-radius: 8px;
-  cursor: pointer;
-  object-fit: contain;
-}
-.media-file-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.media-file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.media-file-actions a {
-  flex-shrink: 0;
 }
 
 /* === Action Bar (floating above input) === */
