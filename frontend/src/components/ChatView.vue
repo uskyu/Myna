@@ -702,6 +702,55 @@ function sortChatMessages(list) {
   ))
 }
 
+function normalizeUrlHref(url) {
+  if (/^https?:\/\//i.test(url)) return url
+  if (/^localhost(?::\d+)?(?:[/?#]|$)/i.test(url)) return `http://${url}`
+  if (/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]|$)/.test(url)) return `http://${url}`
+  return `https://${url}`
+}
+
+function autoLinkUrls(text) {
+  const protectedSegments = []
+  const fileLikeExtensions = new Set([
+    'vue', 'css', 'scss', 'sass', 'less', 'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
+    'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'php', 'cs', 'cpp', 'c', 'h',
+    'json', 'yaml', 'yml', 'toml', 'ini', 'env', 'md', 'txt', 'csv', 'sql',
+    'html', 'xml', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'pdf',
+    'zip', 'tar', 'gz', 'rar', '7z', 'mp3', 'mp4', 'mov', 'avi', 'webm',
+  ])
+  const protect = (match) => {
+    protectedSegments.push(match)
+    return `__PROTECTED_SEGMENT_${protectedSegments.length - 1}__`
+  }
+
+  let linked = text
+    .replace(/```[\s\S]*?```/g, protect)
+    .replace(/`[^`\n]+`/g, protect)
+    .replace(/!?\[[^\]\n]+\]\([^\)\n]+\)/g, protect)
+
+  const urlChars = String.raw`[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]`
+  const urlTail = String.raw`(?:${urlChars}+)?`
+  const urlPattern = new RegExp(String.raw`(^|[\s>（(])((?:(?:https?:\/\/|www\.)${urlChars}+)|(?:localhost(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#]${urlTail})?))`, 'gi')
+
+  linked = linked.replace(urlPattern, (match, prefix, rawUrl) => {
+    const trailingMatch = rawUrl.match(/[),.，。！？!?;；:：]+$/)
+    const trailing = trailingMatch ? trailingMatch[0] : ''
+    const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
+    const lowerUrl = url.toLowerCase()
+    const explicitUrl = /^(?:https?:\/\/|www\.|localhost(?::|[/?#]|$)|(?:\d{1,3}\.){3}\d{1,3})/i.test(url)
+    const pathStart = lowerUrl.search(/[/?#:]/)
+    const host = pathStart >= 0 ? lowerUrl.slice(0, pathStart) : lowerUrl
+    const tld = host.split('.').pop()
+    if (!explicitUrl && fileLikeExtensions.has(tld)) {
+      return match
+    }
+    const href = normalizeUrlHref(url)
+    return `${prefix}[${url}](${href})${trailing}`
+  })
+
+  return linked.replace(/__PROTECTED_SEGMENT_(\d+)__/g, (_, i) => protectedSegments[i])
+}
+
 function renderMd(text) {
   if (!text) return ''
   try {
@@ -709,18 +758,19 @@ function renderMd(text) {
 
     // Convert MEDIA:/path/to/file to displayable content
     // Supports: MEDIA:/path, MEDIA:`/path`, **MEDIA:** `/path`
-    let processed = text.replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
+    let processed = autoLinkUrls(text).replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
       const ext = filePath.split('.').pop().toLowerCase()
-      const fileName = filePath.split('/').pop()
       const mediaUrl = `/admin/media${filePath}`
-      const downloadUrl = `${mediaUrl}?download=1`
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
-        return `<div class="media-file-card"><a href="${mediaUrl}" target="_blank" class="media-preview-link" title="打开原图"><img src="${mediaUrl}" alt="${fileName}" class="media-preview-image"></a><div class="media-file-actions"><span class="media-file-name">${fileName}</span><a href="${mediaUrl}" target="_blank">打开</a><a href="${downloadUrl}" download="${fileName}">下载</a></div></div>`
+        return `![image](${mediaUrl})`
       } else if (['mp4', 'webm'].includes(ext)) {
         return `<video src="${mediaUrl}" controls style="max-width:100%;border-radius:8px"></video>`
       } else if (ext === 'pdf') {
+        const fileName = filePath.split('/').pop()
         return `<a href="${mediaUrl}" target="_blank" class="file-card"><span class="file-card-icon">📄</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">PDF 文档 · 点击预览</span></span></a>`
       } else {
+        const fileName = filePath.split('/').pop()
+        const downloadUrl = `${mediaUrl}?download=1`
         const icons = { zip: '🗜️', tar: '🗜️', gz: '🗜️', '7z': '🗜️', rar: '🗜️', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', txt: '📃', md: '📃', json: '📋', csv: '📊', sql: '🗃️' }
         const icon = icons[ext] || '📎'
         return `<a href="${downloadUrl}" download="${fileName}" class="file-card"><span class="file-card-icon">${icon}</span><span class="file-card-info"><span class="file-card-name">${fileName}</span><span class="file-card-meta">${ext.toUpperCase()} 文件 · 点击下载</span></span><span class="file-card-dl">⬇</span></a>`
@@ -746,33 +796,22 @@ function renderMd(text) {
     processed = processed.replace(/__CODE_BLOCK_(\d+)__/g, (_, i) => codeBlocks[i])
     let html = marked.parse(processed)
     html = html.replace(/<table>/g, '<div class="table-wrapper"><table>').replace(/<\/table>/g, '</table></div>')
+    html = html.replace(/<a\b(?![^>]*\bclass=)/g, '<a class="message-link"')
+    html = html.replace(/<a([^>]*\bclass=["'])([^"']*)(["'][^>]*)/g, '<a$1$2 message-link$3')
+    html = html.replace(/<a\b(?![^>]*\btarget=)/g, '<a target="_blank"')
+    html = html.replace(/<a\b(?![^>]*\brel=)/g, '<a rel="noopener noreferrer"')
+    html = html.replace(/<a\b(?![^>]*\bonclick=)/g, '<a onclick="event.stopPropagation()"')
     html = html.replace(/<img /g, '<img style="max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;display:block;margin:4px 0" onclick="window.open(this.src)" ')
     // Sanitize with DOMPurify to prevent XSS while keeping rich content
     html = DOMPurify.sanitize(html, {
       ALLOWED_TAGS: ['a','b','i','em','strong','code','pre','p','br','ul','ol','li','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td','div','span','img','video','source','blockquote','details','summary','del','ins','sup','sub','hr','ruby','rt','rp'],
-      ALLOWED_ATTR: ['href','target','rel','style','class','id','src','alt','title','controls','download','colspan','rowspan','width','height','align','valign'],
+      ALLOWED_ATTR: ['href','target','rel','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
       ALLOW_DATA_ATTR: false,
       FORBID_TAGS: ['script','style','iframe','object','embed','form','input','textarea','select','button','link','meta','noscript'],
-      FORBID_ATTR: ['onclick','onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
+      FORBID_ATTR: ['onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
     })
     return html
   } catch { return escapeHtml(text) }
-}
-
-const PROVIDER_MODEL_MARKERS = new Set(['qw', 'qwe', 'qwen', 'openai', 'custom'])
-
-function resolveModelBadgeName(meta = {}) {
-  const primary = String(meta.actual_model || meta.model_name || '').trim()
-  const fallbackModel = String(meta.configured_model || meta.model || '').trim()
-  const provider = String(meta.provider_name || meta.model_provider || meta.provider || '').trim()
-  const primaryLower = primary.toLowerCase()
-  if (primary && !PROVIDER_MODEL_MARKERS.has(primaryLower)) return primary
-  if (fallbackModel && !PROVIDER_MODEL_MARKERS.has(fallbackModel.toLowerCase())) {
-    const label = primary || provider
-    if (label && label.toLowerCase() !== fallbackModel.toLowerCase()) return `${label}/${fallbackModel}`
-    return fallbackModel
-  }
-  return primary || fallbackModel
 }
 
 const messageGroups = computed(() => {
@@ -802,10 +841,9 @@ const messageGroups = computed(() => {
         if (meta.handoff) {
           handoffInfo = meta.handoff
         }
-        const modelBadgeName = resolveModelBadgeName(meta)
-        if (modelBadgeName) {
+        if (meta.model || meta.model_name) {
           modelInfo = {
-            name: modelBadgeName,
+            name: meta.model_name || meta.model,
           }
         }
       } catch {}

@@ -36,30 +36,61 @@
 
 
       <!-- Member picker modal -->
-      <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="showMemberPicker = false">
-        <div class="skill-picker-modal">
+      <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="closeMemberPicker">
+        <div class="skill-picker-modal member-picker-modal">
           <div class="skill-picker-header">
             <h4>添加智能体到群聊</h4>
-            <button class="close-btn" @click="showMemberPicker = false">×</button>
+            <button class="close-btn" @click="closeMemberPicker">×</button>
           </div>
-          <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
-          <div v-else class="skill-picker-list">
-            <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
-              <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
-                <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
-              </div>
-              <div class="skill-picker-info">
-                <span class="skill-picker-name">{{ a.name }}</span>
-                <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
-              </div>
-              <button class="icon-btn add">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          <div class="skill-picker-body">
+            <div class="create-agent-entry">
+              <button class="create-agent-toggle" @click="showCreateAgentForm = !showCreateAgentForm">
+                <span class="create-agent-toggle-icon">+</span>
+                <span>新增智能体</span>
               </button>
             </div>
+            <div v-if="showCreateAgentForm" class="create-agent-card">
+              <div class="create-agent-title">新建系统中没有的智能体</div>
+              <input class="create-agent-input" v-model.trim="newAgentName" placeholder="智能体名称">
+              <textarea class="create-agent-textarea" v-model.trim="newAgentDescription" placeholder="描述 / 系统提示词（可选）" rows="2"></textarea>
+              <label class="create-agent-label">模型配置</label>
+              <select class="create-agent-select" v-model="newAgentModelConfigId">
+                <option value="">使用默认模型配置</option>
+                <option v-for="m in modelConfigs" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
+              </select>
+              <div v-if="selectedNewAgentModel" class="create-agent-model-preview">
+                <span>{{ selectedNewAgentModel.provider }}</span>
+                <span>{{ selectedNewAgentModel.base_url }}</span>
+              </div>
+              <div v-else-if="modelConfigs.length === 0" class="create-agent-model-preview">暂无可选模型，将使用默认配置</div>
+              <div class="create-agent-actions">
+                <span class="create-agent-status">{{ createAgentStatus }}</span>
+                <button class="btn-sm primary" :disabled="creatingAgent || !newAgentName" @click="createAgentAndAdd">
+                  {{ creatingAgent ? '创建中...' : '创建并加入群聊' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
+            <template v-else>
+              <div class="skill-picker-list">
+                <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
+                  <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
+                    <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
+                  </div>
+                  <div class="skill-picker-info">
+                    <span class="skill-picker-name">{{ a.name }}</span>
+                    <span class="skill-picker-desc">{{ a.description || '通用智能体' }}</span>
+                  </div>
+                  <button class="icon-btn add">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
           <div class="skill-picker-footer">
             <span></span>
-            <button class="btn-sm primary" @click="showMemberPicker = false">完成</button>
+            <button class="btn-sm primary" @click="closeMemberPicker">完成</button>
           </div>
         </div>
       </div>
@@ -361,8 +392,19 @@ const roomSkills = ref([])
 const allSkills = ref([])
 const showSkillPicker = ref(false)
 const showMemberPicker = ref(false)
+const showCreateAgentForm = ref(false)
 const showGuideEditor = ref(false)
+<<<<<<< ours
 const showDeleteConfirm = ref(false)
+=======
+const newAgentName = ref('')
+const newAgentDescription = ref('')
+const newAgentModelConfigId = ref('')
+const modelConfigs = ref([])
+const selectedNewAgentModel = computed(() => modelConfigs.value.find(m => m.id === newAgentModelConfigId.value))
+const creatingAgent = ref(false)
+const createAgentStatus = ref('')
+>>>>>>> theirs
 const guideText = ref('')
 const form = reactive({
   name: props.room.name || '',
@@ -425,6 +467,11 @@ async function loadRoomSkills() {
 async function loadAllSkills() {
   const data = await api('GET', '/admin/skills')
   allSkills.value = data.result || []
+}
+
+async function loadModelConfigs() {
+  const data = await api('GET', '/admin/models')
+  modelConfigs.value = data.result || []
 }
 
 function isSkillEnabled(skillId) {
@@ -566,6 +613,52 @@ async function addMember(a) {
   }
 }
 
+async function createAgentAndAdd() {
+  if (!newAgentName.value || creatingAgent.value) return
+  creatingAgent.value = true
+  createAgentStatus.value = ''
+  try {
+    const created = await api('POST', '/admin/agents', {
+      name: newAgentName.value,
+      description: newAgentDescription.value,
+      model_config_id: newAgentModelConfigId.value || null,
+    })
+    if (!created.ok || !created.result?.id) {
+      createAgentStatus.value = created.error || '创建失败'
+      return
+    }
+    const createdAgent = {
+      ...created.result,
+      model_config_id: newAgentModelConfigId.value || created.result.model_config_id || null,
+    }
+    if (newAgentModelConfigId.value) {
+      const updated = await api('PUT', `/admin/agents/${created.result.id}`, {
+        name: newAgentName.value,
+        description: newAgentDescription.value,
+        model_config_id: newAgentModelConfigId.value,
+      })
+      if (!updated.ok && updated.ok !== undefined) {
+        createAgentStatus.value = updated.error || '模型配置保存失败'
+        return
+      }
+    }
+    store.agents = [...store.agents, createdAgent].filter((agent, index, agents) =>
+      agents.findIndex(item => item.id === agent.id) === index
+    )
+    await addMember(createdAgent)
+    newAgentName.value = ''
+    newAgentDescription.value = ''
+    newAgentModelConfigId.value = ''
+    createAgentStatus.value = '已创建并加入群聊'
+    showCreateAgentForm.value = false
+    setTimeout(() => { createAgentStatus.value = '' }, 1800)
+  } catch (e) {
+    createAgentStatus.value = e.message || '创建失败'
+  } finally {
+    creatingAgent.value = false
+  }
+}
+
 // === Collaboration Guide ===
 async function saveGuide() {
   roomSettings.collaboration_guide = guideText.value.trim()
@@ -703,7 +796,7 @@ function runDuration(run) {
   return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`
 }
 
-onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
+onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); loadModelConfigs() })
 </script>
 
 <style scoped>
@@ -1171,16 +1264,45 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills() })
 }
 .skill-picker-modal {
   background: var(--bg); border-radius: 12px; width: 90%; max-width: 480px;
-  max-height: 70vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  height: 70vh; max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  overflow: hidden;
 }
 .skill-picker-header {
+  flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
 .skill-picker-header h4 { margin: 0; font-size: 15px; }
 .skill-picker-hint { padding: 10px 20px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.skill-picker-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.create-agent-entry {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.member-picker-modal .skill-picker-body {
+  display: flex;
+  flex-direction: column;
+}
+.member-picker-modal .skill-picker-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.create-agent-textarea {
+  min-height: 46px;
+  line-height: 1.45;
+}
 .skill-picker-empty { padding: 30px 20px; text-align: center; color: var(--text-dim); }
-.skill-picker-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+.skill-picker-list { padding: 8px 0; }
 .skill-picker-item {
   display: flex; align-items: flex-start; gap: 10px; padding: 10px 20px; cursor: pointer;
 }
