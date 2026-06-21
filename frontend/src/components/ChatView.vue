@@ -760,6 +760,22 @@ function renderMd(text) {
   } catch { return escapeHtml(text) }
 }
 
+const PROVIDER_MODEL_MARKERS = new Set(['qw', 'qwe', 'qwen', 'openai', 'custom'])
+
+function resolveModelBadgeName(meta = {}) {
+  const primary = String(meta.actual_model || meta.model_name || '').trim()
+  const fallbackModel = String(meta.configured_model || meta.model || '').trim()
+  const provider = String(meta.provider_name || meta.model_provider || meta.provider || '').trim()
+  const primaryLower = primary.toLowerCase()
+  if (primary && !PROVIDER_MODEL_MARKERS.has(primaryLower)) return primary
+  if (fallbackModel && !PROVIDER_MODEL_MARKERS.has(fallbackModel.toLowerCase())) {
+    const label = primary || provider
+    if (label && label.toLowerCase() !== fallbackModel.toLowerCase()) return `${label}/${fallbackModel}`
+    return fallbackModel
+  }
+  return primary || fallbackModel
+}
+
 const messageGroups = computed(() => {
   const allMsgs = []
   const replacedInterruptedStreams = new Set()
@@ -787,9 +803,10 @@ const messageGroups = computed(() => {
         if (meta.handoff) {
           handoffInfo = meta.handoff
         }
-        if (meta.model || meta.model_name) {
+        const modelBadgeName = resolveModelBadgeName(meta)
+        if (modelBadgeName) {
           modelInfo = {
-            name: meta.model_name || meta.model,
+            name: modelBadgeName,
           }
         }
       } catch {}
