@@ -518,7 +518,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .chat-header .back-btn:hover,
@@ -529,10 +528,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .chat-header .back-btn svg { width: 22px; height: 22px; }
 .chat-header .more-btn svg { width: 18px; height: 18px; }
 .chat-header .title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -953,26 +948,8 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg .msg-text strong { font-weight: 700; }
-.msg .msg-text a.message-link {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.msg .msg-text a.message-link:hover {
-  color: var(--accent-hover);
-}
-.msg-group.self .msg .msg-text a.message-link {
-  color: #bbf7d0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.msg-group.self .msg .msg-text a.message-link:hover {
-  color: #dcfce7;
-}
+.msg .msg-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.msg-group.self .msg .msg-text a { color: #ffffff; text-decoration: underline; text-underline-offset: 2px; opacity: 0.95; }
 .msg .msg-text .at-mention {
   color: var(--accent);
   font-weight: 600;
@@ -2670,9 +2647,9 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 
 /* === Shortcut Command Floating Card === */
 .shortcut-trigger-btn {
-  position: absolute;
+  position: fixed;
   right: 60px;
-  bottom: calc(100% + 10px);
+  bottom: 100px;
   z-index: 75;
   height: 32px;
   padding: 0 12px;
@@ -2680,7 +2657,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   border-radius: 10px;
   background: var(--surface);
   color: var(--accent);
-  cursor: pointer;
+  cursor: grab;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2688,8 +2665,11 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   font-size: 12px;
   font-weight: 700;
   box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  touch-action: none;
+  user-select: none;
 }
+.shortcut-trigger-btn:active { cursor: grabbing; }
 .shortcut-trigger-btn:hover,
 .shortcut-trigger-btn.active {
   background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface));
@@ -2698,9 +2678,9 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .shortcut-trigger-btn svg { width: 15px; height: 15px; }
 .shortcut-card {
-  position: absolute;
+  position: fixed;
   right: 60px;
-  bottom: calc(100% + 48px);
+  bottom: 142px;
   width: min(440px, calc(100vw - 28px));
   padding: 10px;
   border: 1px solid var(--border);
@@ -2762,14 +2742,14 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 @media (max-width: 767px) {
   .shortcut-trigger-btn {
     right: 60px;
-    bottom: calc(100% + 8px);
+    bottom: 100px;
     height: 30px;
     padding: 0 10px;
     font-size: 12px;
   }
   .shortcut-card {
     right: 10px;
-    bottom: calc(100% + 44px);
+    bottom: 142px;
     width: min(360px, calc(100vw - 20px));
   }
   .shortcut-card-grid {

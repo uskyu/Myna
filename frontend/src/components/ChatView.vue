@@ -241,6 +241,37 @@
       </div>
     </div>
 
+    <!-- Draggable shortcut command button (hidden when info panel showing) -->
+    <template v-if="!(type === 'group' && showSettings)">
+      <button
+        ref="shortcutBtnEl"
+        class="shortcut-trigger-btn"
+        :class="{ active: showShortcutBar }"
+        :style="shortcutBtnStyle"
+        @pointerdown="onShortcutPointerDown"
+        @touchstart.stop="onShortcutPointerDown"
+        @mousedown.prevent="onShortcutMouseDown"
+        @click.stop="onShortcutClick"
+        title="快捷指令"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span>快捷指令</span>
+      </button>
+
+      <div v-if="showShortcutBar" class="shortcut-card" :style="shortcutCardStyle" @click.stop>
+        <div class="shortcut-card-head">
+          <span>快捷指令</span>
+          <button class="shortcut-close" @click="showShortcutBar = false">×</button>
+        </div>
+        <div class="shortcut-card-grid">
+          <button v-for="cmd in shortcutCommands" :key="cmd.id" class="shortcut-card-item" @click="applyShortcut(cmd)" :title="cmd.label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="cmd.icon"/></svg>
+            <span>{{ cmd.label }}</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
     <!-- Input bar (hidden when info panel showing) -->
     <div
       v-if="!(type === 'group' && showSettings)"
@@ -255,20 +286,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <span>松开即可添加到输入框</span>
       </div>
-      <!-- Shortcut commands floating card -->
-      <div v-if="showShortcutBar" class="shortcut-card" @click.stop>
-        <div class="shortcut-card-head">
-          <span>快捷指令</span>
-          <button class="shortcut-close" @click="showShortcutBar = false">×</button>
-        </div>
-        <div class="shortcut-card-grid">
-          <button v-for="cmd in shortcutCommands" :key="cmd.id" class="shortcut-card-item" @click="applyShortcut(cmd)" :title="cmd.label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="cmd.icon"/></svg>
-            <span>{{ cmd.label }}</span>
-          </button>
-        </div>
-      </div>
-
       <!-- Mention popup -->
       <div v-if="showMentions && mentionCandidates.length" class="mention-popup">
         <div
@@ -309,11 +326,6 @@
           <button class="remove" @click="attachments.splice(idx, 1)">×</button>
         </div>
       </div>
-
-      <button class="shortcut-trigger-btn" :class="{ active: showShortcutBar }" @click.stop="toggleShortcutBar" title="快捷指令">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        <span>快捷指令</span>
-      </button>
 
       <button class="file-btn plus-btn" :class="{ active: showPlusMenu }" @click="togglePlusMenu" title="上传文件">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -367,6 +379,7 @@ const inputEl = ref(null)
 const fileInput = ref(null)
 const imageInput = ref(null)
 const renameInput = ref(null)
+const shortcutBtnEl = ref(null)
 const inputText = ref('')
 const draftKey = computed(() => `draft_${props.room.id}_${activeThreadId.value || 'main'}`)
 const messages = ref([])
@@ -382,6 +395,30 @@ const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
 const showShortcutBar = ref(false)
+
+const SHORTCUT_POS_KEY = 'myna_shortcut_btn_pos'
+const btnLeft = ref(null)
+const btnBottom = ref(100)
+let isDraggingShortcut = false
+let hasDraggedShortcut = false
+let dragStartX = 0
+let dragStartY = 0
+let dragStartLeft = 0
+let dragStartBottom = 0
+let ignoreNextShortcutClick = false
+let activeShortcutInputType = null
+
+const shortcutBtnStyle = computed(() => ({
+  left: btnLeft.value != null ? btnLeft.value + 'px' : '',
+  right: btnLeft.value != null ? 'auto' : '60px',
+  bottom: btnBottom.value + 'px',
+}))
+
+const shortcutCardStyle = computed(() => ({
+  left: btnLeft.value != null ? btnLeft.value + 'px' : '',
+  right: btnLeft.value != null ? 'auto' : '60px',
+  bottom: (btnBottom.value + 42) + 'px',
+}))
 
 const hasActiveStreamInView = computed(() => Object.values(store.activeStreams).some(s => s.roomId === props.room.id && (s.threadId || null) === activeThreadId.value && !s.interrupted))
 const hasGroupAiMembers = computed(() => props.type === 'group' && (props.room.members || []).some(m => m.id !== 'user' && m.id !== 'system'))
@@ -494,6 +531,142 @@ function togglePlusMenu() {
 function closePlusMenu() {
   showPlusMenu.value = false
 }
+function loadShortcutPos() {
+  try {
+    const saved = localStorage.getItem(SHORTCUT_POS_KEY)
+    if (saved) {
+      const pos = JSON.parse(saved)
+      if (pos.left != null) btnLeft.value = pos.left
+      if (pos.bottom != null) btnBottom.value = pos.bottom
+      clampShortcutPos()
+      return
+    }
+  } catch {}
+  btnLeft.value = null
+  btnBottom.value = 100
+}
+
+function saveShortcutPos() {
+  localStorage.setItem(SHORTCUT_POS_KEY, JSON.stringify({
+    left: btnLeft.value,
+    bottom: btnBottom.value,
+  }))
+}
+
+function getShortcutClientPoint(e) {
+  if (e.touches?.length) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY }
+  return { clientX: e.clientX, clientY: e.clientY }
+}
+
+function getShortcutInputType(e) {
+  if (e.type?.startsWith('touch')) return 'touch'
+  if (e.type?.startsWith('mouse')) return 'mouse'
+  return 'pointer'
+}
+
+function clampShortcutPos() {
+  const rect = shortcutBtnEl.value?.getBoundingClientRect?.()
+  const width = rect?.width || 104
+  const height = rect?.height || 32
+  if (btnLeft.value != null) {
+    btnLeft.value = Math.max(0, Math.min(btnLeft.value, window.innerWidth - width))
+  }
+  btnBottom.value = Math.max(0, Math.min(btnBottom.value, window.innerHeight - height))
+}
+
+function onShortcutPointerDown(e) {
+  if (e.type?.startsWith('pointer') && (e.pointerType === 'touch' || e.pointerType === 'mouse')) return
+  if (isDraggingShortcut) return
+  e.stopPropagation()
+  activeShortcutInputType = getShortcutInputType(e)
+  if (activeShortcutInputType === 'pointer' && e.cancelable) e.preventDefault()
+  isDraggingShortcut = true
+  hasDraggedShortcut = false
+  const point = getShortcutClientPoint(e)
+  dragStartX = point.clientX
+  dragStartY = point.clientY
+  dragStartLeft = btnLeft.value ?? (window.innerWidth - 60 - (shortcutBtnEl.value?.offsetWidth || 104))
+  dragStartBottom = btnBottom.value
+
+  if (e.pointerId != null && shortcutBtnEl.value) {
+    try { shortcutBtnEl.value.setPointerCapture(e.pointerId) } catch {}
+  }
+
+  document.addEventListener('pointermove', onShortcutPointerMove)
+  document.addEventListener('pointerup', onShortcutPointerEnd)
+  document.addEventListener('pointercancel', onShortcutPointerEnd)
+  document.addEventListener('touchmove', onShortcutPointerMove, { passive: false })
+  document.addEventListener('touchend', onShortcutPointerEnd)
+  document.addEventListener('touchcancel', onShortcutPointerEnd)
+}
+
+function onShortcutPointerMove(e) {
+  if (!isDraggingShortcut || getShortcutInputType(e) !== activeShortcutInputType) return
+  if (e.cancelable) e.preventDefault()
+  const point = getShortcutClientPoint(e)
+  const dx = point.clientX - dragStartX
+  const dy = point.clientY - dragStartY
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasDraggedShortcut = true
+  btnLeft.value = Math.round(dragStartLeft + dx)
+  btnBottom.value = Math.round(dragStartBottom - dy)
+}
+
+function onShortcutMouseDown(e) {
+  if (isDraggingShortcut) return
+  e.stopPropagation()
+  activeShortcutInputType = 'mouse'
+  isDraggingShortcut = true
+  hasDraggedShortcut = false
+  const point = getShortcutClientPoint(e)
+  dragStartX = point.clientX
+  dragStartY = point.clientY
+  dragStartLeft = btnLeft.value ?? (window.innerWidth - 60 - (shortcutBtnEl.value?.offsetWidth || 104))
+  dragStartBottom = btnBottom.value
+  document.addEventListener('mousemove', onShortcutMouseMove)
+  document.addEventListener('mouseup', onShortcutPointerEnd)
+}
+
+function onShortcutMouseMove(e) {
+  if (!isDraggingShortcut || getShortcutInputType(e) !== activeShortcutInputType) return
+  e.preventDefault()
+  const point = getShortcutClientPoint(e)
+  const dx = point.clientX - dragStartX
+  const dy = point.clientY - dragStartY
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasDraggedShortcut = true
+  btnLeft.value = Math.round(dragStartLeft + dx)
+  btnBottom.value = Math.round(dragStartBottom - dy)
+}
+
+function cleanupShortcutDragListeners() {
+  document.removeEventListener('pointermove', onShortcutPointerMove)
+  document.removeEventListener('pointerup', onShortcutPointerEnd)
+  document.removeEventListener('pointercancel', onShortcutPointerEnd)
+  document.removeEventListener('touchmove', onShortcutPointerMove)
+  document.removeEventListener('touchend', onShortcutPointerEnd)
+  document.removeEventListener('touchcancel', onShortcutPointerEnd)
+  document.removeEventListener('mousemove', onShortcutMouseMove)
+  document.removeEventListener('mouseup', onShortcutPointerEnd)
+}
+
+function onShortcutPointerEnd(e) {
+  if (e && getShortcutInputType(e) !== activeShortcutInputType) return
+  cleanupShortcutDragListeners()
+  isDraggingShortcut = false
+  activeShortcutInputType = null
+  if (hasDraggedShortcut) ignoreNextShortcutClick = true
+  clampShortcutPos()
+  saveShortcutPos()
+}
+
+function onShortcutClick() {
+  if (ignoreNextShortcutClick || hasDraggedShortcut) {
+    ignoreNextShortcutClick = false
+    hasDraggedShortcut = false
+    return
+  }
+  toggleShortcutBar()
+}
+
 function toggleShortcutBar() {
   showShortcutBar.value = !showShortcutBar.value
   if (showShortcutBar.value) {
@@ -702,55 +875,6 @@ function sortChatMessages(list) {
   ))
 }
 
-function normalizeUrlHref(url) {
-  if (/^https?:\/\//i.test(url)) return url
-  if (/^localhost(?::\d+)?(?:[/?#]|$)/i.test(url)) return `http://${url}`
-  if (/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]|$)/.test(url)) return `http://${url}`
-  return `https://${url}`
-}
-
-function autoLinkUrls(text) {
-  const protectedSegments = []
-  const fileLikeExtensions = new Set([
-    'vue', 'css', 'scss', 'sass', 'less', 'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
-    'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'php', 'cs', 'cpp', 'c', 'h',
-    'json', 'yaml', 'yml', 'toml', 'ini', 'env', 'md', 'txt', 'csv', 'sql',
-    'html', 'xml', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'pdf',
-    'zip', 'tar', 'gz', 'rar', '7z', 'mp3', 'mp4', 'mov', 'avi', 'webm',
-  ])
-  const protect = (match) => {
-    protectedSegments.push(match)
-    return `__PROTECTED_SEGMENT_${protectedSegments.length - 1}__`
-  }
-
-  let linked = text
-    .replace(/```[\s\S]*?```/g, protect)
-    .replace(/`[^`\n]+`/g, protect)
-    .replace(/!?\[[^\]\n]+\]\([^\)\n]+\)/g, protect)
-
-  const urlChars = String.raw`[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]`
-  const urlTail = String.raw`(?:${urlChars}+)?`
-  const urlPattern = new RegExp(String.raw`(^|[\s>（(])((?:(?:https?:\/\/|www\.)${urlChars}+)|(?:localhost(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]${urlTail})?)|(?:(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#]${urlTail})?))`, 'gi')
-
-  linked = linked.replace(urlPattern, (match, prefix, rawUrl) => {
-    const trailingMatch = rawUrl.match(/[),.，。！？!?;；:：]+$/)
-    const trailing = trailingMatch ? trailingMatch[0] : ''
-    const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
-    const lowerUrl = url.toLowerCase()
-    const explicitUrl = /^(?:https?:\/\/|www\.|localhost(?::|[/?#]|$)|(?:\d{1,3}\.){3}\d{1,3})/i.test(url)
-    const pathStart = lowerUrl.search(/[/?#:]/)
-    const host = pathStart >= 0 ? lowerUrl.slice(0, pathStart) : lowerUrl
-    const tld = host.split('.').pop()
-    if (!explicitUrl && fileLikeExtensions.has(tld)) {
-      return match
-    }
-    const href = normalizeUrlHref(url)
-    return `${prefix}[${url}](${href})${trailing}`
-  })
-
-  return linked.replace(/__PROTECTED_SEGMENT_(\d+)__/g, (_, i) => protectedSegments[i])
-}
-
 function renderMd(text) {
   if (!text) return ''
   try {
@@ -758,7 +882,7 @@ function renderMd(text) {
 
     // Convert MEDIA:/path/to/file to displayable content
     // Supports: MEDIA:/path, MEDIA:`/path`, **MEDIA:** `/path`
-    let processed = autoLinkUrls(text).replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
+    let processed = text.replace(/(?:\*{0,2}MEDIA:?\*{0,2})\s*`?(\/[^\s\n`]+)`?/g, (match, filePath) => {
       const ext = filePath.split('.').pop().toLowerCase()
       const mediaUrl = `/admin/media${filePath}`
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
@@ -796,16 +920,11 @@ function renderMd(text) {
     processed = processed.replace(/__CODE_BLOCK_(\d+)__/g, (_, i) => codeBlocks[i])
     let html = marked.parse(processed)
     html = html.replace(/<table>/g, '<div class="table-wrapper"><table>').replace(/<\/table>/g, '</table></div>')
-    html = html.replace(/<a\b(?![^>]*\bclass=)/g, '<a class="message-link"')
-    html = html.replace(/<a([^>]*\bclass=["'])([^"']*)(["'][^>]*)/g, '<a$1$2 message-link$3')
-    html = html.replace(/<a\b(?![^>]*\btarget=)/g, '<a target="_blank"')
-    html = html.replace(/<a\b(?![^>]*\brel=)/g, '<a rel="noopener noreferrer"')
-    html = html.replace(/<a\b(?![^>]*\bonclick=)/g, '<a onclick="event.stopPropagation()"')
     html = html.replace(/<img /g, '<img style="max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;display:block;margin:4px 0" onclick="window.open(this.src)" ')
     // Sanitize with DOMPurify to prevent XSS while keeping rich content
     html = DOMPurify.sanitize(html, {
       ALLOWED_TAGS: ['a','b','i','em','strong','code','pre','p','br','ul','ol','li','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td','div','span','img','video','source','blockquote','details','summary','del','ins','sup','sub','hr','ruby','rt','rp'],
-      ALLOWED_ATTR: ['href','target','rel','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
+      ALLOWED_ATTR: ['href','target','style','class','id','src','alt','title','controls','download','onclick','colspan','rowspan','width','height','align','valign'],
       ALLOW_DATA_ATTR: false,
       FORBID_TAGS: ['script','style','iframe','object','embed','form','input','textarea','select','button','link','meta','noscript'],
       FORBID_ATTR: ['onerror','onload','onmouseover','onfocus','onblur','onsubmit','onchange','formaction'],
@@ -1601,6 +1720,8 @@ function handleWS(msg) {
 onMounted(() => {
   clearUnread(props.room.id)
   currentRoomId.value = props.room.id
+  loadShortcutPos()
+  window.addEventListener('resize', clampShortcutPos)
   const savedDraft = localStorage.getItem(draftKey.value)
   if (savedDraft) inputText.value = savedDraft
   fetchMessages({ forceScroll: true })
@@ -1619,6 +1740,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(pollTimer)
+  cleanupShortcutDragListeners()
+  window.removeEventListener('resize', clampShortcutPos)
   if (resizeRaf) cancelAnimationFrame(resizeRaf)
   currentRoomId.value = null
   ws.offMessage(handleWS)
