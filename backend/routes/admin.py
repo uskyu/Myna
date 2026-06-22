@@ -9,7 +9,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 from workspaces import get_room_workspace_info
-from paths import APP_ROOT, PROFILES_ROOT
+from paths import APP_ROOT, PROFILES_ROOT, WORKSPACES_ROOT
 
 router = APIRouter()
 
@@ -998,6 +998,7 @@ async def serve_media(path: str, download: str | None = None):
     # Try multiple locations for the file
     candidates = [
         str(PROFILES_ROOT / path),          # Hermes profiles
+        str(WORKSPACES_ROOT / path),        # Room workspaces
         f"/{path}",                         # Absolute path (e.g. /app/backend/project/...)
     ]
     full_path = None
@@ -1015,8 +1016,10 @@ async def serve_media(path: str, download: str | None = None):
     # Images and videos: inline display; everything else: force download
     is_viewable = mime.startswith("image/") or mime.startswith("video/") or mime == "application/pdf"
     if download or not is_viewable:
+        from urllib.parse import quote
+        encoded = quote(filename)
         return FileResponse(full_path, filename=filename, media_type=mime,
-                           headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+                           headers={"Content-Disposition": f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"})
     return FileResponse(full_path, media_type=mime)
 
 
