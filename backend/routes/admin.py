@@ -360,13 +360,24 @@ async def update_model(model_id: str, request: Request):
     db.update_model_config(model_id, body)
     return {"ok": True}
 
-
 @router.delete("/models/{model_id}")
 async def delete_model(model_id: str, request: Request):
     db = get_db(request)
     db.delete_model_config(model_id)
     return {"ok": True}
 
+@router.post("/models/batch-delete")
+async def batch_delete_models(request: Request):
+    db = get_db(request)
+    body = await request.json()
+    model_ids = body.get("model_ids") or body.get("ids") or []
+    if not isinstance(model_ids, list):
+        return JSONResponse({"ok": False, "error": "model_ids must be a list"}, status_code=400)
+    clean_ids = [str(model_id).strip() for model_id in model_ids if str(model_id).strip()]
+    if not clean_ids:
+        return JSONResponse({"ok": False, "error": "model_ids is required"}, status_code=400)
+    deleted = db.delete_model_configs_batch(clean_ids)
+    return {"ok": True, "deleted": deleted}
 
 # Model metadata (litellm)
 _model_metadata_cache = None
