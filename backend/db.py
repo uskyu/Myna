@@ -324,9 +324,20 @@ class BaseDatabase:
 
     def delete_model_config(self, id: str):
         ph = self._placeholder()
-        self.execute(f"DELETE FROM model_configs WHERE id = {ph}", (id,))
         self.execute(f"UPDATE agents SET model_config_id = NULL WHERE model_config_id = {ph}", (id,))
+        self.execute(f"DELETE FROM model_configs WHERE id = {ph}", (id,))
         self.commit()
+
+    def delete_model_configs_batch(self, ids: list[str]) -> int:
+        clean_ids = [str(id).strip() for id in ids if str(id).strip()]
+        if not clean_ids:
+            return 0
+        ph = self._placeholder()
+        placeholders = ", ".join([ph] * len(clean_ids))
+        self.execute(f"UPDATE agents SET model_config_id = NULL WHERE model_config_id IN ({placeholders})", clean_ids)
+        cursor = self.execute(f"DELETE FROM model_configs WHERE id IN ({placeholders})", clean_ids)
+        self.commit()
+        return getattr(cursor, "rowcount", 0)
 
     # === Threads ===
     def create_thread(self, room_id: str, title: str, workflow_id: str = None) -> dict:

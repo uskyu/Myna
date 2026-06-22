@@ -368,6 +368,17 @@ async def delete_model(model_id: str, request: Request):
     return {"ok": True}
 
 
+@router.post("/models/batch-delete")
+async def delete_models_batch(request: Request):
+    db = get_db(request)
+    body = await request.json()
+    model_ids = body.get("model_ids") or []
+    if not isinstance(model_ids, list) or not model_ids:
+        return JSONResponse({"ok": False, "error": "model_ids required"}, status_code=400)
+    deleted = db.delete_model_configs_batch(model_ids)
+    return {"ok": True, "result": {"deleted": deleted}}
+
+
 # Model metadata (litellm)
 _model_metadata_cache = None
 _model_metadata_time = 0
