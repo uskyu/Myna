@@ -8,15 +8,35 @@
 
       <!-- List view -->
       <div v-if="!editingModel" class="models-list">
-        <button class="btn btn-primary add-btn" @click="startNew" style="width:100%;margin-bottom:14px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
-          新增供应商
-        </button>
+        <div class="model-toolbar">
+          <button class="btn btn-primary add-btn" @click="startNew">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+            新增供应商
+          </button>
+          <button v-if="models.length && !batchMode" class="btn btn-secondary batch-toggle" @click="enterBatchMode">
+            批量选择
+          </button>
+        </div>
+        <div v-if="batchMode" class="batch-bar">
+          <div class="batch-count">已选 {{ selectedDeleteIds.length }} / {{ models.length }}</div>
+          <button type="button" class="link-mini" @click="toggleSelectAllDelete">{{ allDeleteSelected ? '取消全选' : '全选' }}</button>
+          <button type="button" class="link-mini danger-link" :disabled="!selectedDeleteIds.length || deletingBatch" @click="deleteSelectedModels">
+            {{ deletingBatch ? '删除中...' : `删除选中 (${selectedDeleteIds.length})` }}
+          </button>
+          <button type="button" class="link-mini" @click="exitBatchMode">退出批量</button>
+        </div>
         <div v-if="!models.length" class="empty-mini">
           <p>还没有模型配置</p>
           <p style="font-size:12px;color:var(--text-dim)">点击上方添加你的第一个 OpenAI 兼容供应商</p>
         </div>
-        <div v-for="m in models" :key="m.id" class="model-row">
+        <div v-for="m in models" :key="m.id" class="model-row" :class="{ selected: selectedDeleteIds.includes(m.id) }">
+          <input
+            v-if="batchMode"
+            type="checkbox"
+            class="model-select-box"
+            :checked="selectedDeleteIds.includes(m.id)"
+            @change="toggleDeleteSelection(m.id)"
+          >
           <div class="model-info">
             <div class="model-name">{{ m.name }}</div>
             <div class="model-meta">
@@ -26,7 +46,7 @@
             </div>
             <div class="model-base" :title="m.base_url">{{ m.base_url }}</div>
           </div>
-          <div class="model-actions">
+          <div v-if="!batchMode" class="model-actions">
             <button class="icon-btn" @click="startEdit(m)" title="编辑">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
@@ -224,6 +244,9 @@ const fetchError = ref('')
 const fetchedModels = ref([])
 const modelFilter = ref('')
 const selectedModels = ref([])
+const batchMode = ref(false)
+const selectedDeleteIds = ref([])
+const deletingBatch = ref(false)
 
 const form = reactive({
   id: null,
@@ -242,6 +265,32 @@ const testResult = ref(null)
 async function load() {
   const data = await api('GET', '/admin/models')
   models.value = data.result || []
+  selectedDeleteIds.value = selectedDeleteIds.value.filter(id => models.value.some(m => m.id === id))
+}
+
+const allDeleteSelected = computed(() => models.value.length > 0 && selectedDeleteIds.value.length === models.value.length)
+
+function enterBatchMode() {
+  batchMode.value = true
+  selectedDeleteIds.value = []
+}
+
+function exitBatchMode() {
+  batchMode.value = false
+  selectedDeleteIds.value = []
+}
+
+function toggleDeleteSelection(id) {
+  const index = selectedDeleteIds.value.indexOf(id)
+  if (index === -1) {
+    selectedDeleteIds.value.push(id)
+  } else {
+    selectedDeleteIds.value.splice(index, 1)
+  }
+}
+
+function toggleSelectAllDelete() {
+  selectedDeleteIds.value = allDeleteSelected.value ? [] : models.value.map(m => m.id)
 }
 
 function resetFetched() {
@@ -510,6 +559,41 @@ async function remove(m) {
   }
 }
 
+async function deleteSelectedModels() {
+  if (!selectedDeleteIds.value.length || deletingBatch.value) return
+  const ids = [...selectedDeleteIds.value]
+  const selectedNames = models.value
+    .filter(m => ids.includes(m.id))
+    .map(m => m.name)
+    .slice(0, 5)
+    .join('、')
+  const suffix = ids.length > 5 ? ' 等' : ''
+  if (!confirm(`确定删除选中的 ${ids.length} 个模型配置：${selectedNames}${suffix}？`)) return
+  deletingBatch.value = true
+  try {
+    let res = await api('POST', '/admin/models/batch-delete', { model_ids: ids })
+    if (!res.ok && (res.status === 404 || res.status === 405)) {
+      let failed = 0
+      for (const id of ids) {
+        const itemRes = await api('DELETE', `/admin/models/${id}`)
+        if (!itemRes.ok) failed++
+      }
+      res = failed ? { ok: false, error: `${failed} 个模型删除失败` } : { ok: true }
+    }
+    if (res.ok) {
+      exitBatchMode()
+      await load()
+      emit('changed')
+    } else {
+      alert('批量删除失败：' + (res.error || '未知错误'))
+    }
+  } catch(e) {
+    alert('批量删除失败：' + (e.message || '未知错误'))
+  } finally {
+    deletingBatch.value = false
+  }
+}
+
 async function testConnection() {
   testing.value = true
   testResult.value = null
@@ -567,6 +651,31 @@ onMounted(load)
 .models-list { overflow-y: auto; flex: 1; }
 .empty-mini { text-align: center; padding: 32px 0; color: var(--text-2); }
 .empty-mini p:first-child { font-weight: 600; margin-bottom: 4px; }
+.model-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.model-toolbar .add-btn { flex: 1; }
+.batch-toggle { flex-shrink: 0; }
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+}
+.batch-count {
+  flex: 1;
+  min-width: 110px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
 
 .model-row {
   display: flex; align-items: flex-start; gap: 10px;
@@ -578,6 +687,15 @@ onMounted(load)
   transition: border-color 0.15s ease;
 }
 .model-row:hover { border-color: var(--border-strong); }
+.model-row.selected { border-color: var(--danger); background: var(--danger-soft); }
+.model-select-box {
+  width: 16px;
+  height: 16px;
+  margin: 2px 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--danger);
+  cursor: pointer;
+}
 .model-info { flex: 1; min-width: 0; }
 .model-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .model-meta { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -757,6 +875,15 @@ onMounted(load)
   border-radius: 4px;
 }
 .link-mini:hover { text-decoration: underline; }
+.link-mini.danger-link { color: var(--danger); font-weight: 600; }
+.link-mini:disabled { opacity: 0.45; cursor: not-allowed; text-decoration: none; }
+
+@media (max-width: 640px) {
+  .model-toolbar { flex-direction: column; }
+  .batch-toggle { width: 100%; }
+  .batch-bar { align-items: flex-start; }
+  .batch-bar .link-mini { padding: 4px 2px; }
+}
 
 .advanced-section {
   margin-top: 14px;
