@@ -45,40 +45,39 @@
             <div v-if="msg.showName" class="sender-name">{{ msg.sender_name }}</div>
             <!-- Text/tools content in chronological order -->
             <template v-if="msg.parts && msg.parts.length">
-              <template v-for="(part, pi) in msg.parts" :key="pi">
-                <div v-if="part.type === 'tool'" class="working-bubble inline-tool" :class="{ done: part.status !== 'running' }">
-                  <div class="working-header static">
-                    <div v-if="part.status === 'running'" class="working-spinner"></div>
-                    <svg v-else-if="part.status === 'done'" class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                    <svg v-else class="working-done-icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    <span class="working-label">{{ part.status === 'running' ? '调用工具' : '工具完成' }}</span>
-                    <span class="working-count">{{ toolLabel(part.name) }}</span>
+              <template v-for="block in groupedMessageParts(msg)" :key="block.key">
+                <div v-if="block.type === 'toolGroup'" class="working-bubble inline-tool grouped-tools" :class="{ collapsed: !isToolGroupExpanded(msg, block.key), done: !block.hasRunning }" @selectstart.prevent.stop>
+                  <div class="working-header" @mousedown.prevent.stop="clearToolSelection" @selectstart.prevent.stop @click.stop="toggleToolGroupExpand(msg, block.key)">
+                    <svg class="working-arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+                    <span v-if="block.hasRunning" class="working-label">调用工具</span>
+                    <span class="working-count">{{ block.tools.length }} 个工具</span>
+                    <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                   </div>
-                  <div class="working-steps">
-                    <div class="tool-step" :class="{ running: part.status === 'running', done: part.status === 'done', error: part.status === 'error' }">
+                  <div v-if="isToolGroupExpanded(msg, block.key)" class="working-steps">
+                    <div v-for="item in block.tools" :key="item.index" class="tool-step" :class="{ running: item.part.status === 'running', done: item.part.status === 'done', error: item.part.status === 'error' }">
                       <div class="step-icon">
-                        <svg v-if="part.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                        <svg v-else-if="part.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                        <svg v-if="item.part.status === 'running'" class="spin-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg v-else-if="item.part.status === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
                         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
                       </div>
                       <div class="step-body">
-                        <div class="step-name">{{ toolLabel(part.name) }}</div>
-                        <div class="step-summary">{{ part.summary }}</div>
-                        <div v-if="part.result" class="step-result" :class="{ error: part.status === 'error' }">{{ part.result }}</div>
+                        <div class="step-name">{{ toolLabel(item.part.name) }}</div>
+                        <div class="step-summary">{{ item.part.summary }}</div>
+                        <div v-if="item.part.result" class="step-result" :class="{ error: item.part.status === 'error' }">{{ item.part.result }}</div>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div v-else class="msg-text" v-html="part.rendered + (msg.streaming && pi === msg.parts.length - 1 ? '<span class=stream-cursor>▊</span>' : '')"></div>
+                <div v-else class="msg-text" v-html="block.rendered + (msg.streaming && block.isLast ? '<span class=stream-cursor>▊</span>' : '')"></div>
               </template>
             </template>
             <template v-else>
               <!-- Working bubble (tool calls - streaming or saved) -->
-              <div v-if="msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded, done: !msg.streaming }">
-                <div class="working-header" @click.stop="toggleToolsExpand(msg)">
+              <div v-if="msg.toolCalls && msg.toolCalls.length" class="working-bubble" :class="{ collapsed: !msg.toolsExpanded, done: !msg.streaming }" @selectstart.prevent.stop>
+                <div class="working-header" @mousedown.prevent.stop="clearToolSelection" @selectstart.prevent.stop @click.stop="toggleToolsExpand(msg)">
                   <div v-if="msg.streaming" class="working-spinner"></div>
                   <svg v-else class="working-done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                  <span class="working-label">{{ msg.streaming ? '工作中' : '工具调用' }}</span>
+                  <span v-if="msg.streaming" class="working-label">工作中</span>
                   <span class="working-count">{{ msg.toolCalls.length }} 步</span>
                   <svg class="working-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                 </div>
@@ -486,7 +485,68 @@ const TOOL_LABELS = {
   install_package: '安装依赖',
 }
 function toolLabel(name) { return TOOL_LABELS[name] || name }
+
+function groupedMessageParts(msg) {
+  const parts = Array.isArray(msg.parts) ? msg.parts : []
+  const blocks = []
+  let toolRun = []
+  let toolRunStart = -1
+
+  const flushTools = () => {
+    if (!toolRun.length) return
+    blocks.push({
+      type: 'toolGroup',
+      key: `tools-${toolRunStart}-${toolRun[toolRun.length - 1].index}`,
+      tools: toolRun,
+      hasRunning: toolRun.some(item => item.part.status === 'running'),
+    })
+    toolRun = []
+    toolRunStart = -1
+  }
+
+  parts.forEach((part, index) => {
+    if (part.type === 'tool') {
+      if (toolRunStart === -1) toolRunStart = index
+      toolRun.push({ part, index })
+      return
+    }
+    flushTools()
+    blocks.push({
+      type: 'text',
+      key: `text-${index}`,
+      rendered: part.rendered || '',
+      isLast: index === parts.length - 1,
+    })
+  })
+
+  flushTools()
+  return blocks
+}
+
+function toolGroupExpandKey(msg, groupKey) {
+  const id = String(msg.id || '')
+  const sid = id.startsWith('stream-') ? id.replace('stream-', '') : `saved-${id}`
+  return `${sid}:${groupKey}`
+}
+
+function isToolGroupExpanded(msg, groupKey) {
+  return toolsExpandedMap.value[toolGroupExpandKey(msg, groupKey)] === true
+}
+
+function clearToolSelection() {
+  const selection = window.getSelection?.()
+  if (selection) selection.removeAllRanges()
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+}
+
+function toggleToolGroupExpand(msg, groupKey) {
+  clearToolSelection()
+  const key = toolGroupExpandKey(msg, groupKey)
+  toolsExpandedMap.value[key] = !isToolGroupExpanded(msg, groupKey)
+}
+
 function toggleToolsExpand(msg) {
+  clearToolSelection()
   const sid = String(msg.id).startsWith('stream-') ? msg.id.replace('stream-', '') : `saved-${msg.id}`
   toolsExpandedMap.value[sid] = !msg.toolsExpanded
 }
