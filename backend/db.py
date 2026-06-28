@@ -653,10 +653,16 @@ class BaseDatabase:
     # === Hub Settings ===
     def get_hub_setting(self, key: str, default=None):
         ph = self._placeholder()
-        row = self.fetchone(f"SELECT value FROM hub_settings WHERE key = {ph}", (key,))
+        try:
+            row = self.fetchone(f"SELECT value FROM hub_settings WHERE key = {ph}", (key,))
+        except Exception:
+            return default
         return row["value"] if row else default
 
     def set_hub_setting(self, key: str, value: str):
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False)
+        value = "" if value is None else str(value)
         self.execute(self._upsert_settings(), (key, value))
         self.commit()
 
