@@ -970,6 +970,14 @@ async def get_settings(request: Request):
         "self_improve_enabled": "1",
         "self_improve_threshold": "2",
         "self_improve_path": "per_agent",
+        # Optional OpenAI-compatible vision fallback used to describe uploaded
+        # images for agents whose primary chat model is text-only. Values may
+        # also be supplied through MYNA_VISION_* environment variables.
+        "vision_model_config_id": "",
+        "vision_base_url": "",
+        "vision_api_key": "",
+        "vision_model": "",
+        "vision_params_json": "",
     }
     for k, v in defaults.items():
         if k not in settings:

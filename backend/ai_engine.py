@@ -29,98 +29,161 @@ except ImportError:
     print("[AI] WARNING: Hermes Agent not importable, falling back to direct API calls")
 
 # === Vision/Image Support Functions ===
-
-import base64
-import mimetypes as _mimetypes
-
-# Regex to match markdown image references: ![name](/uploads/filename.png)
-_IMAGE_REF_RE = re.compile(r'!\[([^\]]*)\]\((/uploads/[^)]+)\)')
-
-# Supported image MIME types
-_IMAGE_MIMES = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.bmp': 'image/bmp',
-    '.svg': 'image/svg+xml',
-}
-
-
-def _is_image_file(filepath: str) -> bool:
-    """Check if a file is an image based on extension."""
-    ext = Path(filepath).suffix.lower()
-    return ext in _IMAGE_MIMES
-
-
-def _read_image_as_base64(filepath: str):
-    """Read an image file and return (base64_data, mime_type) or None."""
-    p = Path(filepath)
-    if not p.is_absolute():
-        p = DATA_ROOT / filepath.lstrip('/')
-    if not p.exists() or not p.is_file():
-        return None
-
-    ext = p.suffix.lower()
-    mime = _IMAGE_MIMES.get(ext)
-    if not mime:
-        mime, _ = _mimetypes.guess_type(str(p))
-        if not mime or not mime.startswith('image/'):
-            return None
-
-    try:
-        data = p.read_bytes()
-        b64 = base64.b64encode(data).decode('ascii')
-        return b64, mime
-    except Exception:
-        return None
+# Uploaded images are stored as markdown links in message text. When a room agent
+# only has a text LLM configured, Myna can call a separate OpenAI-compatible
+# vision model (configured globally) and inject the resulting description into
+# the text conversation history so the text LLM can reason about image contents.
+_IMAGE_REF_RE = re.compile(r'!?\[([^\]]*)\]\((/uploads/[^)\s]+)\)')
+_VISION_DESC_CACHE: dict[str, str] = {}
 
 
 def _build_multimodal_content(text: str):
-    """Parse message text for image references and build multimodal content.
+    """Compatibility hook: image understanding is injected as text for Myna agents."""
+    return text
 
-    If the message contains ![name](/uploads/...) image references,
-    returns a list of content parts (OpenAI multimodal format).
-    Otherwise returns the original text string.
-    """
+
+def _vision_setting(db, key: str, default: str = "") -> str:
+    env_key = f"MYNA_{key.upper()}"
+    value = os.environ.get(env_key)
+    if value:
+        return value.strip()
+    try:
+        value = db.get_hub_setting(key, default)
+    except Exception:
+        value = default
+    return str(value or "").strip()
+
+
+def _get_vision_config(db) -> dict | None:
+    """Load global vision fallback config from hub_settings/env/model_configs."""
+    config = None
+    config_id = _vision_setting(db, "vision_model_config_id")
+    if config_id:
+        try:
+            config = db.get_model_config(config_id)
+        except Exception:
+            config = None
+    base_url = _vision_setting(db, "vision_base_url", (config or {}).get("base_url", ""))
+    api_key = _vision_setting(db, "vision_api_key", (config or {}).get("api_key", ""))
+    model = _vision_setting(db, "vision_model", (config or {}).get("model", ""))
+    if not (base_url and api_key and model):
+        return None
+    params = {}
+    raw_params = _vision_setting(db, "vision_params_json", (config or {}).get("params_json", ""))
+    if raw_params:
+        try:
+            params = json.loads(raw_params) if isinstance(raw_params, str) else dict(raw_params)
+        except Exception:
+            params = {}
+    return {"base_url": base_url.rstrip("/"), "api_key": api_key, "model": model, "params": params}
+
+
+def _resolve_upload_image(url_path: str) -> tuple[str, str, bytes] | None:
+    """Resolve a /uploads/... URL to (mime, filename, bytes) if it is an image."""
+    try:
+        from urllib.parse import unquote, urlparse
+        import mimetypes
+        import imghdr
+        from paths import UPLOADS_DIR
+
+        parsed = urlparse(url_path)
+        rel = unquote(parsed.path)
+        if not rel.startswith("/uploads/"):
+            return None
+        name = rel[len("/uploads/"):].lstrip("/")
+        if not name or ".." in Path(name).parts:
+            return None
+        file_path = (UPLOADS_DIR / name).resolve()
+        uploads_root = UPLOADS_DIR.resolve()
+        if uploads_root not in file_path.parents and file_path != uploads_root:
+            return None
+        if not file_path.is_file():
+            return None
+        data = file_path.read_bytes()
+        mime = mimetypes.guess_type(str(file_path))[0] or ""
+        if not mime.startswith("image/"):
+            kind = imghdr.what(None, data)
+            if not kind:
+                return None
+            mime = "image/jpeg" if kind == "jpeg" else f"image/{kind}"
+        return mime, file_path.name, data
+    except Exception as e:
+        print(f"[AI][Vision] resolve image failed for {url_path}: {e}")
+        return None
+
+
+async def _call_vision_model(config: dict, image_name: str, mime: str, data: bytes) -> str | None:
+    """Describe one image using an OpenAI-compatible vision chat model."""
+    import base64
+    import httpx
+
+    prompt = str(config.get("params", {}).get("prompt") or (
+        "请准确识别这张图片的内容，用中文回答。包括可见对象、文字、界面、图表、场景、异常点；"
+        "如果图片里有文字或代码，请尽量逐字转写。"
+    ))
+    max_tokens = int(config.get("params", {}).get("max_tokens") or 800)
+    temperature = float(config.get("params", {}).get("temperature") or 0.2)
+    data_url = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    body = {
+        "model": config["model"],
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]}],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=float(config.get("params", {}).get("timeout") or 60)) as client:
+            resp = await client.post(
+                config["base_url"] + "/chat/completions",
+                json=body,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {config['api_key']}"},
+            )
+        if resp.status_code != 200:
+            print(f"[AI][Vision] {image_name} failed HTTP {resp.status_code}: {resp.text[:300]}")
+            return None
+        payload = resp.json()
+        text = (((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        return text or None
+    except Exception as e:
+        print(f"[AI][Vision] {image_name} request failed: {e}")
+        return None
+
+
+async def _describe_images_in_text(db, text: str) -> str:
+    """Append vision summaries for uploaded images referenced in message markdown."""
+    if not isinstance(text, str) or "/uploads/" not in text:
+        return text
     matches = list(_IMAGE_REF_RE.finditer(text))
     if not matches:
         return text
+    config = _get_vision_config(db)
+    if not config:
+        return text + "\n\n[图片识别提示：检测到图片附件，但系统尚未配置全局视觉识别模型。请管理员配置 vision_base_url、vision_api_key、vision_model，或设置 vision_model_config_id。]"
 
-    parts = []
-    last_end = 0
+    additions = []
+    seen = set()
+    for match in matches[:6]:
+        alt = (match.group(1) or "图片").strip() or "图片"
+        url_path = match.group(2)
+        if url_path in seen:
+            continue
+        seen.add(url_path)
+        resolved = _resolve_upload_image(url_path)
+        if not resolved:
+            continue
+        mime, image_name, data = resolved
+        cache_key = f"{url_path}:{len(data)}:{hash(data[:4096])}"
+        desc = _VISION_DESC_CACHE.get(cache_key)
+        if desc is None:
+            desc = await _call_vision_model(config, image_name, mime, data) or "图片识别失败：视觉模型未返回有效描述。"
+            _VISION_DESC_CACHE[cache_key] = desc
+        additions.append(f"- {alt} ({url_path}): {desc}")
 
-    for match in matches:
-        text_before = text[last_end:match.start()].strip()
-        if text_before:
-            parts.append({"type": "text", "text": text_before})
-
-        alt_text = match.group(1)
-        img_path = match.group(2)
-        full_path = DATA_ROOT / img_path.lstrip('/')
-
-        img_data = _read_image_as_base64(str(full_path))
-        if img_data:
-            b64_data, mime = img_data
-            parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{b64_data}"}
-            })
-        else:
-            parts.append({"type": "text", "text": f"[图片: {alt_text}]"})
-
-        last_end = match.end()
-
-    text_after = text[last_end:].strip()
-    if text_after:
-        parts.append({"type": "text", "text": text_after})
-
-    if not parts:
+    if not additions:
         return text
-    if len(parts) == 1 and parts[0].get("type") == "text":
-        return parts[0]["text"]
-    return parts
+    return text + "\n\n[系统自动图片识别结果]\n" + "\n".join(additions)
 
 
 # === End Vision Functions ===
@@ -1471,7 +1534,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         # "stop talking", not "resume this partial reply next turn".
         for m in recent_messages:
             role = "assistant" if m["sender_id"] == agent["id"] else "user"
-            content = _build_multimodal_content(m["text"])
+            content = await _describe_images_in_text(db, m["text"])
             if isinstance(content, str) and m.get("sender_name") and m["sender_id"] != agent["id"]:
                 content = f"[{m['sender_name']}]: {content}"
             elif isinstance(content, list) and m.get("sender_name") and m["sender_id"] != agent["id"]:
