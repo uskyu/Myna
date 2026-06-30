@@ -24,12 +24,27 @@
         </div>
       </div>
 
-      <div class="section-title-mini">添加智能体</div>
+      <div class="add-agent-header">
+        <div class="section-title-mini">添加智能体</div>
+        <label class="agent-search-wrap" aria-label="搜索可添加智能体">
+          <svg class="agent-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input
+            v-model="agentSearch"
+            class="agent-search-input"
+            type="search"
+            placeholder="搜索智能体名称或描述"
+            autocomplete="off"
+          />
+        </label>
+      </div>
       <div class="member-list">
         <div v-if="!available.length" class="empty-mini" style="padding:14px">
           <p style="color:var(--text-dim);font-size:13px">所有可用智能体已加入</p>
         </div>
-        <div v-for="a in available" :key="a.id" class="member-row" style="cursor:pointer" @click="addMember(a)">
+        <div v-else-if="!filteredAvailable.length" class="empty-mini" style="padding:14px">
+          <p style="color:var(--text-dim);font-size:13px">没有匹配的智能体</p>
+        </div>
+        <div v-for="a in filteredAvailable" :key="a.id" class="member-row" style="cursor:pointer" @click="addMember(a)">
           <div class="member-avatar" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
             <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
           </div>
@@ -51,12 +66,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { api, store, getAgentColor, getAgentIcon, loadConversations } from '../store.js'
+import { api, store, getAgentColor, getAgentIcon, loadConversations, isRealAgent } from '../store.js'
 
 const props = defineProps({ room: Object })
 const emit = defineEmits(['close', 'changed'])
 
 const members = ref([])
+const agentSearch = ref('')
 
 async function load() {
   const data = await api('GET', '/admin/rooms')
@@ -66,7 +82,16 @@ async function load() {
 
 const available = computed(() => {
   const ids = new Set(members.value.map(m => m.id))
-  return store.agents.filter(a => !ids.has(a.id))
+  return store.agents.filter(a => isRealAgent(a) && !ids.has(a.id))
+})
+
+const filteredAvailable = computed(() => {
+  const keyword = agentSearch.value.trim().toLowerCase()
+  if (!keyword) return available.value
+  return available.value.filter(a => {
+    const haystack = `${a.name || ''} ${a.description || ''} ${a.id || ''}`.toLowerCase()
+    return haystack.includes(keyword)
+  })
 })
 
 const agentColorIdx = (id) => store.agents.findIndex(a => a.id === id)
@@ -114,8 +139,43 @@ onMounted(load)
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
+  margin: 0;
+}
+
+.add-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 16px 0 8px;
 }
+.agent-search-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-dim);
+}
+.agent-search-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.agent-search-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.agent-search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+.agent-search-input::placeholder { color: var(--text-dim); }
 
 .member-list { overflow-y: auto; max-height: 30vh; }
 .member-row {
@@ -159,4 +219,14 @@ onMounted(load)
 
 .empty-mini { text-align: center; }
 .empty-mini p { margin: 0; }
+
+@media (max-width: 640px) {
+  .members-modal { max-height: 92vh; }
+  .add-agent-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .agent-search-wrap { width: 100%; }
+}
 </style>

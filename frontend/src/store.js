@@ -70,6 +70,12 @@ export const store = reactive({
   initialized: false,
 })
 
+export function isRealAgent(agent) {
+  if (!agent || !agent.id || !agent.name) return false
+  if (['system', 'user', '__system__', '__all__'].includes(agent.id)) return false
+  return true
+}
+
 let streamClientOrderSeq = 0
 
 export function markStreamInterrupted(streamId) {
@@ -213,7 +219,7 @@ _loadUnread()
 
 export async function loadAgents() {
   const data = await api('GET', '/admin/agents')
-  store.agents = (data.result || []).filter(a => a.id !== 'system' && a.id !== 'user')
+  store.agents = (data.result || []).filter(isRealAgent)
 }
 
 export async function loadConversations() {
