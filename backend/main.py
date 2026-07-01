@@ -5,12 +5,14 @@ Multi-agent collaboration platform powered by Hermes Agent.
 import os
 import sys
 import asyncio
+import json
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 
 # Add hermes-agent to path for direct import
@@ -182,6 +184,7 @@ class AuthMiddleware:
             path == "/health" or
             path.startswith("/assets/") or
             path.startswith("/admin/media/") or
+            path.startswith("/share/") or
             path == "/admin/system/version" or
             path == "/api/system/version" or
             path.startswith("/uploads/") or
@@ -370,6 +373,101 @@ async def health():
         "online": len(app.state.ws_manager.get_online_agents()),
         "engine": "hermes-agent"
     }
+
+
+def _share_page_html(room_id: str) -> str:
+    room_json = json.dumps(room_id)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Myna 房间分享</title>
+  <style>
+    :root {{
+      color-scheme: light dark;
+      --bg:#f7f3ea; --surface:#fffaf1; --surface2:#f2eadc; --text:#1f2933; --text-dim:#6b7280;
+      --text-faint:#9ca3af; --border:rgba(45,106,79,.18); --accent:#2d6a4f; --accent-soft:#e8f0eb;
+      --accent-glow:rgba(45,106,79,.18); --radius-lg:18px; --shadow-sm:0 1px 2px rgba(0,0,0,.05);
+      --header-height:64px;
+    }}
+    @media (prefers-color-scheme: dark) {{ :root {{ --bg:#11140f; --surface:#1a211b; --surface2:#222b24; --text:#f3f5ef; --text-dim:#b7c0b4; --text-faint:#879083; --border:rgba(232,240,235,.16); --accent:#7fb096; --accent-soft:#233529; --accent-glow:rgba(127,176,150,.22); }} }}
+    * {{ box-sizing:border-box; }}
+    html, body {{ margin:0; min-height:100%; }}
+    body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
+    .share-shell {{ min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }}
+    .chat-header {{ height:var(--header-height); display:flex; flex-direction:column; justify-content:center; padding:0 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }}
+    .title {{ min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; line-clamp:1; font-size:16px; font-weight:700; line-height:1.25; color:var(--text); }}
+    .meta {{ margin-top:5px; color:var(--text-dim); font-size:12px; }}
+    .messages-area {{ flex:1; overflow-y:auto; padding:16px 20px 24px; display:flex; flex-direction:column; gap:6px; -webkit-overflow-scrolling:touch; }}
+    .status {{ color:var(--text-dim); padding:30px 4px; text-align:center; }} .error {{ color:#dc2626; }}
+    .msg-group {{ display:flex; flex-direction:column; gap:2px; }}
+    .msg {{ max-width:78%; padding:10px 14px; border-radius:var(--radius-lg); font-size:14.5px; line-height:1.55; word-break:break-word; position:relative; }}
+    .msg-group:not(.self) .msg {{ align-self:flex-start; background:var(--surface); border:1px solid var(--border); color:var(--text); box-shadow:var(--shadow-sm); }}
+    .msg-group.self .msg {{ align-self:flex-end; background:var(--accent); border:1px solid transparent; color:white; box-shadow:0 1px 2px var(--accent-glow); }}
+    .msg.event {{ align-self:center; max-width:78%; background:rgba(217,119,6,.08); color:var(--text-dim); border:1px solid rgba(217,119,6,.18); box-shadow:none; border-radius:999px; padding:6px 12px; font-size:12.5px; text-align:center; }}
+    .sender-name {{ font-size:12px; color:var(--accent); font-weight:600; margin-bottom:4px; letter-spacing:-.01em; }}
+    .msg-group.self .sender-name {{ color:rgba(255,255,255,.85); }}
+    .msg-text {{ white-space:normal; word-wrap:break-word; overflow-wrap:break-word; line-height:1.6; overflow:hidden; }}
+    .msg-text p {{ margin:0 0 8px 0; }} .msg-text p:last-child {{ margin-bottom:0; }}
+    .msg-text pre {{ background:var(--surface2); padding:10px; border-radius:10px; overflow:auto; max-width:100%; }}
+    .msg-text code {{ background:var(--surface2); padding:1px 4px; border-radius:4px; font-size:.92em; }}
+    .msg-group.self .msg-text code {{ background:rgba(255,255,255,.16); }}
+    .msg-text ul, .msg-text ol {{ padding-left:1.5em; margin:6px 0; }} .msg-text li {{ margin:3px 0; }}
+    .msg-text blockquote {{ margin:8px 0; padding-left:10px; border-left:3px solid var(--border); color:var(--text-dim); }}
+    .msg-text a {{ color:var(--accent); text-decoration:underline; text-underline-offset:2px; word-break:break-all; }}
+    .msg-group.self .msg-text a {{ color:#bbf7d0; }}
+    .msg-meta-row {{ display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; margin-top:4px; min-width:0; }}
+    .msg-speaker, .msg-time {{ font-size:11px; color:var(--text-faint); font-weight:500; }}
+    .msg-group.self .msg-speaker, .msg-group.self .msg-time {{ color:rgba(255,255,255,.7); }}
+    @media (max-width:640px) {{ .chat-header {{ height:56px; padding:0 14px; }} .messages-area {{ padding:12px 10px 18px; }} .msg {{ max-width:88%; padding:9px 12px; font-size:14px; }} .msg.event {{ max-width:88%; }} .title {{ font-size:15px; }} }}
+  </style>
+</head>
+<body>
+  <main class="share-shell">
+    <header class="chat-header"><div id="title" class="title">Myna 房间分享</div><div id="meta" class="meta">只读聊天记录</div></header>
+    <section id="content" class="messages-area"><div class="status">正在加载聊天记录...</div></section>
+  </main>
+  <script>
+    const roomId = {room_json};
+    const escapeHtml = (s) => String(s ?? '').replace(/[&<>\"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]));
+    const linkifyHiddenUrls = (s) => escapeHtml(s).replace(/https?:\/\/[^\s<]+/g, url => `<a href="${{url}}" target="_blank" rel="noopener noreferrer">查看链接</a>`).replace(/\n/g, '<br>');
+    const formatTime = (v) => {{ try {{ return v ? new Date(v).toLocaleString() : ''; }} catch {{ return v || ''; }} }};
+    const isSelf = (m) => m.sender_id === 'user';
+    const isEvent = (m) => m.sender_id === 'system' || m.event;
+    fetch(`/share/${{encodeURIComponent(roomId)}}/data`).then(r => r.json()).then(data => {{
+      if (!data.ok) throw new Error(data.error || '加载失败');
+      document.title = `${{data.result.room.name}} - Myna 房间分享`;
+      document.getElementById('title').textContent = data.result.room.name || 'Myna 房间分享';
+      document.getElementById('meta').textContent = `${{data.result.messages.length}} 条消息 · 只读分享`;
+      const html = data.result.messages.map(m => {{
+        const cls = isEvent(m) ? 'msg event' : 'msg';
+        const groupCls = `msg-group${{isSelf(m) ? ' self' : ''}}${{isEvent(m) ? ' event' : ''}}`;
+        const sender = escapeHtml(m.sender_name || m.sender_id || '未知');
+        return `<article class="${{groupCls}}"><div class="${{cls}}">${{!isEvent(m) ? `<div class="sender-name">${{sender}}</div>` : ''}}<div class="msg-text"><p>${{linkifyHiddenUrls(m.text || '')}}</p></div>${{!isEvent(m) ? `<div class="msg-meta-row"><span class="msg-speaker">${{sender}}</span><span class="msg-time">${{escapeHtml(formatTime(m.created_at))}}</span></div>` : ''}}</div></article>`;
+      }}).join('');
+      document.getElementById('content').innerHTML = html || '<div class="status">暂无聊天记录</div>';
+    }}).catch(err => {{
+      document.getElementById('content').innerHTML = `<div class="status error">${{escapeHtml(err.message || '加载失败')}}</div>`;
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@app.get("/share/{room_id}", response_class=HTMLResponse)
+async def share_room_page(room_id: str):
+    return HTMLResponse(_share_page_html(room_id))
+
+
+@app.get("/share/{room_id}/data")
+async def share_room_data(room_id: str):
+    room = app.state.db.get_room(room_id)
+    if not room:
+        return JSONResponse({"ok": False, "error": "Room not found"}, status_code=404)
+    messages = app.state.db.get_all_room_messages(room_id)
+    safe_room = {"id": room.get("id"), "name": room.get("name"), "description": room.get("description"), "type": room.get("type")}
+    return {"ok": True, "result": {"room": safe_room, "messages": messages}}
 
 
 # Serve uploaded files
