@@ -32,7 +32,7 @@
           @touchend="onTouchEnd($event, r, 'group')"
           @mousedown="onMouseDown($event, r, 'group')"
           >
-          <div class="chat-item" :class="{ swiped: swipeOffsets[r.id] < 0 }" :style="{ transform: `translateX(${swipeOffsets[r.id] || 0}px)` }" @click="onItemClick(r, 'group')">
+          <div class="chat-item" :class="{ swiped: swipeOffsets[r.id] < 0, pinned: isPinned(r.id) }" :style="{ transform: `translateX(${swipeOffsets[r.id] || 0}px)` }" @click="onItemClick(r, 'group')">
             <div class="avatar" :style="{ background: getAgentColor(roomIndex(r.id) + 2) }">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </div>
@@ -47,7 +47,7 @@
             </div>
           </div>
           <div class="swipe-actions">
-            <button class="swipe-action-btn unread" @click.stop="toggleUnread(r)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><span>{{ (store.unreadCounts[r.id] || 0) > 0 ? '已读' : '未读' }}</span></button>
+            <button class="swipe-action-btn pin" :class="{ active: isPinned(r.id) }" @click.stop="togglePin(r)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 17v5"/><path d="M5 17h14"/><path d="M7 17 9 3h6l2 14"/></svg><span>{{ isPinned(r.id) ? '取消置顶' : '置顶' }}</span></button>
             <button class="swipe-action-btn rename" @click.stop="startRename(r)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>重命名</span></button>
             <button class="swipe-action-btn delete" @click.stop="deleteRoom(r)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button>
           </div>
@@ -63,7 +63,7 @@
           @touchmove="onTouchMove($event, dm, 'dm')"
           @touchend="onTouchEnd($event, dm, 'dm')"
           @mousedown="onMouseDown($event, dm, 'dm')">
-          <div class="chat-item" :class="{ swiped: swipeOffsets[dm.id] < 0 }" :style="{ transform: `translateX(${swipeOffsets[dm.id] || 0}px)` }" @click="onItemClick(dm, 'dm')">
+          <div class="chat-item" :class="{ swiped: swipeOffsets[dm.id] < 0, pinned: isPinned(dm.id) }" :style="{ transform: `translateX(${swipeOffsets[dm.id] || 0}px)` }" @click="onItemClick(dm, 'dm')">
             <div class="avatar round" :style="{ background: getAgentColor(agentIndex(dm.agent?.id)) }">
               <span v-html="getAgentIcon(agentIndex(dm.agent?.id))"></span>
             </div>
@@ -78,7 +78,7 @@
             </div>
           </div>
           <div class="swipe-actions">
-            <button class="swipe-action-btn unread" @click.stop="toggleUnread(dm)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><span>{{ (store.unreadCounts[dm.id] || 0) > 0 ? '已读' : '未读' }}</span></button>
+            <button class="swipe-action-btn pin" :class="{ active: isPinned(dm.id) }" @click.stop="togglePin(dm)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 17v5"/><path d="M5 17h14"/><path d="M7 17 9 3h6l2 14"/></svg><span>{{ isPinned(dm.id) ? '取消置顶' : '置顶' }}</span></button>
             <button class="swipe-action-btn delete" @click.stop="deleteRoom(dm)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button>
           </div>
         </div>
@@ -120,7 +120,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { store, api, loadConversations, loadAgents, getAgentColor, getAgentIcon } from '../store.js'
+import { store, api, loadConversations, loadAgents, getAgentColor, getAgentIcon, togglePinnedConversation } from '../store.js'
 
 const emit = defineEmits(['open-chat', 'create-room'])
 
@@ -185,6 +185,9 @@ const sortedDms = computed(() => {
 })
 function sortConversations(items) {
   return [...items].sort((a, b) => {
+    const pinnedA = isPinned(a.id)
+    const pinnedB = isPinned(b.id)
+    if (pinnedA !== pinnedB) return pinnedA ? -1 : 1
     const pa = (store.unreadCounts[a.id] || 0) > 0 || isRoomActive(a.id)
     const pb = (store.unreadCounts[b.id] || 0) > 0 || isRoomActive(b.id)
     if (pa !== pb) return pa ? -1 : 1
@@ -253,10 +256,10 @@ async function confirmDeleteRoom() {
   await api('DELETE', `/admin/rooms/${roomId}`)
   loadConversations()
 }
-function toggleUnread(room) {
+function isPinned(roomId) { return store.pinnedConversations.includes(String(roomId)) }
+function togglePin(room) {
   if (!room) return
-  if ((store.unreadCounts[room.id] || 0) > 0) store.unreadCounts[room.id] = 0
-  else store.unreadCounts[room.id] = 1
+  togglePinnedConversation(room.id)
   closeAllSwipes()
 }
 
@@ -368,13 +371,16 @@ onUnmounted(() => { clearInterval(timer); document.removeEventListener('click', 
 .sort-btn.active { background:color-mix(in srgb,var(--accent) 12%,transparent); }
 
 .chat-item-wrapper { position:relative; overflow:hidden; }
-.chat-item { position:relative; display:flex; align-items:center; padding:12px 16px; gap:12px; background:var(--bg); transition:transform .3s cubic-bezier(.25,.46,.45,.94); cursor:pointer; z-index:1; }
+.chat-item { position:relative; display:flex; align-items:center; padding:12px 16px; gap:12px; background:var(--bg); transition:transform .3s cubic-bezier(.25,.46,.45,.94), background-color .2s ease; cursor:pointer; z-index:1; }
+.chat-item.pinned { background:color-mix(in srgb,var(--surface,#f3f4f6) 82%,var(--accent,#2d6a4f) 18%); }
 .chat-item:active { background:var(--surface,rgba(0,0,0,.03)); }
+.chat-item.pinned:active { background:color-mix(in srgb,var(--surface,#f3f4f6) 74%,var(--accent,#2d6a4f) 26%); }
 
 .swipe-actions { position:absolute; right:0; top:0; bottom:0; display:flex; z-index:0; }
 .swipe-action-btn { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:70px; height:100%; border:none; color:#fff; font-size:11px; font-weight:500; cursor:pointer; }
 .swipe-action-btn:active { opacity:.8; }
-.swipe-action-btn.unread { background:var(--accent,#2d6a4f); }
+.swipe-action-btn.pin { background:var(--accent,#2d6a4f); }
+.swipe-action-btn.pin.active { background:var(--accent-hover,#1f4c38); }
 .swipe-action-btn.rename { background:#f59e0b; }
 .swipe-action-btn.delete { background:var(--danger,#e53e3e); }
 
