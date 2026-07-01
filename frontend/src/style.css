@@ -507,7 +507,8 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   flex-shrink: 0;
 }
 .chat-header .back-btn,
-.chat-header .more-btn {
+.chat-header .more-btn,
+.chat-header .share-room-btn {
   background: transparent;
   border: none;
   color: var(--text-2);
@@ -521,12 +522,20 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   transition: background 0.15s ease, color 0.15s ease;
 }
 .chat-header .back-btn:hover,
-.chat-header .more-btn:hover {
+.chat-header .more-btn:hover,
+.chat-header .share-room-btn:hover {
   background: var(--surface2);
   color: var(--accent);
 }
 .chat-header .back-btn svg { width: 22px; height: 22px; }
 .chat-header .more-btn svg { width: 18px; height: 18px; }
+.chat-header .share-room-btn {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  gap: 0;
+}
+.chat-header .share-room-btn svg { width: 16px; height: 16px; }
 .chat-header .title {
   font-size: 16px;
   font-weight: 700;

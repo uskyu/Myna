@@ -235,6 +235,14 @@ class BaseDatabase:
             """, (room_id, limit))
         return list(reversed(rows))
 
+    def get_all_room_messages(self, room_id: str) -> list:
+        ph = self._placeholder()
+        return self.fetchall(f"""
+            SELECT m.*, COALESCE(a.name, CASE m.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE m.sender_id END) as sender_name FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id
+            WHERE m.room_id = {ph} ORDER BY m.id ASC
+        """, (room_id,))
+
     def clear_room_messages(self, room_id: str):
         ph = self._placeholder()
         self.execute(f"DELETE FROM messages WHERE room_id = {ph}", (room_id,))

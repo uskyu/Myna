@@ -8,10 +8,13 @@
         {{ title }}
         <span v-if="subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400;margin-left:8px">{{ subtitle }}</span>
       </span>
-      <!-- Thread drawer toggle -->
+      <!-- Thread drawer and room action toggles -->
       <button class="thread-toggle-btn" :class="{ active: threadDrawerOpen }" @click="threadDrawerOpen = !threadDrawerOpen" title="对话列表">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="thread-toggle-count" v-if="threads.length > 0">{{ threads.length + 1 }}</span>
+      </button>
+      <button v-if="type === 'group'" class="share-room-btn" @click="shareRoom" title="分享聊天记录" aria-label="分享聊天记录">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11 4.93"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L13 19.07"/></svg>
       </button>
       <button v-if="type === 'group'" class="more-btn" :class="{ active: showSettings }" @click="showSettings = !showSettings" :title="showSettings ? '返回聊天' : '群聊信息'">
         <svg v-if="!showSettings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
@@ -1230,6 +1233,36 @@ async function copyMsg(msg) {
     document.body.removeChild(textarea)
     showToast('已复制到剪贴板')
   }
+}
+
+async function shareRoom() {
+  const relativeUrl = `/share/${encodeURIComponent(props.room.id)}`
+  const label = '查看聊天记录'
+  const markdownLink = `[${label}](${relativeUrl})`
+  const safeRelativeUrl = relativeUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  const htmlLink = `<a href="${safeRelativeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([htmlLink], { type: 'text/html' }),
+          'text/plain': new Blob([markdownLink], { type: 'text/plain' })
+        })
+      ])
+    } else {
+      await navigator.clipboard.writeText(markdownLink)
+    }
+  } catch (err) {
+    const textarea = document.createElement('textarea')
+    textarea.value = markdownLink
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+  showToast('已复制分享入口，页面中不会明文显示服务器地址')
 }
 
 // Auto-update thread title on first message
