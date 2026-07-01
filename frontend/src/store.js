@@ -66,6 +66,7 @@ export const store = reactive({
   activeStreams: {},
   cancelledStreamIds: {},
   unreadCounts: {},
+  pinnedConversations: [],
   handoffEvents: [],
   initialized: false,
 })
@@ -211,6 +212,26 @@ function _loadUnread() {
 }
 _loadUnread()
 
+export function togglePinnedConversation(roomId) {
+  const id = String(roomId)
+  const next = store.pinnedConversations.includes(id)
+    ? store.pinnedConversations.filter(item => item !== id)
+    : [...store.pinnedConversations, id]
+  store.pinnedConversations = next
+  _persistPinnedConversations()
+}
+
+function _persistPinnedConversations() {
+  try { localStorage.setItem('myna_pinned_conversations', JSON.stringify(store.pinnedConversations)) } catch {}
+}
+function _loadPinnedConversations() {
+  try {
+    const raw = localStorage.getItem('myna_pinned_conversations')
+    if (raw) store.pinnedConversations = JSON.parse(raw).map(String)
+  } catch {}
+}
+_loadPinnedConversations()
+
 export async function loadAgents() {
   const data = await api('GET', '/admin/agents')
   store.agents = (data.result || []).filter(a => a.id !== 'system' && a.id !== 'user')
@@ -222,6 +243,9 @@ export async function loadConversations() {
     api('GET', '/admin/dms'),
   ])
   const sortConversations = (items) => [...items].sort((a, b) => {
+    const pinnedA = store.pinnedConversations.includes(String(a.id))
+    const pinnedB = store.pinnedConversations.includes(String(b.id))
+    if (pinnedA !== pinnedB) return pinnedA ? -1 : 1
     const prominentA = (store.unreadCounts[a.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === a.id)
     const prominentB = (store.unreadCounts[b.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === b.id)
     if (prominentA !== prominentB) return prominentA ? -1 : 1
