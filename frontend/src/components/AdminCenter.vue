@@ -18,6 +18,10 @@
         <span class="tab-label">系统智能体</span>
         <span class="tab-helper">系统代理与行为</span>
       </div>
+      <div class="tab-item" :class="{ active: activeTab === 'usage' }" @pointerdown.prevent="setActiveTab('usage')" @click="setActiveTab('usage')">
+        <span class="tab-label">Token 用量</span>
+        <span class="tab-helper">Room Token 消耗</span>
+      </div>
       <div class="tab-indicator" :style="tabIndicatorStyle"></div>
     </div>
 
@@ -180,6 +184,58 @@
         <SystemAgentPanel />
       </div>
 
+      <!-- Usage tab -->
+      <div v-show="activeTab === 'usage'" class="tab-panel">
+        <div class="admin-section usage-section">
+          <div class="section-title-row usage-title-row">
+            <div>
+              <h3>📊 Room Token 用量</h3>
+              <p class="section-subtitle">统计所有 room 在指定时间范围内的 token 消耗</p>
+            </div>
+            <div class="usage-range-tabs">
+              <button v-for="option in usageRangeOptions" :key="option.value" class="range-btn" :class="{ active: usageDays === option.value }" @click="setUsageDays(option.value)">
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <div class="usage-cards">
+            <div class="usage-card"><span class="usage-card-label">总 Token</span><strong>{{ formatNumber(usageTotals.total_tokens) }}</strong></div>
+            <div class="usage-card"><span class="usage-card-label">输入 Token</span><strong>{{ formatNumber(usageTotals.input_tokens) }}</strong></div>
+            <div class="usage-card"><span class="usage-card-label">输出 Token</span><strong>{{ formatNumber(usageTotals.output_tokens) }}</strong></div>
+            <div class="usage-card"><span class="usage-card-label">调用次数</span><strong>{{ formatNumber(usageTotals.call_count) }}</strong></div>
+          </div>
+          <div v-if="usageLoading" class="empty-state">正在加载用量统计...</div>
+          <div v-else-if="usageError" class="empty-state">{{ usageError }}</div>
+          <template v-else>
+            <div class="usage-chart">
+              <div class="usage-chart-head">
+                <div><span>每日趋势</span><small>{{ usageDaily.length ? `近 ${usageDaily.length} 天连续趋势` : '暂无记录' }}</small></div>
+                <div v-if="maxDailyTokens" class="usage-chart-peak">峰值 {{ formatCompactNumber(maxDailyTokens) }}</div>
+              </div>
+              <div v-if="usageDaily.length" class="usage-line-chart">
+                <div ref="usageTrendChartRef" class="usage-echarts-trend" :aria-label="`每日 token 曲线图，峰值 ${formatNumber(maxDailyTokens)} tokens`"></div>
+              </div>
+              <div v-else class="empty-state compact">暂无 token 记录</div>
+            </div>
+            <div class="usage-table-wrap">
+              <table class="usage-table">
+                <thead><tr><th>Room</th><th>总 Token</th><th>输入</th><th>输出</th><th>调用次数</th></tr></thead>
+                <tbody>
+                  <tr v-for="room in usageRooms" :key="room.room_id || room.room_name">
+                    <td>{{ room.room_name || '未知 Room' }}</td>
+                    <td>{{ formatNumber(room.total_tokens) }}</td>
+                    <td>{{ formatNumber(room.input_tokens) }}</td>
+                    <td>{{ formatNumber(room.output_tokens) }}</td>
+                    <td>{{ formatNumber(room.call_count) }}</td>
+                  </tr>
+                  <tr v-if="!usageRooms.length"><td colspan="5" class="empty-cell">暂无 room token 记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </div>
+      </div>
+
     </div>
 
     <!-- Modals (unchanged) -->
@@ -296,9 +352,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, inject, onMounted, watch } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import { api, store, chatSettings, saveChatSettings } from '../store.js'
 import SystemAgentPanel from './SystemAgentPanel.vue'
+
+echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const allSkills = ref([])
 const viewingSkill = ref(null)
@@ -308,6 +370,11 @@ const skillFileInput = ref(null)
 const activeTab = ref('config')
 function setActiveTab(tab) {
   activeTab.value = tab
+  if (tab === 'usage' && !usageLoaded.value) loadUsageStats()
+  if (tab === 'usage') {
+    observeUsageTrendChart()
+    refreshUsageTrendChart()
+  }
 }
 const selectedSkill = ref(null)
 const isDesktop = inject('isDesktop', ref(false))
@@ -316,7 +383,7 @@ const savingSkill = ref(false)
 const editForm = reactive({ name: '', description: '', content: '', file_type: '' })
 
 const tabIndicatorStyle = computed(() => {
-  const tabs = ['config', 'skills', 'system']
+  const tabs = ['config', 'skills', 'system', 'usage']
   const idx = tabs.indexOf(activeTab.value)
   return {
     width: `${100 / tabs.length}%`,
@@ -351,6 +418,105 @@ const thresholdOptions = [
   { label: '5 次', value: '5' },
   { label: '8 次', value: '8' },
 ]
+
+
+const usageRangeOptions = [
+  { label: '7 天', value: 7 },
+  { label: '30 天', value: 30 },
+  { label: '90 天', value: 90 },
+  { label: '全部', value: 0 },
+]
+const usageDays = ref(30)
+const usageLoaded = ref(false)
+const usageLoading = ref(false)
+const usageError = ref('')
+const usageRooms = ref([])
+const usageDaily = ref([])
+const usageTrendChartRef = ref(null)
+let usageTrendChart = null
+let usageResizeObserver = null
+const usageTotals = reactive({ input_tokens: 0, output_tokens: 0, total_tokens: 0, call_count: 0, room_count: 0 })
+const maxDailyTokens = computed(() => Math.max(0, ...usageDaily.value.map(day => toInt(day.total_tokens))))
+const usageTrendSeries = computed(() => (usageDaily.value || []).map(day => ({
+  date: day.date,
+  total: toInt(day.total_tokens),
+  input: toInt(day.input_tokens),
+  output: toInt(day.output_tokens),
+  calls: toInt(day.call_count),
+})))
+
+watch([usageTrendSeries, activeTab], () => {
+  if (activeTab.value === 'usage') refreshUsageTrendChart()
+}, { deep: true })
+
+watch(usageTrendChartRef, () => {
+  if (activeTab.value === 'usage') {
+    observeUsageTrendChart()
+    refreshUsageTrendChart()
+  }
+})
+
+function toInt(value) {
+  const num = Number(value || 0)
+  return Number.isFinite(num) ? Math.trunc(num) : 0
+}
+function formatNumber(value) { return toInt(value).toLocaleString('zh-CN') }
+function formatCompactNumber(value) {
+  const num = toInt(value)
+  if (num >= 100000000) return `${(num / 100000000).toFixed(num >= 1000000000 ? 1 : 2)}亿`
+  if (num >= 10000) return `${(num / 10000).toFixed(num >= 100000 ? 1 : 2)}万`
+  return num.toLocaleString('zh-CN')
+}
+function shortDate(date) { return String(date || '').slice(5) || '-' }
+function getCssVar(name, fallback) {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+function buildUsageTrendOption() {
+  const points = usageTrendSeries.value
+  const textColor = getCssVar('--text-secondary', '#64748b')
+  const borderColor = getCssVar('--border-color', '#e2e8f0')
+  const primaryColor = getCssVar('--primary-color', '#6366f1')
+  return {
+    grid: { left: 46, right: 18, top: 18, bottom: 34, containLabel: false },
+    tooltip: {
+      trigger: 'axis', confine: true, backgroundColor: 'rgba(15, 23, 42, 0.92)', borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 12 },
+      formatter(params) {
+        const item = params?.[0]?.data || {}
+        return [`<strong>${item.date || ''}</strong>`, `总 Token：${formatNumber(item.total)}`, `输入：${formatNumber(item.input)}`, `输出：${formatNumber(item.output)}`, `调用次数：${formatNumber(item.calls)}`].join('<br/>')
+      }
+    },
+    xAxis: { type: 'category', boundaryGap: false, data: points.map(p => p.date), axisTick: { show: false }, axisLine: { lineStyle: { color: borderColor } }, axisLabel: { color: textColor, fontSize: 11, formatter: shortDate, hideOverlap: true } },
+    yAxis: { type: 'value', min: 0, splitNumber: 4, axisLabel: { color: textColor, fontSize: 11, formatter: formatCompactNumber }, splitLine: { lineStyle: { color: borderColor, type: 'dashed', opacity: 0.7 } } },
+    series: [{ name: 'Token', type: 'line', smooth: true, showSymbol: false, symbolSize: 5, connectNulls: true, data: points, encode: { x: 'date', y: 'total' }, lineStyle: { width: 3, color: primaryColor, cap: 'round' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(99, 102, 241, 0.28)' }, { offset: 1, color: 'rgba(99, 102, 241, 0.02)' }]) } }]
+  }
+}
+function renderUsageTrendChart() {
+  if (!usageTrendChartRef.value || !usageDaily.value.length) return
+  if (!usageTrendChart) usageTrendChart = echarts.init(usageTrendChartRef.value)
+  usageTrendChart.setOption(buildUsageTrendOption(), true)
+}
+async function refreshUsageTrendChart() { await nextTick(); renderUsageTrendChart(); usageTrendChart?.resize() }
+function observeUsageTrendChart() {
+  if (!usageTrendChartRef.value || usageResizeObserver) return
+  usageResizeObserver = new ResizeObserver(() => usageTrendChart?.resize())
+  usageResizeObserver.observe(usageTrendChartRef.value)
+}
+function disposeUsageTrendChart() { usageResizeObserver?.disconnect(); usageResizeObserver = null; usageTrendChart?.dispose(); usageTrendChart = null }
+async function loadUsageStats() {
+  usageLoading.value = true; usageError.value = ''
+  try {
+    const data = await api('GET', `/admin/token-usage/by-room?days=${usageDays.value}`)
+    const result = data.result || {}
+    usageRooms.value = result.rooms || []
+    usageDaily.value = result.daily || []
+    Object.assign(usageTotals, { input_tokens: toInt(result.totals?.input_tokens), output_tokens: toInt(result.totals?.output_tokens), total_tokens: toInt(result.totals?.total_tokens), call_count: toInt(result.totals?.call_count), room_count: toInt(result.totals?.room_count) })
+    usageLoaded.value = true
+    refreshUsageTrendChart()
+  } catch (e) { usageError.value = e?.message || '加载 token 用量失败' } finally { usageLoading.value = false }
+}
+function setUsageDays(days) { if (usageDays.value === days) return; usageDays.value = days; loadUsageStats() }
 
 const showCustomThreshold = ref(false)
 const customThresholdVal = ref(10)
@@ -542,6 +708,7 @@ onMounted(() => {
   loadAllSkills()
   loadHubSettings()
 })
+onBeforeUnmount(disposeUsageTrendChart)
 </script>
 
 <style scoped>
@@ -1289,4 +1456,37 @@ onMounted(() => {
     font-size: 14px;
   }
 }
+
+.usage-section { display: flex; flex-direction: column; gap: 18px; }
+.usage-title-row { align-items: flex-start; gap: 12px; }
+.section-subtitle { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
+.usage-range-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.range-btn { border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-secondary); border-radius: 999px; padding: 7px 12px; cursor: pointer; font-size: 13px; }
+.range-btn.active { color: #fff; border-color: var(--primary-color); background: var(--primary-color); }
+.usage-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.usage-card { border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.usage-card-label { color: var(--text-secondary); font-size: 12px; }
+.usage-card strong { font-size: 22px; color: var(--text-primary); }
+.usage-chart { border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-secondary); padding: 16px; }
+.usage-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.usage-chart-head span { font-weight: 700; color: var(--text-primary); }
+.usage-chart-head small { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+.usage-chart-peak { color: var(--primary-color); font-size: 13px; font-weight: 600; }
+.usage-line-chart { width: 100%; min-height: 260px; }
+.usage-echarts-trend { width: 100%; height: 260px; }
+.usage-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 14px; }
+.usage-table { width: 100%; border-collapse: collapse; min-width: 560px; background: var(--bg-secondary); }
+.usage-table th, .usage-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border-color); }
+.usage-table th { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.usage-table td { color: var(--text-primary); font-size: 13px; }
+.empty-cell { text-align: center !important; color: var(--text-secondary) !important; }
+
+@media (max-width: 768px) {
+  .usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .usage-title-row { flex-direction: column; }
+  .usage-line-chart, .usage-echarts-trend { min-height: 220px; height: 220px; }
+  .usage-table th:nth-child(3), .usage-table td:nth-child(3), .usage-table th:nth-child(4), .usage-table td:nth-child(4) { display: none; }
+  .usage-table { min-width: 360px; }
+}
+
 </style>

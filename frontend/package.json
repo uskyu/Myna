@@ -12,7 +12,8 @@
     "dompurify": "^3.4.8",
     "lucide-vue-next": "^1.0.0",
     "marked": "^18.0.4",
-    "vue": "^3.5.34"
+    "vue": "^3.5.34",
+    "echarts": "^5.6.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.6",
