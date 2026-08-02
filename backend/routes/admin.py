@@ -5,6 +5,7 @@ import os
 import json
 import asyncio
 import re
+import threading
 from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
@@ -14,6 +15,72 @@ from paths import APP_ROOT, PROFILES_ROOT, WORKSPACES_ROOT
 router = APIRouter()
 
 MENTION_RE = r"@([^\s@,，.。;；:：!！?？]+)"
+RESERVED_AGENT_IDS = {"system", "user", "__system__", "__all__"}
+_project_creation_lock = threading.Lock()
+DEFAULT_ORCHESTRATOR_NAME = "任务规划师"
+
+
+def _is_real_agent(agent: dict | None) -> bool:
+    return bool(agent and agent.get("id") not in RESERVED_AGENT_IDS and agent.get("name"))
+
+
+def _get_or_create_planning_orchestrator(db) -> dict | None:
+    """Return the configured orchestrator, or lazily create a default one so planning works out of the box."""
+    for attempt in range(2):
+        orchestrator_id = db.get_hub_setting("orchestrator_agent_id") or db.get_hub_setting("default_orchestrator_agent_id")
+        orchestrator = db.get_agent_by_id(orchestrator_id) if orchestrator_id else None
+        if _is_real_agent(orchestrator):
+            return orchestrator
+        if attempt == 1:
+            return None
+        with _project_creation_lock:
+            orchestrator_id = db.get_hub_setting("orchestrator_agent_id") or db.get_hub_setting("default_orchestrator_agent_id")
+            orchestrator = db.get_agent_by_id(orchestrator_id) if orchestrator_id else None
+            if _is_real_agent(orchestrator):
+                return orchestrator
+            created = db.create_agent(
+                DEFAULT_ORCHESTRATOR_NAME,
+                "默认任务规划协调者：提炼任务目标与交付物，建议所需智能体，等待用户确认后再组织协作。",
+            )
+            db.set_hub_setting("default_orchestrator_agent_id", created["id"])
+            return created
+    return None
+
+
+def _compact_task_name(text: str) -> str:
+    """Create a short, stable label for a task room."""
+    value = re.sub(r"<!--.*?-->", " ", str(text or ""), flags=re.S)
+    value = re.sub(r"https?://\S+|/uploads/\S+", " ", value)
+    value = re.sub(r"[\s/\\`*_#>\[\](){}<>\"'“”‘’：:，,。.!！?？;；]+", "", value)
+    for marker in ("PPT", "视觉提示词", "保留原有格式"):
+        if marker in value and len(value.rsplit(marker, 1)[1]) >= 3:
+            value = value.rsplit(marker, 1)[1]
+            break
+    prefixes = (
+        "请根据以下主题生成一份结构完整可演示的PPT",
+        "请根据以下需求生成高质量图像并先完善视觉提示词",
+        "请翻译以下内容并保留原有格式",
+        "请帮我", "帮我", "请给我", "给我", "请", "需要", "我想要", "我想",
+        "创建", "生成", "制作", "做一个", "做一份", "一个", "一份",
+    )
+    suffixes = ("一下", "一个", "一份", "相关", "内容", "任务", "工作")
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            if value.startswith(prefix) and len(value) - len(prefix) >= 3:
+                value = value[len(prefix):]
+                changed = True
+                break
+    for suffix in suffixes:
+        if value.endswith(suffix) and len(value) - len(suffix) >= 3:
+            value = value[:-len(suffix)]
+            break
+    chars = [char for char in value if "\u4e00" <= char <= "\u9fff"]
+    if len(chars) >= 3:
+        return "".join(chars[:5])
+    compact = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]", "", value)
+    return compact[:5] if len(compact) >= 3 else "任务规划"
 
 
 def get_db(request: Request):
@@ -129,6 +196,124 @@ async def create_room(request: Request):
         return JSONResponse({"ok": False, "error": "name is required"}, status_code=400)
     room = db.create_room(name, body.get("description", ""), body.get("type", "group"))
     return {"ok": True, "result": room}
+
+
+@router.post("/collaboration/planning-room")
+async def create_collaboration_planning_room(request: Request):
+    """Create an isolated room where the default orchestrator plans one task."""
+    db = get_db(request)
+    db.ensure_system_agents()
+    orchestrator = _get_or_create_planning_orchestrator(db)
+    if not _is_real_agent(orchestrator):
+        return JSONResponse({"ok": False, "error": "Default orchestrator is not configured"}, status_code=400)
+    orchestrator_id = orchestrator["id"]
+    room = db.create_room("新任务规划", "先规划任务并确认协作角色", "group")
+    db.add_member(room["id"], "user", "owner")
+    db.add_member(room["id"], orchestrator_id, "coordinator")
+    db.update_room_settings(room["id"], {
+        "collaboration_mode": "planning",
+        "planning_orchestrator_id": orchestrator_id,
+        "room_guide": "先规划任务并建议所需智能体，用户确认前不得创建智能体或开始执行。",
+    })
+    room["members"] = db.get_room_members(room["id"])
+    return {"ok": True, "result": room}
+
+
+@router.post("/collaboration/projects")
+async def confirm_collaboration_project(request: Request):
+    """Create proposed agents only after the user confirms an orchestrator message."""
+    db = get_db(request)
+    body = await request.json()
+    source_room_id = str(body.get("source_room_id") or "").strip()
+    source_message_id = str(body.get("source_message_id") or "").strip()
+    if not source_room_id or not source_message_id:
+        return JSONResponse({"ok": False, "error": "Proposal source is required"}, status_code=400)
+    source_room = db.get_room(source_room_id)
+    if not source_room:
+        return JSONResponse({"ok": False, "error": "Source room not found"}, status_code=404)
+
+    settings = db.get_room_settings(source_room_id)
+    orchestrator_id = settings.get("planning_orchestrator_id")
+    if settings.get("project_proposal_source_message_id") == source_message_id:
+        source_room["members"] = db.get_room_members(source_room_id)
+        return {"ok": True, "result": {"room": source_room, "agents": source_room["members"], "existing": True}}
+    if settings.get("collaboration_mode") != "planning" or not orchestrator_id:
+        return JSONResponse({"ok": False, "error": "Source room is not awaiting confirmation"}, status_code=400)
+
+    ph = db._placeholder()
+    source_message = db.fetchone(
+        f"SELECT id, sender_id, text FROM messages WHERE id = {ph} AND room_id = {ph}",
+        (source_message_id, source_room_id),
+    )
+    if not source_message or source_message.get("sender_id") != orchestrator_id:
+        return JSONResponse({"ok": False, "error": "Invalid collaboration proposal"}, status_code=400)
+
+    proposal_match = re.search(r"```myna-project-proposal\s*([\s\S]*?)```", source_message.get("text") or "", re.I)
+    try:
+        proposal = json.loads(proposal_match.group(1).strip()) if proposal_match else None
+    except (ValueError, TypeError):
+        proposal = None
+    if not isinstance(proposal, dict):
+        return JSONResponse({"ok": False, "error": "Message has no valid collaboration proposal"}, status_code=400)
+    project_name = _compact_task_name(proposal.get("project_name") or source_message.get("text") or "")
+    summary = str(proposal.get("summary") or "").strip()[:1000]
+    roles = proposal.get("roles")
+    if not isinstance(roles, list) or not 1 <= len(roles) <= 8:
+        return JSONResponse({"ok": False, "error": "Proposal must contain 1 to 8 roles"}, status_code=400)
+
+    normalized_roles = []
+    for item in roles:
+        if not isinstance(item, dict):
+            return JSONResponse({"ok": False, "error": "Invalid role"}, status_code=400)
+        role_name = str(item.get("name") or "").strip()[:40]
+        responsibility = str(item.get("responsibility") or "").strip()[:500]
+        if not role_name or not responsibility:
+            return JSONResponse({"ok": False, "error": "Role name and responsibility are required"}, status_code=400)
+        normalized_roles.append({"name": role_name, "responsibility": responsibility})
+
+    with _project_creation_lock:
+        settings = db.get_room_settings(source_room_id)
+        if settings.get("project_proposal_source_message_id") == source_message_id:
+            source_room["members"] = db.get_room_members(source_room_id)
+            return {"ok": True, "result": {"room": source_room, "agents": source_room["members"], "existing": True}}
+
+        db.execute(
+            f"UPDATE rooms SET name = {ph}, description = {ph} WHERE id = {ph}",
+            (project_name, summary, source_room_id),
+        )
+        db.commit()
+        source_room.update({"name": project_name, "description": summary})
+        created_agents = []
+        guide_lines = [f"项目目标：{summary or project_name}", "", "角色分工："]
+        for role in normalized_roles:
+            agent_name = f"{project_name}-{role['name']}"[:80]
+            description = f"你是“{project_name}”项目的{role['name']}，负责：{role['responsibility']}"
+            agent = db.create_agent(agent_name, description)
+            db.add_member(source_room_id, agent["id"], "member")
+            created_agents.append({key: value for key, value in agent.items() if key != "api_key"})
+            guide_lines.append(f"- @{agent_name}：{role['responsibility']}")
+        db.update_room_settings(source_room_id, {
+            "project_proposal_source_message_id": source_message_id,
+            "collaboration_mode": "guided",
+            "room_guide": "\n".join(guide_lines),
+        })
+        source_room["members"] = db.get_room_members(source_room_id)
+        kickoff_text = "用户已确认协作方案。请各智能体根据群聊目标和角色分工开始工作，先说明执行计划，再推进交付物。"
+        kickoff_message = db.create_message(source_room_id, "system", kickoff_text, "markdown", None, [])
+
+    ws_manager = get_ws(request)
+    await ws_manager.notify_ui({"type": "new_message", "room_id": source_room_id, "message": kickoff_message})
+    from ai_engine import process_message
+    agent_ids = [agent["id"] for agent in created_agents]
+
+    async def _start_confirmed_project():
+        try:
+            await process_message(db, ws_manager, source_room_id, "user", kickoff_text, agent_ids, "group")
+        except Exception as exc:
+            print(f"[AI] confirmed project startup error: {exc}")
+
+    asyncio.create_task(_start_confirmed_project())
+    return {"ok": True, "result": {"room": source_room, "agents": created_agents, "existing": False}}
 
 
 @router.put("/rooms/{room_id}")
@@ -282,6 +467,18 @@ async def send_message(room_id: str, request: Request):
 
     room = db.get_room(room_id)
     room_type = room["type"] if room else "group"
+
+    room_settings = db.get_room_settings(room_id) if room_type == "group" else {}
+    if room_settings.get("collaboration_mode") == "planning":
+        orchestrator_id = room_settings.get("planning_orchestrator_id")
+        if orchestrator_id and orchestrator_id not in mentions:
+            mentions = [orchestrator_id]
+        if not db.get_room_messages(room_id, 1):
+            db.execute(
+                f"UPDATE rooms SET name = {db._placeholder()} WHERE id = {db._placeholder()}",
+                (_compact_task_name(text), room_id),
+            )
+            db.commit()
 
     await _interrupt_matching_streams(ws_manager, room_id, mentions)
 

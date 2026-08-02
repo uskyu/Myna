@@ -796,6 +796,20 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
     prompt += "\n\n回复使用 Markdown 格式，保持简洁专业。直接执行用户的指令。"
 
     room_settings = room_settings or {}
+    is_planning_orchestrator = (
+        room_settings.get("collaboration_mode") == "planning"
+        and agent.get("id") == room_settings.get("planning_orchestrator_id")
+    )
+    if is_planning_orchestrator:
+        prompt += """
+
+[任务规划与确认]
+你是当前任务的规划协调者。先提炼任务目标、交付物和约束，并建议完成任务所需的专业智能体；不要直接执行任务。
+提出建议时不得自行创建群聊或智能体，必须等待用户在界面确认。先用简洁文字解释方案，然后在回复末尾原样输出一个合法 JSON 代码块：
+```myna-project-proposal
+{"project_name":"3到5字任务名称","summary":"项目目标与交付物","roles":[{"name":"开发","responsibility":"实现功能并完成基础自测"},{"name":"测试","responsibility":"制定测试方案并独立验收"}]}
+```
+规则：JSON 仅包含 project_name、summary、roles；roles 为 1-8 个角色，每项只含 name 和 responsibility；不要声称项目已经创建。"""
     collaboration_mode = _room_collaboration_mode(room_settings)
     room_description = (room or {}).get("description") or room_settings.get("room_description") or ""
     guide_text = room_settings.get("collaboration_guide", "")

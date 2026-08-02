@@ -5,6 +5,9 @@
   <div v-else class="app" :class="{ 'desktop-layout': isDesktop }">
     <!-- Desktop sidebar (icon bar) -->
     <div class="desktop-sidebar" v-if="isDesktop">
+      <div class="sidebar-icon" :class="{ active: page === 'assistant' }" @click="openAssistantHome" :title="tr('个人助手')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a6 6 0 0 0-6 6v2a4 4 0 0 1-2 3.46V17h16v-2.54A4 4 0 0 1 18 11V9a6 6 0 0 0-6-6Z"/><path d="M9 21h6"/></svg>
+      </div>
       <div class="sidebar-icon" :class="{ active: page === 'chats' }" @click="page = 'chats'" :title="tr('消息')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </div>
@@ -24,8 +27,11 @@
     </div>
 
     <template v-if="isDesktop">
+      <div v-if="page === 'assistant'" class="desktop-workspace-panel">
+        <AssistantHome :assistant-name="assistantName" @renamed="assistantName = $event" @start-chat="startAssistantChat" />
+      </div>
       <!-- Chat keeps the existing desktop two-pane behavior. -->
-      <template v-if="page === 'chats'">
+      <template v-else-if="page === 'chats'">
         <div class="desktop-list-panel">
           <ChatList @open-chat="openChat" @create-room="showModal('room')" />
         </div>
@@ -63,6 +69,7 @@
     <!-- Mobile layout (original) -->
     <template v-if="!isDesktop">
       <div class="app-inner">
+        <AssistantHome v-if="page === 'assistant'" :assistant-name="assistantName" @renamed="assistantName = $event" @start-chat="startAssistantChat" />
         <ChatList v-if="page === 'chats'" @open-chat="openChat" @create-room="showModal('room')">
           <template #header-actions>
             <div v-if="!currentRoom" class="language-switcher language-switcher-inline" :aria-label="tr('语言')">
@@ -98,6 +105,10 @@
         <AgentDetail v-if="currentAgent" :key="currentAgent.id" :agent="currentAgent" @close="currentAgent = null" @delete="deleteAgent" />
       </div>
       <div class="bottom-nav" v-if="!currentRoom && !currentAgent">
+        <div class="nav-item" :class="{ active: page === 'assistant' }" @click="openAssistantHome">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a6 6 0 0 0-6 6v2a4 4 0 0 1-2 3.46V17h16v-2.54A4 4 0 0 1 18 11V9a6 6 0 0 0-6-6Z"/><path d="M9 21h6"/></svg>
+          <span class="label">{{ tr('助手') }}</span>
+        </div>
         <div class="nav-item" :class="{ active: page === 'chats' }" @click="page = 'chats'">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="label">{{ tr('消息') }}</span>
@@ -189,16 +200,18 @@ import AdminCenter from './components/AdminCenter.vue'
 import RoomModal from './components/RoomModal.vue'
 import AgentModal from './components/AgentModal.vue'
 import LoginPage from './components/LoginPage.vue'
+import AssistantHome from './AssistantHome.vue'
 import { api, ws, auth, setAuthToken, clearAuth, updateInfo, checkForUpdate, store, loadConversations, loadAgents } from './store.js'
 import { currentLanguage, initI18n, languages, languageState, setLanguage, translatePageNow, tr } from './i18n.js'
 
 const isAuthenticated = ref(false)
-const page = ref('chats')
+const page = ref('assistant')
 const currentRoom = ref(null)
 const currentRoomType = ref('group')
 const currentAgent = ref(null)
 const languageMenuOpen = ref(false)
 const modals = reactive({ room: false, agent: false })
+const assistantName = ref(localStorage.getItem('assistant_name') || '马哥')
 
 // Desktop detection (reactive)
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0)
@@ -221,6 +234,33 @@ function closeLanguageMenuOnOutsideClick(event) {
 
 provide('page', page)
 provide('isDesktop', isDesktop)
+
+function openAssistantHome() {
+  currentRoom.value = null
+  currentAgent.value = null
+  page.value = 'assistant'
+  history.replaceState({ view: 'assistant' }, '', '#')
+}
+
+async function startAssistantChat(options) {
+  const created = await api('POST', '/admin/collaboration/planning-room', {})
+  if (!created?.ok || !created.result?.id) {
+    window.alert(created?.error || '创建规划房间失败，请检查 orchestrator 配置')
+    return
+  }
+  const prompt = String(options?.prompt || '').trim()
+  if (prompt) {
+    const sent = await api('POST', `/admin/rooms/${created.result.id}/send`, { text: prompt, mentions: [] })
+    if (sent?.ok === false) {
+      window.alert(sent?.error || '发送消息失败')
+      return
+    }
+  }
+  await loadConversations()
+  const room = store.rooms.find(item => item.id === created.result.id) || created.result
+  page.value = 'chats'
+  openChat(room, 'group')
+}
 
 // Fix page overlap: clear opposite panel when switching pages
 watch(page, (newPage) => {
@@ -328,7 +368,7 @@ async function deleteAgent(id) {
 async function restoreRouteFromHash() {
   const match = window.location.hash.match(/^#(chat|agent)\/([^?&]+)/)
   if (!match) {
-    history.replaceState({ view: 'list' }, '', '#')
+    openAssistantHome()
     return
   }
 
