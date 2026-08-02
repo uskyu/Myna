@@ -748,6 +748,71 @@ class BaseDatabase:
             ORDER BY date DESC
         """, (agent_id,))
 
+    def _token_days_filter(self, days: int = 30):
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            days = 30
+        if days <= 0:
+            return "", ()
+        if isinstance(self, MySQLDatabase):
+            return f"WHERE date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)", ()
+        return f"WHERE date >= date('now', '-{days} days')", ()
+
+    def _empty_daily_token_row(self, day: str) -> dict:
+        return {"date": day, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+
+    def _fill_token_daily_gaps(self, daily: list, days: int = 30) -> list:
+        from datetime import datetime, timedelta
+        try:
+            days = max(1, int(days))
+        except (TypeError, ValueError):
+            days = 30
+        if days <= 0:
+            return daily
+        by_date = {str(row.get("date")): dict(row) for row in daily}
+        today = datetime.now().date()
+        start = today - timedelta(days=days - 1)
+        return [by_date.get((start + timedelta(days=i)).isoformat(), self._empty_daily_token_row((start + timedelta(days=i)).isoformat())) for i in range(days)]
+
+    def get_token_daily_by_room(self, days: int = 30) -> dict:
+        """Get token usage aggregated by room plus a daily trend."""
+        where, params = self._token_days_filter(days)
+        rooms = self.fetchall(f"""
+            SELECT COALESCE(tud.room_id, '') as room_id,
+                   COALESCE(r.name, '未知 Room') as room_name,
+                   COALESCE(SUM(tud.input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(tud.output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(tud.total_tokens), 0) as total_tokens,
+                   COUNT(*) as call_count
+            FROM token_usage_daily tud
+            LEFT JOIN rooms r ON r.id = tud.room_id
+            {where}
+            GROUP BY COALESCE(tud.room_id, ''), COALESCE(r.name, '未知 Room')
+            ORDER BY total_tokens DESC
+        """, params)
+        daily = self.fetchall(f"""
+            SELECT date,
+                   COALESCE(SUM(input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(total_tokens), 0) as total_tokens,
+                   COUNT(*) as call_count
+            FROM token_usage_daily
+            {where}
+            GROUP BY date
+            ORDER BY date ASC
+        """, params)
+        totals = self.fetchone(f"""
+            SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(total_tokens), 0) as total_tokens,
+                   COUNT(*) as call_count,
+                   COUNT(DISTINCT room_id) as room_count
+            FROM token_usage_daily
+            {where}
+        """, params) or {}
+        return {"rooms": rooms, "daily": self._fill_token_daily_gaps(daily, days) if int(days or 0) > 0 else daily, "totals": totals}
+
     def get_token_daily_totals(self) -> dict:
         """Get overall token usage totals."""
         row = self.fetchone("""

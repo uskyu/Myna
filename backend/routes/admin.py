@@ -1463,6 +1463,22 @@ async def token_usage_by_agent(request: Request):
     return {"ok": True, "result": daily}
 
 
+@router.get("/token-usage/by-room")
+async def token_usage_by_room(request: Request):
+    """Get per-room token usage totals and daily trend. Requires auth."""
+    if not is_authenticated(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    db = get_db(request)
+    try:
+        days = int(request.query_params.get("days", "30"))
+    except (TypeError, ValueError):
+        days = 30
+    days = max(0, min(days, 365))
+    usage = db.get_token_daily_by_room(days)
+    return {"ok": True, "result": usage}
+
+
 @router.get("/token-usage/agent/{agent_id}")
 async def token_usage_single_agent(agent_id: str, request: Request):
     """Get token usage history for a specific agent. Requires auth."""
