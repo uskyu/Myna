@@ -125,6 +125,12 @@
                 </button>
               </span>
             </div>
+            <div v-if="projectProposal(msg)" class="project-proposal-action">
+              <button class="guide-cta" :disabled="confirmingProjects[msg.id]" @click.stop="confirmProject(msg)">
+                {{ confirmingProjects[msg.id] ? '正在创建智能体...' : '确认方案并创建智能体' }}
+              </button>
+              <span>确认前不会创建智能体或开始执行</span>
+            </div>
             <!-- Inline edit textarea -->
             <div v-if="editingMsgId === msg.id" class="msg-edit-box" @click.stop>
               <textarea v-model="editingMsgText" rows="2" class="msg-edit-input" @keydown.enter.ctrl.prevent="saveEditMsg(msg)" @keydown.escape="cancelEditMsg"></textarea>
@@ -369,7 +375,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, clearUnread, currentRoomId, chatSettings, saveChatSettings, markStreamInterrupted } from '../store.js'
+import { store, api, ws, escapeHtml, getAgentColor, getAgentIcon, loadConversations, loadAgents, clearUnread, currentRoomId, chatSettings, saveChatSettings, markStreamInterrupted } from '../store.js'
 import RoomInfoPanel from './RoomInfoPanel.vue'
 
 const props = defineProps({ room: Object, type: String })
@@ -397,6 +403,33 @@ const activeThreadId = ref(null)
 const threadDrawerOpen = ref(false)
 const showPlusMenu = ref(false)
 const showShortcutBar = ref(false)
+const confirmingProjects = ref({})
+
+function projectProposal(msg) {
+  if (!msg || msg.streaming || msg.sender_id === 'user' || msg.sender_id === 'system') return null
+  const match = String(msg.text || '').match(/```myna-project-proposal\s*([\s\S]*?)```/i)
+  if (!match) return null
+  try { return JSON.parse(match[1].trim()) } catch { return null }
+}
+
+async function confirmProject(msg) {
+  if (confirmingProjects.value[msg.id]) return
+  confirmingProjects.value[msg.id] = true
+  try {
+    const data = await api('POST', '/admin/collaboration/projects', {
+      source_room_id: props.room.id,
+      source_message_id: String(msg.id),
+    })
+    if (!data.ok) throw new Error(data.error || '创建失败')
+    await Promise.all([loadAgents(), loadConversations({ force: true })])
+    Object.assign(props.room, data.result.room)
+    showToast(data.result.existing ? '该方案已经确认' : `已创建 ${data.result.agents.length} 个智能体`)
+  } catch (error) {
+    showToast(error.message || '创建智能体失败')
+  } finally {
+    confirmingProjects.value[msg.id] = false
+  }
+}
 
 const SHORTCUT_POS_KEY = 'myna_shortcut_btn_pos'
 const btnLeft = ref(null)
