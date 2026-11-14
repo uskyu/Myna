@@ -18,22 +18,26 @@
     <!-- Members (right below header, like WeChat/QQ) -->
     <div class="info-section members-section">
       <div class="member-grid">
-        <div v-for="m in members" :key="m.id" class="member-cell">
-          <div class="member-avatar" :style="{ background: getAgentColor(agentColorIdx(m.id)) }">
+        <div v-for="m in members" :key="m.id" class="member-cell" :class="{ editable: isEditableMember(m) }">
+          <button
+            class="member-avatar member-avatar-btn"
+            :style="{ background: getAgentColor(agentColorIdx(m.id)) }"
+            :disabled="!isEditableMember(m)"
+            :title="isEditableMember(m) ? '编辑智能体' : m.name"
+            @click="openAgentEditor(m)"
+          >
             <span v-html="getAgentIcon(agentColorIdx(m.id))"></span>
-          </div>
+          </button>
           <div class="member-cell-name">{{ m.name }}</div>
-          <button v-if="m.id !== 'user'" class="member-remove-btn" @click="removeMember(m)" title="移出群聊">×</button>
+          <button v-if="m.id !== 'user'" class="member-remove-btn" @click.stop="removeMember(m)" title="移出群聊">×</button>
         </div>
-      </div>
-        <div v-if="available.length" class="member-cell add-cell" @click="showMemberPicker = true">
+        <div class="member-cell add-cell" @click="showMemberPicker = true">
           <div class="member-avatar add-avatar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
           </div>
           <div class="member-cell-name">添加</div>
         </div>
-
-
+      </div>
 
       <!-- Member picker modal -->
       <div v-if="showMemberPicker" class="skill-picker-overlay" @click.self="closeMemberPicker">
@@ -70,10 +74,22 @@
                 </button>
               </div>
             </div>
+            <div v-if="available.length > 0" class="agent-search-bar">
+              <input
+                ref="memberSearchInput"
+                class="agent-search-input"
+                v-model.trim="memberSearchQuery"
+                type="search"
+                placeholder="搜索智能体名称或描述"
+                autocomplete="off"
+              >
+              <button v-if="memberSearchQuery" class="agent-search-clear" @click="memberSearchQuery = ''" title="清空搜索">×</button>
+            </div>
             <div v-if="available.length === 0" class="skill-picker-empty">没有可添加的智能体了</div>
+            <div v-else-if="filteredAvailable.length === 0" class="skill-picker-empty">没有匹配的智能体</div>
             <template v-else>
               <div class="skill-picker-list">
-                <div v-for="a in available" :key="a.id" class="skill-picker-item" @click="addMember(a)">
+                <div v-for="a in filteredAvailable" :key="a.id" class="skill-picker-item" @click="addMember(a)">
                   <div class="member-avatar small" :style="{ background: getAgentColor(agentColorIdx(a.id)) }">
                     <span v-html="getAgentIcon(agentColorIdx(a.id))"></span>
                   </div>
@@ -91,6 +107,39 @@
           <div class="skill-picker-footer">
             <span></span>
             <button class="btn-sm primary" @click="closeMemberPicker">完成</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent editor modal -->
+      <div v-if="showAgentEditor" class="skill-picker-overlay" @click.self="closeAgentEditor">
+        <div class="skill-picker-modal agent-editor-modal">
+          <div class="skill-picker-header">
+            <h4>编辑智能体</h4>
+            <button class="close-btn" @click="closeAgentEditor">×</button>
+          </div>
+          <div class="agent-editor-body">
+            <label class="create-agent-label">智能体名称</label>
+            <input class="create-agent-input" v-model.trim="agentEditForm.name" placeholder="智能体名称">
+            <label class="create-agent-label">提示词 / 职责描述</label>
+            <textarea class="create-agent-textarea agent-editor-textarea" v-model="agentEditForm.description" placeholder="输入该智能体的提示词、角色职责或行为要求" rows="6"></textarea>
+            <label class="create-agent-label">模型配置</label>
+            <select class="create-agent-select" v-model="agentEditForm.model_config_id">
+              <option value="">使用默认模型配置</option>
+              <option v-for="m in modelConfigs" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
+            </select>
+            <div v-if="selectedEditAgentModel" class="create-agent-model-preview">
+              <span>{{ selectedEditAgentModel.provider }}</span>
+              <span>{{ selectedEditAgentModel.base_url }}</span>
+            </div>
+            <div v-else-if="modelConfigs.length === 0" class="create-agent-model-preview">暂无可选模型，将使用默认配置</div>
+            <div class="agent-editor-status">{{ agentEditStatus }}</div>
+          </div>
+          <div class="skill-picker-footer agent-editor-footer">
+            <button class="btn-sm" @click="closeAgentEditor">取消</button>
+            <button class="btn-sm primary" :disabled="savingAgent || !agentEditForm.name" @click="saveAgentEditor">
+              {{ savingAgent ? '保存中...' : '保存配置' }}
+            </button>
           </div>
         </div>
       </div>
@@ -360,7 +409,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { api, store, getAgentColor, getAgentIcon, loadConversations } from '../store.js'
+import { api, store, getAgentColor, getAgentIcon, loadConversations, isRealAgent } from '../store.js'
 import WorkflowEditor from './WorkflowEditor.vue'
 
 const props = defineProps({ room: Object })
@@ -378,15 +427,23 @@ const roomSkills = ref([])
 const allSkills = ref([])
 const showSkillPicker = ref(false)
 const showMemberPicker = ref(false)
+const memberSearchInput = ref(null)
+const memberSearchQuery = ref('')
 const showCreateAgentForm = ref(false)
+const showAgentEditor = ref(false)
 const showGuideEditor = ref(false)
 const newAgentName = ref('')
 const newAgentDescription = ref('')
 const newAgentModelConfigId = ref('')
 const modelConfigs = ref([])
 const selectedNewAgentModel = computed(() => modelConfigs.value.find(m => m.id === newAgentModelConfigId.value))
+const selectedEditAgentModel = computed(() => modelConfigs.value.find(m => m.id === agentEditForm.model_config_id))
 const creatingAgent = ref(false)
 const createAgentStatus = ref('')
+const savingAgent = ref(false)
+const agentEditStatus = ref('')
+const editingAgentId = ref('')
+const agentEditForm = reactive({ name: '', description: '', model_config_id: '' })
 const guideText = ref('')
 const form = reactive({
   name: props.room.name || '',
@@ -405,8 +462,16 @@ const roomWorkspacePath = ref('')
 const roomWorkspaceMode = ref('default')
 const roomWorkspaceModeLabel = computed(() => roomWorkspaceMode.value === 'custom' ? '绑定目录' : '默认目录')
 
+function closeMemberPicker() {
+  showMemberPicker.value = false
+  showCreateAgentForm.value = false
+  memberSearchQuery.value = ''
+  createAgentStatus.value = ''
+}
+
 function openMemberPicker() {
   showMemberPicker.value = true
+  setTimeout(() => memberSearchInput.value?.focus?.(), 0)
 }
 
 defineExpose({ openMemberPicker })
@@ -482,10 +547,77 @@ async function clearRoomSkills() {
 
 const available = computed(() => {
   const ids = new Set(members.value.map(m => m.id))
-  return store.agents.filter(a => !ids.has(a.id))
+  return store.agents.filter(a => isRealAgent(a) && !ids.has(a.id))
 })
 
+const filteredAvailable = computed(() => {
+  const q = memberSearchQuery.value.trim().toLowerCase()
+  if (!q) return available.value
+  return available.value.filter(a => [a.name, a.description, a.id]
+    .some(v => String(v || '').toLowerCase().includes(q)))
+})
+
+
+
+
+
 const agentColorIdx = (id) => store.agents.findIndex(a => a.id === id)
+const isEditableMember = (member) => isRealAgent(member)
+
+function memberSourceAgent(member) {
+  return store.agents.find(a => a.id === member.id) || member
+}
+
+function openAgentEditor(member) {
+  if (!isEditableMember(member)) return
+  const agent = memberSourceAgent(member)
+  editingAgentId.value = agent.id
+  agentEditForm.name = agent.name || ''
+  agentEditForm.description = agent.description || ''
+  agentEditForm.model_config_id = agent.model_config_id || ''
+  agentEditStatus.value = ''
+  showAgentEditor.value = true
+}
+
+function closeAgentEditor() {
+  if (savingAgent.value) return
+  showAgentEditor.value = false
+  editingAgentId.value = ''
+  agentEditStatus.value = ''
+}
+
+async function saveAgentEditor() {
+  if (!editingAgentId.value || !agentEditForm.name || savingAgent.value) return
+  savingAgent.value = true
+  agentEditStatus.value = ''
+  try {
+    const res = await api('PUT', `/admin/agents/${editingAgentId.value}`, {
+      name: agentEditForm.name,
+      description: agentEditForm.description,
+      model_config_id: agentEditForm.model_config_id || null,
+    })
+    if (!res.ok && res.ok !== undefined) {
+      agentEditStatus.value = res.error || '保存失败'
+      return
+    }
+    const update = {
+      name: agentEditForm.name,
+      description: agentEditForm.description,
+      model_config_id: agentEditForm.model_config_id || null,
+    }
+    store.agents = store.agents.map(a => a.id === editingAgentId.value ? { ...a, ...update } : a)
+    members.value = members.value.map(m => m.id === editingAgentId.value ? { ...m, ...update } : m)
+    await load()
+    await loadConversations()
+    emit('changed')
+    agentEditStatus.value = '已保存'
+    setTimeout(() => { closeAgentEditor() }, 500)
+  } catch (e) {
+    agentEditStatus.value = e.message || '保存失败'
+  } finally {
+    savingAgent.value = false
+  }
+}
 
 let saveTimer = null
 async function saveField(immediate = false) {
@@ -902,6 +1034,17 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
+.member-avatar-btn {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.member-avatar-btn:disabled { cursor: default; }
+.member-cell.editable .member-avatar-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 6px 14px rgba(0,0,0,0.12);
+}
 .member-avatar svg, .member-avatar span svg { width: 18px; height: 18px; color: white; }
 
 /* WeChat-style member grid */
@@ -953,22 +1096,27 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 }
 .add-cell {
   cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.15s;
 }
-.add-cell:hover { opacity: 1; }
 .add-cell:hover .add-avatar {
-  border-color: var(--accent);
-}
-.add-cell:hover .add-avatar svg {
-  color: var(--accent);
+  border-color: var(--text-faint);
+  color: var(--text-faint);
 }
 .add-avatar {
-  border: 2px dashed var(--border-strong, var(--border));
-  background: transparent !important;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px dashed var(--text-faint);
+  background: transparent;
+  color: var(--text-faint);
+  transition: border-color 0.15s ease, color 0.15s ease;
+  cursor: pointer;
 }
-.add-avatar svg { width: 18px; height: 18px; color: var(--text-dim); transition: color 0.15s; }
-
+.add-avatar svg {
+  width: 18px; height: 18px;
+}
+.add-avatar svg, .add-avatar svg path { stroke: var(--text-faint); }
+.add-cell:hover .add-avatar svg, .add-cell:hover .add-avatar svg path { stroke: var(--text-faint); }
 
 .member-info { flex: 1; min-width: 0; }
 .member-name { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -994,6 +1142,43 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 .icon-btn.danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
 
 .add-member-block { margin-top: 12px; }
+.create-agent-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.create-agent-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.create-agent-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+.create-agent-model-preview {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.create-agent-model-preview span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
 
 .setting-row {
   display: flex;
@@ -1032,6 +1217,11 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--shadow-glow);
+}
+
+.group-input {
+  width: min(180px, 45%);
+  text-align: left;
 }
 .setting-hint {
   font-size: 12px;
@@ -1100,6 +1290,7 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 }
 @media (max-width: 720px) {
   .handoff-rule-row { grid-template-columns: 1fr; }
+  .group-input { width: 100%; }
 }
 
 .hint-box {
@@ -1260,6 +1451,48 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+.agent-search-bar {
+  position: relative;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+.agent-search-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 38px 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.agent-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+.agent-search-clear {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agent-search-clear:hover { color: var(--text); background: var(--border); }
 .member-picker-modal .skill-picker-body {
   display: flex;
   flex-direction: column;
@@ -1271,10 +1504,78 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
-.create-agent-textarea {
-  min-height: 46px;
-  line-height: 1.45;
+.create-agent-toggle {
+  width: 100%;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface), var(--accent) 5%);
+  color: var(--text);
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
 }
+.create-agent-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.create-agent-toggle-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+}
+.create-agent-card {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.create-agent-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.create-agent-input,
+.create-agent-textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.create-agent-textarea { resize: vertical; min-height: 46px; line-height: 1.45; }
+.agent-editor-modal { max-height: min(86vh, 720px); }
+.agent-editor-body {
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+.agent-editor-textarea { min-height: 150px; }
+.agent-editor-status { min-height: 18px; font-size: 12px; color: var(--text-dim); }
+.agent-editor-footer { gap: 8px; justify-content: flex-end; }
+@media (max-width: 520px) {
+  .skill-picker-overlay { align-items: flex-end; }
+  .skill-picker-modal { width: 100%; max-width: none; height: 88vh; max-height: calc(100vh - 24px); border-radius: 16px 16px 0 0; }
+  .agent-editor-modal { width: 100%; max-width: none; height: 88vh; max-height: calc(100vh - 24px); border-radius: 16px 16px 0 0; }
+  .agent-editor-footer { flex-direction: column-reverse; }
+  .agent-editor-footer .btn-sm { width: 100%; padding: 8px 12px; }
+}
+.create-agent-input:focus,
+.create-agent-textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.create-agent-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.create-agent-status { min-height: 18px; font-size: 12px; color: var(--text-dim); }
 .skill-picker-empty { padding: 30px 20px; text-align: center; color: var(--text-dim); }
 .skill-picker-list { padding: 8px 0; }
 .skill-picker-item {
@@ -1287,6 +1588,7 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 .skill-picker-desc { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skill-picker-origin { font-size: 11px; color: var(--accent); }
 .skill-picker-footer {
+  flex: 0 0 auto;
   display: flex; justify-content: space-between; padding: 12px 20px;
   border-top: 1px solid var(--border);
 }
@@ -1346,3 +1648,4 @@ onMounted(() => { load(); loadWorkflows(); loadRoomSkills(); loadAllSkills(); lo
 .member-avatar.small span { width: 16px; height: 16px; }
 .member-avatar.small :deep(svg) { width: 16px; height: 16px; }
 </style>
+

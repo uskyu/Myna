@@ -9,11 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx-preview": "^0.4.0",
     "dompurify": "^3.4.8",
+    "echarts": "^6.1.0",
+    "katex": "^0.18.4",
     "lucide-vue-next": "^1.0.0",
+    "mammoth": "^1.12.0",
     "marked": "^18.0.4",
+    "pdfjs-dist": "^5.6.205",
     "vue": "^3.5.34",
-    "echarts": "^5.6.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.6",

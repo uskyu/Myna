@@ -12,6 +12,17 @@
       <form v-if="!showChangePwd" @submit.prevent="doLogin" class="login-form">
         <div class="input-group">
           <input
+            ref="usernameInput"
+            v-model="username"
+            type="text"
+            placeholder="用户名（主账号为 admin）"
+            autocomplete="username"
+            :class="{ error: errorMsg }"
+            @input="errorMsg = ''"
+          />
+        </div>
+        <div class="input-group">
+          <input
             ref="pwdInput"
             type="password"
             v-model="password"
@@ -21,7 +32,6 @@
           />
         </div>
         <p v-if="errorMsg" class="error-text">{{ errorMsg }}</p>
-        <p class="login-hint">首次登录默认密码：<code>admin123</code></p>
         <button type="submit" class="login-btn" :disabled="loading">
           {{ loading ? '验证中...' : '进入' }}
         </button>
@@ -57,6 +67,7 @@ import { api, setAuthToken } from '../store.js'
 
 const emit = defineEmits(['authenticated'])
 
+const username = ref('')
 const password = ref('')
 const currentPwd = ref('')
 const newPwd = ref('')
@@ -65,6 +76,7 @@ const errorMsg = ref('')
 const successMsg = ref('')
 const loading = ref(false)
 const showChangePwd = ref(false)
+const usernameInput = ref(null)
 const pwdInput = ref(null)
 
 async function doLogin() {
@@ -74,7 +86,7 @@ async function doLogin() {
   }
   loading.value = true
   errorMsg.value = ''
-  const res = await api('POST', '/auth/login', { password: password.value })
+  const res = await api('POST', '/auth/login', { username: username.value.trim(), password: password.value })
   loading.value = false
   if (res.ok && res.token) {
     setAuthToken(res.token)
@@ -115,7 +127,7 @@ async function doChangePassword() {
 }
 
 onMounted(() => {
-  nextTick(() => pwdInput.value?.focus())
+  nextTick(() => usernameInput.value?.focus())
 })
 </script>
 

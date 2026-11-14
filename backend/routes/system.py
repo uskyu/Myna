@@ -19,7 +19,7 @@ IS_DOCKER = os.path.exists("/.dockerenv")
 async def get_version():
     """获取当前版本信息"""
     return {
-        "version": "0.7.3",
+        "version": "0.8.0",
         "is_docker": IS_DOCKER,
         "engine": "hermes-agent"
     }

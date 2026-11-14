@@ -5,7 +5,8 @@ Switch via DB_TYPE env var: sqlite (default) or mysql.
 import json
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def get_database(db_path: str = None):
@@ -60,6 +61,23 @@ class BaseDatabase:
     def _rows_to_list(self, rows):
         return [self._row_to_dict(r) for r in rows]
 
+    def _token_usage_timezone(self):
+        timezone_name = os.environ.get("TOKEN_USAGE_TIMEZONE") or os.environ.get("BUSINESS_TIMEZONE") or "Asia/Shanghai"
+        try:
+            return ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            return ZoneInfo("Asia/Shanghai")
+
+    def _token_usage_today(self):
+        return datetime.now(self._token_usage_timezone()).date()
+
+    def _token_usage_today_sql(self):
+        today = self._token_usage_today().isoformat()
+        return self._mysql_date_literal(today) if isinstance(self, MySQLDatabase) else f"date('{today}')"
+
+    def _mysql_date_literal(self, value: str):
+        return f"DATE('{value}')"
+
     def _ensure_column(self, table: str, column: str, definition: str):
         """Idempotently add a column for older deployments."""
         try:
@@ -80,16 +98,17 @@ class BaseDatabase:
             print(f"[DB] Column migration skipped for {table}.{column}: {e}")
 
     # === Agents ===
-    def create_agent(self, name: str, description: str = "", model_config_id: str | None = None) -> dict:
+    def create_agent(self, name: str, description: str = "", model_config_id: str | None = None, tenant_id: str | None = None) -> dict:
+        self._ensure_column("agents", "tenant_id", "TEXT")
         id = str(uuid.uuid4())
         api_key = uuid.uuid4().hex + uuid.uuid4().hex
         ph = self._placeholder()
         self.execute(
-            f"INSERT INTO agents (id, name, api_key, description, status, model_config_id) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (id, name, api_key, description, "online", model_config_id)
+            f"INSERT INTO agents (id, name, api_key, description, status, model_config_id, tenant_id) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (id, name, api_key, description, "online", model_config_id, tenant_id)
         )
         self.commit()
-        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online", "model_config_id": model_config_id}
+        return {"id": id, "name": name, "api_key": api_key, "description": description, "status": "online", "model_config_id": model_config_id, "tenant_id": tenant_id}
 
     def get_agent_by_key(self, api_key: str):
         ph = self._placeholder()
@@ -99,10 +118,18 @@ class BaseDatabase:
         ph = self._placeholder()
         return self.fetchone(f"SELECT * FROM agents WHERE id = {ph}", (id,))
 
-    def list_agents(self) -> list:
+    def list_agents(self, tenant_id: str | None = None) -> list:
+        self._ensure_column("agents", "tenant_id", "TEXT")
+        if tenant_id is not None:
+            ph = self._placeholder()
+            return self.fetchall(
+                "SELECT id, name, description, avatar, status, container_id, model_config_id, "
+                f"execution_mode, self_improve, self_improve_threshold, tools_config, created_at, tenant_id FROM agents WHERE tenant_id = {ph}" ,
+                (tenant_id,),
+            )
         return self.fetchall(
             "SELECT id, name, description, avatar, status, container_id, model_config_id, "
-            "execution_mode, self_improve, self_improve_threshold, tools_config, created_at FROM agents"
+            "execution_mode, self_improve, self_improve_threshold, tools_config, created_at, tenant_id FROM agents"
         )
 
     def update_agent(self, id: str, fields: dict):
@@ -111,8 +138,9 @@ class BaseDatabase:
         vals = []
         allowed = ["name", "description", "status", "model_config_id", "execution_mode",
                    "self_improve", "self_improve_threshold", "tools_config", "container_id"]
+        nullable_allowed = {"model_config_id", "self_improve_threshold"}
         for key in allowed:
-            if key in fields and fields[key] is not None:
+            if key in fields and (fields[key] is not None or key in nullable_allowed):
                 sets.append(f"{key} = {ph}")
                 vals.append(fields[key])
         if not sets:
@@ -133,20 +161,32 @@ class BaseDatabase:
         self.commit()
 
     # === Rooms ===
-    def create_room(self, name: str, description: str = "", type: str = "group") -> dict:
+    def create_room(self, name: str, description: str = "", type: str = "group", tenant_id: str | None = None) -> dict:
+        self._ensure_column("rooms", "tenant_id", "TEXT")
         id = str(uuid.uuid4())
         ph = self._placeholder()
-        self.execute(f"INSERT INTO rooms (id, name, description, type) VALUES ({ph}, {ph}, {ph}, {ph})",
-                     (id, name, description, type))
+        self.execute(f"INSERT INTO rooms (id, name, description, type, tenant_id) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+                     (id, name, description, type, tenant_id))
         self.commit()
-        return {"id": id, "name": name, "description": description, "type": type}
+        return {"id": id, "name": name, "description": description, "type": type, "tenant_id": tenant_id}
 
     def get_room(self, id: str):
         ph = self._placeholder()
         return self.fetchone(f"SELECT * FROM rooms WHERE id = {ph}", (id,))
 
-    def list_rooms(self) -> list:
-        return self.fetchall("SELECT * FROM rooms")
+    def list_rooms(self, tenant_id: str | None = None, room_type: str | None = None) -> list:
+        self._ensure_column("rooms", "tenant_id", "TEXT")
+        ph = self._placeholder()
+        conditions = []
+        params = []
+        if tenant_id is not None:
+            conditions.append(f"tenant_id = {ph}")
+            params.append(tenant_id)
+        if room_type:
+            conditions.append(f"type = {ph}")
+            params.append(room_type)
+        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        return self.fetchall(f"SELECT * FROM rooms{where} ORDER BY created_at DESC", tuple(params))
 
     def delete_room(self, id: str):
         ph = self._placeholder()
@@ -191,6 +231,23 @@ class BaseDatabase:
             WHERE rm.room_id = {ph}
         """, (room_id,))
 
+    def get_room_members_for_rooms(self, room_ids: list[str]) -> dict:
+        if not room_ids:
+            return {}
+        ph = self._placeholder()
+        placeholders = ",".join([ph] * len(room_ids))
+        rows = self.fetchall(f"""
+            SELECT rm.room_id, a.id, a.name, a.status, rm.role
+            FROM room_members rm JOIN agents a ON a.id = rm.agent_id
+            WHERE rm.room_id IN ({placeholders})
+        """, tuple(room_ids))
+        result = {}
+        for row in rows:
+            room_id = row.get("room_id")
+            member = {k: v for k, v in row.items() if k != "room_id"}
+            result.setdefault(room_id, []).append(member)
+        return result
+
     def get_agent_rooms(self, agent_id: str) -> list:
         ph = self._placeholder()
         return self.fetchall(f"""
@@ -199,17 +256,53 @@ class BaseDatabase:
             WHERE rm.agent_id = {ph}
         """, (agent_id,))
 
+    def _message_model_metadata(self, sender_id: str, metadata: dict | None) -> dict | None:
+        if sender_id in ("user", "system", "__system__"):
+            return metadata
+        if metadata and metadata.get("model_name") and metadata.get("model"):
+            return metadata
+        try:
+            agent = self.get_agent_by_id(sender_id)
+            if not agent:
+                return metadata
+            config = self.get_model_config(agent.get("model_config_id")) if agent.get("model_config_id") else None
+            if not config:
+                config = self.get_default_model_config()
+            provider = os.environ.get("AI_PROVIDER_NAME") or os.environ.get("AI_PROVIDER") or "hub"
+            model = os.environ.get("AI_MODEL") or "mimo-v2-omni"
+            if config:
+                provider = (config.get("name") or config.get("provider") or provider or "").strip()
+                model = (config.get("model") or model or "").strip()
+            display_model = f"{provider}/{model}" if provider and model and provider.lower() != model.lower() else (model or provider)
+            if not display_model:
+                return metadata
+            metadata = dict(metadata or {})
+            metadata.setdefault("model_name", display_model)
+            metadata.setdefault("model", display_model)
+            metadata.setdefault("actual_model", display_model)
+            metadata.setdefault("configured_model", model)
+            metadata.setdefault("response_model", display_model)
+        except Exception as e:
+            print(f"[DB] message model metadata fallback skipped: {e}")
+        return metadata
+
     # === Messages ===
     def create_message(self, room_id: str, sender_id: str, text: str,
                        parse_mode: str = "markdown", reply_to=None,
-                       mentions: list = None, metadata: dict = None, thread_id: str = None) -> dict:
+                       mentions: list = None, metadata: dict | None = None, thread_id: str = None,
+                       tenant_id: str | None = None) -> dict:
+        self._ensure_column("messages", "tenant_id", "TEXT")
+        if tenant_id is None:
+            room = self.get_room(room_id)
+            tenant_id = room.get("tenant_id") if room else None
         ph = self._placeholder()
         mentions_json = json.dumps(mentions or [])
+        metadata = self._message_model_metadata(sender_id, metadata)
         metadata_json = json.dumps(metadata) if metadata else None
         self.execute(f"""
-            INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, metadata, thread_id)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-        """, (room_id, sender_id, text, parse_mode, reply_to, mentions_json, metadata_json, thread_id))
+            INSERT INTO messages (room_id, sender_id, text, parse_mode, reply_to_message_id, mentions, metadata, thread_id, tenant_id)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+        """, (room_id, sender_id, text, parse_mode, reply_to, mentions_json, metadata_json, thread_id, tenant_id))
         self.commit()
         msg_id = self.lastrowid()
         if thread_id:
@@ -217,23 +310,137 @@ class BaseDatabase:
             self.commit()
         return {"id": msg_id, "room_id": room_id, "sender_id": sender_id, "text": text,
                 "parse_mode": parse_mode, "reply_to_message_id": reply_to, "mentions": mentions or [],
-                "metadata": metadata, "thread_id": thread_id, "created_at": datetime.now().isoformat()}
+                "metadata": metadata, "thread_id": thread_id, "tenant_id": tenant_id, "created_at": datetime.now().isoformat()}
 
     def get_room_messages(self, room_id: str, limit: int = 50, before_id: int = None) -> list:
         ph = self._placeholder()
+        limit = max(1, min(int(limit or 50), 200))
         if before_id:
             rows = self.fetchall(f"""
-                SELECT m.*, a.name as sender_name FROM messages m
-                JOIN agents a ON a.id = m.sender_id
-                WHERE m.room_id = {ph} AND m.id < {ph} ORDER BY m.id DESC LIMIT {ph}
+                SELECT m.*, COALESCE(a.name, CASE m.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE m.sender_id END) as sender_name
+                FROM (
+                    SELECT * FROM messages
+                    WHERE room_id = {ph} AND id < {ph}
+                    ORDER BY id DESC LIMIT {ph}
+                ) m
+                LEFT JOIN agents a ON a.id = m.sender_id
+                ORDER BY m.id ASC
             """, (room_id, before_id, limit))
         else:
             rows = self.fetchall(f"""
-                SELECT m.*, a.name as sender_name FROM messages m
-                JOIN agents a ON a.id = m.sender_id
-                WHERE m.room_id = {ph} ORDER BY m.id DESC LIMIT {ph}
+                SELECT m.*, COALESCE(a.name, CASE m.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE m.sender_id END) as sender_name
+                FROM (
+                    SELECT * FROM messages
+                    WHERE room_id = {ph}
+                    ORDER BY id DESC LIMIT {ph}
+                ) m
+                LEFT JOIN agents a ON a.id = m.sender_id
+                ORDER BY m.id ASC
             """, (room_id, limit))
-        return list(reversed(rows))
+        return rows
+
+    def get_last_messages_for_rooms(self, room_ids: list[str]) -> dict:
+        if not room_ids:
+            return {}
+        ph = self._placeholder()
+        placeholders = ",".join([ph] * len(room_ids))
+        rows = self.fetchall(f"""
+            SELECT m.id, m.room_id, m.sender_id, SUBSTR(m.text, 1, 500) AS text, m.created_at,
+                   COALESCE(a.name, CASE m.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE m.sender_id END) AS sender_name
+            FROM messages m
+            JOIN (
+                SELECT room_id, MAX(id) AS max_id
+                FROM messages
+                WHERE room_id IN ({placeholders})
+                GROUP BY room_id
+            ) latest ON latest.room_id = m.room_id AND latest.max_id = m.id
+            LEFT JOIN agents a ON a.id = m.sender_id
+        """, tuple(room_ids))
+        return {row["room_id"]: row for row in rows}
+
+    def list_dm_rooms_with_details(self, tenant_id: str | None = None) -> list:
+        self._ensure_column("rooms", "tenant_id", "TEXT")
+        ph = self._placeholder()
+        params: list = []
+        where = "WHERE r.type = 'dm'"
+        if tenant_id is not None:
+            where += f" AND r.tenant_id = {ph}"
+            params.append(tenant_id)
+        sql = f"""
+            WITH dm_rooms AS (
+                SELECT * FROM rooms r {where}
+            ), latest AS (
+                SELECT m.room_id, MAX(m.id) AS max_id
+                FROM messages m
+                JOIN dm_rooms dr ON dr.id = m.room_id
+                GROUP BY m.room_id
+            )
+            SELECT
+                r.*,
+                a.id AS agent_id,
+                a.name AS agent_name,
+                a.description AS agent_description,
+                a.avatar AS agent_avatar,
+                a.status AS agent_status,
+                a.container_id AS agent_container_id,
+                a.model_config_id AS agent_model_config_id,
+                a.execution_mode AS agent_execution_mode,
+                a.self_improve AS agent_self_improve,
+                a.self_improve_threshold AS agent_self_improve_threshold,
+                a.tools_config AS agent_tools_config,
+                a.created_at AS agent_created_at,
+                a.tenant_id AS agent_tenant_id,
+                lm.id AS last_message_id,
+                lm.room_id AS last_message_room_id,
+                lm.sender_id AS last_message_sender_id,
+                SUBSTR(lm.text, 1, 500) AS last_message_text,
+                lm.created_at AS last_message_created_at,
+                COALESCE(sa.name, CASE lm.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE lm.sender_id END) AS last_message_sender_name
+            FROM dm_rooms r
+            LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.agent_id NOT IN ('user', 'system', '__system__', '__all__')
+            LEFT JOIN agents a ON a.id = rm.agent_id
+            LEFT JOIN latest ON latest.room_id = r.id
+            LEFT JOIN messages lm ON lm.id = latest.max_id
+            LEFT JOIN agents sa ON sa.id = lm.sender_id
+            ORDER BY COALESCE(lm.created_at, r.created_at) DESC
+        """
+        rows = self.fetchall(sql, tuple(params))
+        result = []
+        for row in rows:
+            dm = {k: v for k, v in row.items() if not k.startswith("agent_") and not k.startswith("last_message_")}
+            agent = None
+            if row.get("agent_id"):
+                agent = {
+                    "id": row.get("agent_id"),
+                    "name": row.get("agent_name"),
+                    "description": row.get("agent_description") or "",
+                    "avatar": row.get("agent_avatar") or "",
+                    "status": row.get("agent_status"),
+                    "container_id": row.get("agent_container_id"),
+                    "model_config_id": row.get("agent_model_config_id"),
+                    "execution_mode": row.get("agent_execution_mode"),
+                    "self_improve": row.get("agent_self_improve"),
+                    "self_improve_threshold": row.get("agent_self_improve_threshold"),
+                    "tools_config": row.get("agent_tools_config"),
+                    "created_at": row.get("agent_created_at"),
+                    "tenant_id": row.get("agent_tenant_id"),
+                    "role": "member",
+                }
+            last_message = None
+            if row.get("last_message_id") is not None:
+                last_message = {
+                    "id": row.get("last_message_id"),
+                    "room_id": row.get("last_message_room_id"),
+                    "sender_id": row.get("last_message_sender_id"),
+                    "text": row.get("last_message_text"),
+                    "created_at": row.get("last_message_created_at"),
+                    "sender_name": row.get("last_message_sender_name"),
+                }
+            members = [{"id": "user", "name": "user", "status": "online", "role": "member"}]
+            if agent:
+                members.append({"id": agent["id"], "name": agent["name"], "status": agent.get("status"), "role": "member"})
+            result.append({**dm, "members": members, "agent": agent, "last_message": last_message})
+        return result
 
     def get_all_room_messages(self, room_id: str) -> list:
         ph = self._placeholder()
@@ -243,10 +450,42 @@ class BaseDatabase:
             WHERE m.room_id = {ph} ORDER BY m.id ASC
         """, (room_id,))
 
+    def get_room_history(self, room_id: str, limit: int = 20, before_id: int = None,
+                         order: str = "desc", q: str = None, date: str = None,
+                         thread_id: str = None) -> list:
+        ph = self._placeholder()
+        conditions = [f"m.room_id = {ph}"]
+        params = [room_id]
+        if thread_id is not None:
+            conditions.append(f"m.thread_id = {ph}")
+            params.append(thread_id)
+        if before_id is not None:
+            conditions.append(f"m.id < {ph}")
+            params.append(before_id)
+        if q:
+            conditions.append(f"m.text LIKE {ph}")
+            params.append(f"%{q}%")
+        if date:
+            conditions.append(f"DATE(m.created_at) = {ph}")
+            params.append(date)
+        where = " AND ".join(conditions)
+        order_dir = "DESC" if order == "desc" else "ASC"
+        sql = f"""
+            SELECT m.*, a.name as sender_name FROM messages m
+            JOIN agents a ON a.id = m.sender_id
+            WHERE {where} ORDER BY m.id {order_dir} LIMIT {ph}
+        """
+        rows = self.fetchall(sql, tuple(params) + (limit,))
+        return rows
+
     def clear_room_messages(self, room_id: str):
         ph = self._placeholder()
         self.execute(f"DELETE FROM messages WHERE room_id = {ph}", (room_id,))
         self.commit()
+
+    def get_message_by_id(self, id: int):
+        ph = self._placeholder()
+        return self.fetchone(f"SELECT * FROM messages WHERE id = {ph}", (id,))
 
     def update_message(self, id: int, text: str):
         ph = self._placeholder()
@@ -257,6 +496,14 @@ class BaseDatabase:
         ph = self._placeholder()
         self.execute(f"DELETE FROM messages WHERE id = {ph}", (id,))
         self.commit()
+
+
+    def ensure_tenant_columns(self):
+        self._ensure_column("agents", "tenant_id", "TEXT")
+        self._ensure_column("rooms", "tenant_id", "TEXT")
+        self._ensure_column("messages", "tenant_id", "TEXT")
+        self._ensure_column("token_usage", "tenant_id", "TEXT")
+        self._ensure_column("token_usage_daily", "tenant_id", "TEXT")
 
     # === Updates (polling) ===
     def push_update(self, agent_id: str, type: str, payload: dict):
@@ -286,30 +533,38 @@ class BaseDatabase:
 
     # === Model Configs ===
     def create_model_config(self, config: dict) -> dict:
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         ph = self._placeholder()
         id = str(uuid.uuid4())
         self.execute(f"""
-            INSERT INTO model_configs (id, name, provider, base_url, api_key, model, max_tokens, temperature, is_default, params_json)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            INSERT INTO model_configs (id, name, provider, base_url, api_key, model, max_tokens, temperature, is_default, params_json, tenant_id)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
         """, (id, config["name"], config["provider"], config["base_url"], config["api_key"],
               config["model"], config.get("max_tokens", 2048), config.get("temperature", 0.7),
-              1 if config.get("is_default") else 0, config.get("params_json")))
+              1 if config.get("is_default") else 0, config.get("params_json"), config.get("tenant_id")))
         if config.get("is_default"):
-            self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph}", (id,))
+            if config.get("tenant_id") is not None:
+                self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph} AND tenant_id = {ph}", (id, config.get("tenant_id")))
+            else:
+                self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph} AND tenant_id IS NULL", (id,))
         self.commit()
         return {"id": id, **config}
 
     def list_model_configs(self) -> list:
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         return self.fetchall("SELECT * FROM model_configs ORDER BY is_default DESC, created_at ASC")
 
     def get_model_config(self, id: str):
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         ph = self._placeholder()
         return self.fetchone(f"SELECT * FROM model_configs WHERE id = {ph}", (id,))
 
     def get_default_model_config(self):
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         return self.fetchone("SELECT * FROM model_configs WHERE is_default = 1")
 
     def update_model_config(self, id: str, fields: dict):
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         ph = self._placeholder()
         sets = []
         vals = []
@@ -323,7 +578,11 @@ class BaseDatabase:
             sets.append(f"temperature = {ph}"); vals.append(fields["temperature"])
         if fields.get("is_default"):
             sets.append("is_default = 1")
-            self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph}", (id,))
+            current = self.get_model_config(id)
+            if current and current.get("tenant_id") is not None:
+                self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph} AND tenant_id = {ph}", (id, current.get("tenant_id")))
+            else:
+                self.execute(f"UPDATE model_configs SET is_default = 0 WHERE id != {ph} AND tenant_id IS NULL", (id,))
         if not sets:
             return
         vals.append(id)
@@ -331,17 +590,19 @@ class BaseDatabase:
         self.commit()
 
     def delete_model_config(self, id: str):
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         ph = self._placeholder()
         self.execute(f"UPDATE agents SET model_config_id = NULL WHERE model_config_id = {ph}", (id,))
         self.execute(f"DELETE FROM model_configs WHERE id = {ph}", (id,))
         self.commit()
 
-    def delete_model_configs_batch(self, ids: list[str]) -> int:
+    def delete_model_configs_batch(self, ids: list) -> int:
+        self._ensure_column("model_configs", "tenant_id", "TEXT")
         clean_ids = [str(id).strip() for id in ids if str(id).strip()]
         if not clean_ids:
             return 0
         ph = self._placeholder()
-        placeholders = ", ".join([ph] * len(clean_ids))
+        placeholders = ', '.join([ph] * len(clean_ids))
         self.execute(f"UPDATE agents SET model_config_id = NULL WHERE model_config_id IN ({placeholders})", clean_ids)
         cursor = self.execute(f"DELETE FROM model_configs WHERE id IN ({placeholders})", clean_ids)
         self.commit()
@@ -385,14 +646,22 @@ class BaseDatabase:
         self.execute(f"DELETE FROM threads WHERE id = {ph}", (thread_id,))
         self.commit()
 
-    def get_thread_messages(self, thread_id: str, limit: int = 30) -> list:
+    def get_thread_messages(self, thread_id: str, limit: int = 30, before_id: int = None) -> list:
         ph = self._placeholder()
+        limit = max(1, min(int(limit or 30), 200))
+        before = f"AND id < {ph}" if before_id else ""
+        params = (thread_id, before_id, limit) if before_id else (thread_id, limit)
         rows = self.fetchall(f"""
-            SELECT m.*, a.name as sender_name FROM messages m
-            JOIN agents a ON a.id = m.sender_id
-            WHERE m.thread_id = {ph} ORDER BY m.id DESC LIMIT {ph}
-        """, (thread_id, limit))
-        return list(reversed(rows))
+            SELECT m.*, COALESCE(a.name, CASE m.sender_id WHEN 'user' THEN '用户' WHEN 'system' THEN '系统' ELSE m.sender_id END) as sender_name
+            FROM (
+                SELECT * FROM messages
+                WHERE thread_id = {ph} {before}
+                ORDER BY id DESC LIMIT {ph}
+            ) m
+            LEFT JOIN agents a ON a.id = m.sender_id
+            ORDER BY m.id ASC
+        """, params)
+        return rows
 
     # === Workflows ===
     def create_workflow(self, room_id: str, name: str, description: str,
@@ -483,7 +752,16 @@ class BaseDatabase:
         ph = self._placeholder()
         return self.fetchall(f"SELECT * FROM agent_skills WHERE agent_id = {ph} ORDER BY created_at ASC", (agent_id,))
 
-    def get_all_skills(self) -> list:
+    def get_all_skills(self, tenant_id: str | None = None) -> list:
+        self._ensure_column("agents", "tenant_id", "TEXT")
+        if tenant_id is not None:
+            ph = self._placeholder()
+            return self.fetchall(f"""
+                SELECT s.*, a.name as agent_name FROM agent_skills s
+                LEFT JOIN agents a ON s.agent_id = a.id
+                WHERE a.tenant_id = {ph}
+                ORDER BY s.created_at DESC
+            """, (tenant_id,))
         return self.fetchall("""
             SELECT s.*, a.name as agent_name FROM agent_skills s
             LEFT JOIN agents a ON s.agent_id = a.id ORDER BY s.created_at DESC
@@ -584,6 +862,12 @@ class BaseDatabase:
     # === Utility ===
     def ensure_system_agents(self):
         ph = self._placeholder()
+        existing = self.fetchone(
+            f"SELECT COUNT(*) AS count FROM agents WHERE id IN ({ph}, {ph})",
+            ('user', 'system'),
+        )
+        if existing and int(existing.get('count') or 0) == 2:
+            return
         self.execute(
             f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
             ('user', 'user', '__user__', '用户', 'online')
@@ -593,11 +877,6 @@ class BaseDatabase:
         self.execute(
             f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
             ('system', '系统', '__system__', '系统消息', 'online')
-        )
-        # System Agent - handles credentials and git operations
-        self.execute(
-            f"{self._insert_ignore()} INTO agents (id, name, api_key, description, status) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            ('__system__', 'System', '__sysagent__', '系统智能体：管理凭据与配置、提供 Git/SSH 令牌位置、分发共享资源信息', 'online')
         )
         self.commit()
 
@@ -632,14 +911,46 @@ class BaseDatabase:
                            prompt_tokens: int = 0, completion_tokens: int = 0, total_tokens: int = 0):
         ph = self._placeholder()
         try:
-            self.execute(f"""
-                INSERT INTO token_usage
-                (room_id, thread_id, agent_id, model, prompt_tokens, completion_tokens, total_tokens)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-            """, (room_id, thread_id, agent_id, model, int(prompt_tokens or 0), int(completion_tokens or 0), int(total_tokens or 0)))
+            prompt_tokens = int(prompt_tokens or 0)
+            completion_tokens = int(completion_tokens or 0)
+            total_tokens = int(total_tokens or prompt_tokens + completion_tokens)
+            if total_tokens <= 0:
+                return
+            self._ensure_column("token_usage", "tenant_id", "TEXT")
+            room = self.get_room(room_id) if room_id else None
+            tenant_id = room.get("tenant_id") if room else None
+            columns = self._table_columns("token_usage")
+            if "prompt_tokens" in columns:
+                self.execute(f"""
+                    INSERT INTO token_usage
+                    (room_id, thread_id, agent_id, model, prompt_tokens, completion_tokens, total_tokens, tenant_id)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """, (room_id, thread_id, agent_id, model, prompt_tokens, completion_tokens, total_tokens, tenant_id))
+            else:
+                agent_name = ""
+                try:
+                    agent = self.get_agent_by_id(agent_id)
+                    agent_name = agent.get("name", "") if agent else ""
+                except Exception:
+                    pass
+                self.execute(f"""
+                    INSERT INTO token_usage
+                    (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date, tenant_id)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """, (agent_id, agent_name, room_id, model, prompt_tokens, completion_tokens, total_tokens, self._token_usage_today().isoformat(), tenant_id))
             self.commit()
         except Exception as e:
             print(f"[DB] record_token_usage skipped: {e}")
+
+    def _table_columns(self, table_name: str) -> set:
+        try:
+            if isinstance(self, MySQLDatabase):
+                rows = self.fetchall(f"SHOW COLUMNS FROM `{table_name}`")
+                return {row.get("Field") for row in rows}
+            rows = self.fetchall(f"PRAGMA table_info({table_name})")
+            return {row.get("name") for row in rows}
+        except Exception:
+            return set()
 
     def get_observability_summary(self, room_id: str = None, limit: int = 100) -> dict:
         ph = self._placeholder()
@@ -694,18 +1005,28 @@ class BaseDatabase:
                            model: str, input_tokens: int, output_tokens: int):
         """Record token usage for an agent API call into daily aggregation table."""
         ph = self._placeholder()
-        from datetime import date as _date
-        today = _date.today().isoformat()
+        input_tokens = int(input_tokens or 0)
+        output_tokens = int(output_tokens or 0)
+        today = self._token_usage_today().isoformat()
         total = input_tokens + output_tokens
+        if total <= 0:
+            return
+        self._ensure_column("token_usage_daily", "tenant_id", "TEXT")
+        room = self.get_room(room_id) if room_id else None
+        tenant_id = room.get("tenant_id") if room else None
         self.execute(
-            f"INSERT INTO token_usage_daily (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date) "
-            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total, today)
+            f"INSERT INTO token_usage_daily (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date, tenant_id) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (agent_id, agent_name, room_id, model, input_tokens, output_tokens, total, today, tenant_id)
         )
         self.commit()
 
-    def get_token_daily_by_agent(self, days: int = 30) -> list:
+    def get_token_daily_by_agent(self, days: int = 30, tenant_id: str | None = None) -> list:
         """Get per-agent daily token usage for the last N days."""
+        self._ensure_column("token_usage_daily", "tenant_id", "TEXT")
+        ph = self._placeholder()
+        tenant_filter = f" AND tenant_id = {ph}" if tenant_id is not None else ""
+        params = (tenant_id,) if tenant_id is not None else ()
         return self.fetchall(f"""
             SELECT agent_id, agent_name, date,
                    SUM(input_tokens) as input_tokens,
@@ -713,10 +1034,10 @@ class BaseDatabase:
                    SUM(total_tokens) as total_tokens,
                    COUNT(*) as call_count
             FROM token_usage_daily
-            WHERE date >= date({self._now_func()}, '-{days} days')
+            WHERE date >= date({self._token_usage_today_sql()}, '-{days} days') {tenant_filter}
             GROUP BY agent_id, agent_name, date
             ORDER BY date DESC, total_tokens DESC
-        """)
+        """, params)
 
     def get_token_daily_summary(self, days: int = 30) -> list:
         """Get daily total token usage across all agents."""
@@ -728,7 +1049,7 @@ class BaseDatabase:
                    COUNT(DISTINCT agent_id) as agent_count,
                    COUNT(*) as call_count
             FROM token_usage_daily
-            WHERE date >= date({self._now_func()}, '-{days} days')
+            WHERE date >= date({self._token_usage_today_sql()}, '-{days} days')
             GROUP BY date
             ORDER BY date DESC
         """)
@@ -743,7 +1064,7 @@ class BaseDatabase:
                    SUM(total_tokens) as total_tokens,
                    COUNT(*) as call_count
             FROM token_usage_daily
-            WHERE agent_id = {ph} AND date >= date({self._now_func()}, '-{days} days')
+            WHERE agent_id = {ph} AND date >= date({self._token_usage_today_sql()}, '-{days} days')
             GROUP BY date, model
             ORDER BY date DESC
         """, (agent_id,))
@@ -756,28 +1077,83 @@ class BaseDatabase:
         if days <= 0:
             return "", ()
         if isinstance(self, MySQLDatabase):
-            return f"WHERE date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)", ()
-        return f"WHERE date >= date('now', '-{days} days')", ()
+            return f"WHERE date >= DATE_SUB({self._token_usage_today_sql()}, INTERVAL {days} DAY)", ()
+        return f"WHERE date >= date({self._token_usage_today_sql()}, '-{days} days')", ()
+
+    def _token_where_clause(self, days: int = 30, tenant_id: str | None = None):
+        where, params = self._token_days_filter(days)
+        if tenant_id is None:
+            return where, params
+        ph = self._placeholder()
+        if where:
+            return f"{where} AND tud.tenant_id = {ph}", params + (tenant_id,)
+        return f"WHERE tud.tenant_id = {ph}", (tenant_id,)
+
+    def _token_usage_union_sql(self) -> str:
+        token_columns = self._table_columns("token_usage")
+        if "input_tokens" in token_columns and "agent_name" in token_columns and "date" in token_columns:
+            legacy_select = """
+            SELECT tu.agent_id, tu.agent_name, tu.room_id, tu.model, tu.input_tokens, tu.output_tokens, tu.total_tokens, tu.date, tu.created_at, tu.tenant_id
+            FROM token_usage tu
+            WHERE NOT EXISTS (
+                SELECT 1 FROM token_usage_daily tud
+                WHERE tud.created_at = tu.created_at
+                  AND tud.agent_id = tu.agent_id
+                  AND tud.room_id IS tu.room_id
+                  AND tud.total_tokens = tu.total_tokens
+                  AND tud.date = tu.date
+            )
+            """
+        else:
+            legacy_select = """
+            SELECT tu.agent_id, COALESCE(a.name, '') AS agent_name, tu.room_id, tu.model,
+                   tu.prompt_tokens AS input_tokens, tu.completion_tokens AS output_tokens,
+                   tu.total_tokens, DATE(tu.created_at) AS date, tu.created_at, tu.tenant_id
+            FROM token_usage tu
+            LEFT JOIN agents a ON a.id = tu.agent_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM token_usage_daily tud
+                WHERE tud.created_at = tu.created_at
+                  AND tud.agent_id = tu.agent_id
+                  AND tud.room_id IS tu.room_id
+                  AND tud.total_tokens = tu.total_tokens
+                  AND tud.date = DATE(tu.created_at)
+            )
+            """
+        return f"""
+            SELECT agent_id, agent_name, room_id, model, input_tokens, output_tokens, total_tokens, date, created_at, tenant_id
+            FROM token_usage_daily
+            UNION ALL
+            {legacy_select}
+        """
 
     def _empty_daily_token_row(self, day: str) -> dict:
-        return {"date": day, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+        return {
+            "date": day,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+        }
 
     def _fill_token_daily_gaps(self, daily: list, days: int = 30) -> list:
-        from datetime import datetime, timedelta
         try:
             days = max(1, int(days))
         except (TypeError, ValueError):
             days = 30
-        if days <= 0:
-            return daily
         by_date = {str(row.get("date")): dict(row) for row in daily}
-        today = datetime.now().date()
+        today = self._token_usage_today()
         start = today - timedelta(days=days - 1)
-        return [by_date.get((start + timedelta(days=i)).isoformat(), self._empty_daily_token_row((start + timedelta(days=i)).isoformat())) for i in range(days)]
+        filled = []
+        for index in range(days):
+            day = (start + timedelta(days=index)).isoformat()
+            filled.append(by_date.get(day, self._empty_daily_token_row(day)))
+        return filled
 
-    def get_token_daily_by_room(self, days: int = 30) -> dict:
-        """Get token usage aggregated by room plus a daily trend."""
-        where, params = self._token_days_filter(days)
+    def get_token_daily_by_room(self, days: int = 30, tenant_id: str | None = None) -> dict:
+        """Get token usage aggregated by room plus daily totals."""
+        where, params = self._token_where_clause(days, tenant_id)
+        usage_sql = self._token_usage_union_sql()
         rooms = self.fetchall(f"""
             SELECT COALESCE(tud.room_id, '') as room_id,
                    COALESCE(r.name, '未知 Room') as room_name,
@@ -785,44 +1161,49 @@ class BaseDatabase:
                    COALESCE(SUM(tud.output_tokens), 0) as output_tokens,
                    COALESCE(SUM(tud.total_tokens), 0) as total_tokens,
                    COUNT(*) as call_count
-            FROM token_usage_daily tud
+            FROM ({usage_sql}) tud
             LEFT JOIN rooms r ON r.id = tud.room_id
             {where}
             GROUP BY COALESCE(tud.room_id, ''), COALESCE(r.name, '未知 Room')
             ORDER BY total_tokens DESC
         """, params)
         daily = self.fetchall(f"""
-            SELECT date,
-                   COALESCE(SUM(input_tokens), 0) as input_tokens,
-                   COALESCE(SUM(output_tokens), 0) as output_tokens,
-                   COALESCE(SUM(total_tokens), 0) as total_tokens,
+            SELECT tud.date,
+                   COALESCE(SUM(tud.input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(tud.output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(tud.total_tokens), 0) as total_tokens,
                    COUNT(*) as call_count
-            FROM token_usage_daily
+            FROM ({usage_sql}) tud
             {where}
-            GROUP BY date
-            ORDER BY date ASC
+            GROUP BY tud.date
+            ORDER BY tud.date ASC
         """, params)
         totals = self.fetchone(f"""
-            SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
-                   COALESCE(SUM(output_tokens), 0) as output_tokens,
-                   COALESCE(SUM(total_tokens), 0) as total_tokens,
+            SELECT COALESCE(SUM(tud.input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(tud.output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(tud.total_tokens), 0) as total_tokens,
                    COUNT(*) as call_count,
-                   COUNT(DISTINCT room_id) as room_count
-            FROM token_usage_daily
+                   COUNT(DISTINCT tud.room_id) as room_count
+            FROM ({usage_sql}) tud
             {where}
         """, params) or {}
-        return {"rooms": rooms, "daily": self._fill_token_daily_gaps(daily, days) if int(days or 0) > 0 else daily, "totals": totals}
+        return {"rooms": rooms, "daily": self._fill_token_daily_gaps(daily, days), "totals": totals}
 
-    def get_token_daily_totals(self) -> dict:
+    def get_token_daily_totals(self, tenant_id: str | None = None) -> dict:
         """Get overall token usage totals."""
-        row = self.fetchone("""
+        self._ensure_column("token_usage_daily", "tenant_id", "TEXT")
+        ph = self._placeholder()
+        where = f"WHERE tenant_id = {ph}" if tenant_id is not None else ""
+        params = (tenant_id,) if tenant_id is not None else ()
+        row = self.fetchone(f"""
             SELECT COALESCE(SUM(input_tokens), 0) as total_input,
                    COALESCE(SUM(output_tokens), 0) as total_output,
                    COALESCE(SUM(total_tokens), 0) as total_all,
                    COUNT(DISTINCT agent_id) as agent_count,
                    COUNT(*) as call_count
             FROM token_usage_daily
-        """)
+            {where}
+        """, params)
         return row or {"total_input": 0, "total_output": 0, "total_all": 0, "agent_count": 0, "call_count": 0}
 
 
@@ -837,6 +1218,9 @@ class SQLiteDatabase(BaseDatabase):
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode = WAL")
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA busy_timeout = 5000")
+        self.conn.execute("PRAGMA synchronous = NORMAL")
+        self.conn.execute("PRAGMA temp_store = MEMORY")
         self._last_rowid = None
         self._migrate()
 
@@ -890,7 +1274,7 @@ class SQLiteDatabase(BaseDatabase):
                 model_config_id TEXT DEFAULT NULL,
                 execution_mode TEXT DEFAULT 'auto',
                 self_improve INTEGER DEFAULT 0,
-                self_improve_threshold INTEGER DEFAULT 2,
+                self_improve_threshold INTEGER DEFAULT NULL,
                 tools_config TEXT DEFAULT NULL,
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
@@ -976,6 +1360,14 @@ class SQLiteDatabase(BaseDatabase):
             );
 
             CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, id);
+            CREATE INDEX IF NOT EXISTS idx_messages_room_id_desc ON messages(room_id, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_thread_id_desc ON messages(thread_id, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_room_thread_id_desc ON messages(room_id, thread_id, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_rooms_type_created ON rooms(type, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_rooms_tenant_type_created ON rooms(tenant_id, type, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_room_members_room ON room_members(room_id);
+            CREATE INDEX IF NOT EXISTS idx_room_members_agent ON room_members(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_room_members_room_agent ON room_members(room_id, agent_id);
             CREATE INDEX IF NOT EXISTS idx_updates_agent ON updates(agent_id, consumed, id);
             CREATE INDEX IF NOT EXISTS idx_agent_executions_room ON agent_executions(room_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_agent_errors_room ON agent_errors(room_id, created_at);
@@ -1080,11 +1472,16 @@ class SQLiteDatabase(BaseDatabase):
         self._ensure_column("agents", "model_config_id", "TEXT DEFAULT NULL")
         self._ensure_column("agents", "execution_mode", "TEXT DEFAULT 'auto'")
         self._ensure_column("agents", "self_improve", "INTEGER DEFAULT 0")
-        self._ensure_column("agents", "self_improve_threshold", "INTEGER DEFAULT 2")
+        self._ensure_column("agents", "self_improve_threshold", "INTEGER DEFAULT NULL")
         self._ensure_column("agents", "tools_config", "TEXT DEFAULT NULL")
+        self._ensure_column("agents", "tenant_id", "TEXT")
         self._ensure_column("rooms", "settings_json", "TEXT DEFAULT '{}'")
+        self._ensure_column("rooms", "tenant_id", "TEXT")
         self._ensure_column("messages", "thread_id", "TEXT DEFAULT NULL")
         self._ensure_column("messages", "metadata", "TEXT DEFAULT NULL")
+        self._ensure_column("messages", "tenant_id", "TEXT")
+        self._ensure_column("token_usage", "tenant_id", "TEXT")
+        self._ensure_column("token_usage_daily", "tenant_id", "TEXT")
         self.conn.execute("UPDATE agents SET status = 'online' WHERE status = 'offline'")
         self.conn.commit()
 
@@ -1162,7 +1559,7 @@ class MySQLDatabase(BaseDatabase):
                 model_config_id VARCHAR(36) DEFAULT NULL,
                 execution_mode VARCHAR(32) DEFAULT 'auto',
                 self_improve TINYINT DEFAULT 0,
-                self_improve_threshold INT DEFAULT 2,
+                self_improve_threshold INT DEFAULT NULL,
                 tools_config TEXT DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -1351,8 +1748,13 @@ class MySQLDatabase(BaseDatabase):
         self._ensure_column("agents", "model_config_id", "VARCHAR(36) DEFAULT NULL")
         self._ensure_column("agents", "execution_mode", "VARCHAR(32) DEFAULT 'auto'")
         self._ensure_column("agents", "self_improve", "TINYINT DEFAULT 0")
-        self._ensure_column("agents", "self_improve_threshold", "INT DEFAULT 2")
+        self._ensure_column("agents", "self_improve_threshold", "INT DEFAULT NULL")
         self._ensure_column("agents", "tools_config", "TEXT DEFAULT NULL")
+        self._ensure_column("agents", "tenant_id", "VARCHAR(64) DEFAULT NULL")
         self._ensure_column("rooms", "settings_json", "TEXT DEFAULT NULL")
+        self._ensure_column("rooms", "tenant_id", "VARCHAR(64) DEFAULT NULL")
         self._ensure_column("messages", "thread_id", "VARCHAR(36) DEFAULT NULL")
         self._ensure_column("messages", "metadata", "TEXT DEFAULT NULL")
+        self._ensure_column("messages", "tenant_id", "VARCHAR(64) DEFAULT NULL")
+        self._ensure_column("token_usage", "tenant_id", "VARCHAR(64) DEFAULT NULL")
+        self._ensure_column("token_usage_daily", "tenant_id", "VARCHAR(64) DEFAULT NULL")
