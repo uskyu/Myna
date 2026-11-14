@@ -5,8 +5,19 @@ API routes for System Agent and Credential management.
 import uuid
 from fastapi import APIRouter, Request
 from starlette.responses import JSONResponse
+from routes.auth import is_admin_account
 
 router = APIRouter()
+
+
+def _admin_only(request: Request):
+    if not is_admin_account(request):
+        return JSONResponse({"ok": False, "error": "仅主账号可以查询系统资源"}, status_code=403)
+    return None
+
+
+def _read_only():
+    return JSONResponse({"ok": False, "error": "系统智能体入口已停用；实例级修改不允许通过聊天账号执行"}, status_code=403)
 
 
 # ─── Credential CRUD ───────────────────────────────────────────────────────────
@@ -14,16 +25,20 @@ router = APIRouter()
 @router.get("/credentials")
 async def list_credentials(request: Request):
     """List all stored credentials (masked values)."""
+    blocked = _admin_only(request)
+    if blocked:
+        return blocked
     store = request.app.state.credential_store
     if not store:
         return JSONResponse({"ok": False, "error": "Credential store not initialized"}, status_code=500)
-    creds = store.list_all()
+    creds = [{"id": item.get("id"), "name": item.get("name"), "type": item.get("type")} for item in store.list_all()]
     return {"ok": True, "credentials": creds}
 
 
 @router.post("/credentials")
 async def add_credential(request: Request):
     """Add a new credential."""
+    return _read_only()
     store = request.app.state.credential_store
     if not store:
         return JSONResponse({"ok": False, "error": "Credential store not initialized"}, status_code=500)
@@ -54,6 +69,7 @@ async def add_credential(request: Request):
 @router.put("/credentials/{cred_id}")
 async def update_credential(cred_id: str, request: Request):
     """Update an existing credential."""
+    return _read_only()
     store = request.app.state.credential_store
     if not store:
         return JSONResponse({"ok": False, "error": "Credential store not initialized"}, status_code=500)
@@ -75,6 +91,7 @@ async def update_credential(cred_id: str, request: Request):
 @router.delete("/credentials/{cred_id}")
 async def delete_credential(cred_id: str, request: Request):
     """Delete a credential."""
+    return _read_only()
     store = request.app.state.credential_store
     if not store:
         return JSONResponse({"ok": False, "error": "Credential store not initialized"}, status_code=500)
@@ -92,6 +109,9 @@ async def delete_credential(cred_id: str, request: Request):
 @router.get("/status")
 async def system_agent_status(request: Request):
     """Get system agent status."""
+    blocked = _admin_only(request)
+    if blocked:
+        return blocked
     agent = request.app.state.system_agent
     if not agent:
         return JSONResponse({"ok": False, "error": "System agent not initialized"}, status_code=500)
@@ -101,6 +121,9 @@ async def system_agent_status(request: Request):
 @router.get("/access-log")
 async def system_agent_access_log(request: Request):
     """Get system agent access log."""
+    blocked = _admin_only(request)
+    if blocked:
+        return blocked
     agent = request.app.state.system_agent
     if not agent:
         return JSONResponse({"ok": False, "error": "System agent not initialized"}, status_code=500)
@@ -112,6 +135,7 @@ async def system_agent_access_log(request: Request):
 @router.post("/execute")
 async def system_agent_execute(request: Request):
     """Execute a system agent action (for testing / admin use)."""
+    return _read_only()
     agent = request.app.state.system_agent
     if not agent:
         return JSONResponse({"ok": False, "error": "System agent not initialized"}, status_code=500)
@@ -134,6 +158,9 @@ async def system_agent_execute(request: Request):
 @router.get("/repos")
 async def list_repos(request: Request):
     """List repos in the system agent workspace."""
+    blocked = _admin_only(request)
+    if blocked:
+        return blocked
     agent = request.app.state.system_agent
     if not agent:
         return JSONResponse({"ok": False, "error": "System agent not initialized"}, status_code=500)

@@ -9,11 +9,13 @@ import json
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 import uvicorn
+import mimetypes
+from urllib.parse import unquote
 
 # Add hermes-agent to path for direct import
 HERMES_AGENT_PATH = Path("/root/hermes")
@@ -26,10 +28,8 @@ from routes.admin import router as admin_router, MYNA_VERSION
 from routes.gateway import router as gateway_router
 from routes.upload import router as upload_router
 from routes.auth import router as auth_router, is_authenticated, ensure_password_initialized
-from routes.system_agent import router as system_agent_router
 from workflow_engine import WorkflowRunner, WorkflowScheduler
 from credentials import CredentialStore
-from system_agent import SystemAgent
 from paths import APP_ROOT, DB_ROOT, UPLOADS_DIR, ensure_runtime_dirs
 
 # Globals
@@ -54,7 +54,8 @@ async def lifespan(app: FastAPI):
     workflow_scheduler = WorkflowScheduler(db, workflow_runner)
     workflow_scheduler.start()
 
-    # Initialize credential store and system agent
+    # Credential storage remains available to the main assistant's guarded,
+    # read-only lookup. There is no separate System Agent runtime.
     # Use a stable secret for encryption (derived from DB path + machine id)
     encryption_secret = os.environ.get("MYNA_ENCRYPTION_KEY", "")
     if not encryption_secret:
@@ -74,7 +75,6 @@ async def lifespan(app: FastAPI):
         import hashlib
         encryption_secret = hashlib.sha256(f"myna-{machine_id}-{DB_ROOT}".encode()).hexdigest()
     credential_store = CredentialStore(db, encryption_secret)
-    system_agent = SystemAgent(credential_store)
     
     # Store in app state
     app.state.db = db
@@ -82,7 +82,6 @@ async def lifespan(app: FastAPI):
     app.state.workflow_runner = workflow_runner
     app.state.workflow_scheduler = workflow_scheduler
     app.state.credential_store = credential_store
-    app.state.system_agent = system_agent
     
     port = int(os.environ.get("PORT", "3456"))
     print(f"""
@@ -157,7 +156,6 @@ app.add_middleware(
 # Routes
 app.include_router(auth_router, prefix="/auth")
 app.include_router(admin_router, prefix="/admin")
-app.include_router(system_agent_router, prefix="/admin/system-agent")
 app.include_router(gateway_router)
 app.include_router(upload_router)
 
@@ -208,6 +206,59 @@ class AuthMiddleware:
         await self.app(scope, receive, send)
 
 app.add_middleware(AuthMiddleware)
+
+
+def _is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _media_response(candidate: Path, download: bool = False) -> FileResponse:
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    media_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
+    if download:
+        # Let Starlette encode non-ASCII names as RFC 5987 filename* values.
+        return FileResponse(path=str(candidate), media_type=media_type, filename=candidate.name)
+    return FileResponse(path=str(candidate), media_type=media_type)
+
+
+@app.get("/media/workspaces/{file_path:path}")
+async def get_workspace_media(file_path: str, download: int = 0):
+    raw = unquote(file_path or "").lstrip("/")
+    if raw.startswith("app/data/workspaces/"):
+        raw = raw[len("app/data/workspaces/"):]
+    candidate = (UPLOADS_DIR.parent / "workspaces" / raw).resolve()
+    if not _is_within_root(candidate, UPLOADS_DIR.parent / "workspaces"):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return _media_response(candidate, bool(download))
+
+
+@app.get("/admin/media/{file_path:path}")
+async def get_admin_media(file_path: str, download: int = 0):
+    raw = unquote(file_path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    candidate = Path("/") / raw.lstrip("/")
+    allowed_roots = [UPLOADS_DIR.resolve(), (UPLOADS_DIR.parent / "workspaces").resolve()]
+    if not any(_is_within_root(candidate, root) for root in allowed_roots):
+        backend_root = (APP_ROOT / "backend").resolve()
+        safe_exts = {'.zip', '.tar', '.gz', '.7z', '.rar', '.docx', '.doc', '.xlsx', '.xls',
+                     '.pptx', '.ppt', '.pdf', '.csv', '.md', '.txt', '.json', '.png', '.jpg', '.jpeg'}
+        if not (_is_within_root(candidate, backend_root) and candidate.suffix.lower() in safe_exts):
+            raise HTTPException(status_code=404, detail="文件不存在")
+    return _media_response(candidate, bool(download))
+
+
+@app.get("/uploads/{file_path:path}")
+async def get_upload_media(file_path: str, download: int = 0):
+    candidate = (UPLOADS_DIR / unquote(file_path or "").lstrip("/")).resolve()
+    if not _is_within_root(candidate, UPLOADS_DIR.resolve()):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return _media_response(candidate, bool(download))
 
 
 # WebSocket endpoint
@@ -375,99 +426,312 @@ async def health():
     }
 
 
-def _share_page_html(room_id: str) -> str:
-    room_json = json.dumps(room_id)
-    return f"""<!doctype html>
+def _share_page_html(token: str) -> str:
+    template = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Myna 房间分享</title>
+  <title>Myna 聊天分享</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
-    :root {{
+    :root {
       color-scheme: light dark;
-      --bg:#f7f3ea; --surface:#fffaf1; --surface2:#f2eadc; --text:#1f2933; --text-dim:#6b7280;
-      --text-faint:#9ca3af; --border:rgba(45,106,79,.18); --accent:#2d6a4f; --accent-soft:#e8f0eb;
-      --accent-glow:rgba(45,106,79,.18); --radius-lg:18px; --shadow-sm:0 1px 2px rgba(0,0,0,.05);
-      --header-height:64px;
-    }}
-    @media (prefers-color-scheme: dark) {{ :root {{ --bg:#11140f; --surface:#1a211b; --surface2:#222b24; --text:#f3f5ef; --text-dim:#b7c0b4; --text-faint:#879083; --border:rgba(232,240,235,.16); --accent:#7fb096; --accent-soft:#233529; --accent-glow:rgba(127,176,150,.22); }} }}
-    * {{ box-sizing:border-box; }}
-    html, body {{ margin:0; min-height:100%; }}
-    body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
-    .share-shell {{ min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }}
-    .chat-header {{ height:var(--header-height); display:flex; flex-direction:column; justify-content:center; padding:0 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }}
-    .title {{ min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; line-clamp:1; font-size:16px; font-weight:700; line-height:1.25; color:var(--text); }}
-    .meta {{ margin-top:5px; color:var(--text-dim); font-size:12px; }}
-    .messages-area {{ flex:1; overflow-y:auto; padding:16px 20px 24px; display:flex; flex-direction:column; gap:6px; -webkit-overflow-scrolling:touch; }}
-    .status {{ color:var(--text-dim); padding:30px 4px; text-align:center; }} .error {{ color:#dc2626; }}
-    .msg-group {{ display:flex; flex-direction:column; gap:2px; }}
-    .msg {{ max-width:78%; padding:10px 14px; border-radius:var(--radius-lg); font-size:14.5px; line-height:1.55; word-break:break-word; position:relative; }}
-    .msg-group:not(.self) .msg {{ align-self:flex-start; background:var(--surface); border:1px solid var(--border); color:var(--text); box-shadow:var(--shadow-sm); }}
-    .msg-group.self .msg {{ align-self:flex-end; background:var(--accent); border:1px solid transparent; color:white; box-shadow:0 1px 2px var(--accent-glow); }}
-    .msg.event {{ align-self:center; max-width:78%; background:rgba(217,119,6,.08); color:var(--text-dim); border:1px solid rgba(217,119,6,.18); box-shadow:none; border-radius:999px; padding:6px 12px; font-size:12.5px; text-align:center; }}
-    .sender-name {{ font-size:12px; color:var(--accent); font-weight:600; margin-bottom:4px; letter-spacing:-.01em; }}
-    .msg-group.self .sender-name {{ color:rgba(255,255,255,.85); }}
-    .msg-text {{ white-space:normal; word-wrap:break-word; overflow-wrap:break-word; line-height:1.6; overflow:hidden; }}
-    .msg-text p {{ margin:0 0 8px 0; }} .msg-text p:last-child {{ margin-bottom:0; }}
-    .msg-text pre {{ background:var(--surface2); padding:10px; border-radius:10px; overflow:auto; max-width:100%; }}
-    .msg-text code {{ background:var(--surface2); padding:1px 4px; border-radius:4px; font-size:.92em; }}
-    .msg-group.self .msg-text code {{ background:rgba(255,255,255,.16); }}
-    .msg-text ul, .msg-text ol {{ padding-left:1.5em; margin:6px 0; }} .msg-text li {{ margin:3px 0; }}
-    .msg-text blockquote {{ margin:8px 0; padding-left:10px; border-left:3px solid var(--border); color:var(--text-dim); }}
-    .msg-text a {{ color:var(--accent); text-decoration:underline; text-underline-offset:2px; word-break:break-all; }}
-    .msg-group.self .msg-text a {{ color:#bbf7d0; }}
-    .msg-meta-row {{ display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; margin-top:4px; min-width:0; }}
-    .msg-speaker, .msg-time {{ font-size:11px; color:var(--text-faint); font-weight:500; }}
-    .msg-group.self .msg-speaker, .msg-group.self .msg-time {{ color:rgba(255,255,255,.7); }}
-    @media (max-width:640px) {{ .chat-header {{ height:56px; padding:0 14px; }} .messages-area {{ padding:12px 10px 18px; }} .msg {{ max-width:88%; padding:9px 12px; font-size:14px; }} .msg.event {{ max-width:88%; }} .title {{ font-size:15px; }} }}
+      --bg:#faf9f7; --surface:#ffffff; --surface2:#f4f2ee; --surface3:#ebe8e2;
+      --text:#1a1916; --text-2:#44423d; --text-dim:#87847d; --text-faint:#b8b4ab;
+      --border:#e8e4dc; --border-strong:#d6d1c5;
+      --accent:#2d6a4f; --accent-hover:#1f4c38; --accent-soft:#e8f0eb; --accent-glow:rgba(45,106,79,.18);
+      --amber:#d97706; --amber-soft:#fef3e6;
+      --radius-sm:8px; --radius:12px; --radius-lg:16px;
+      --shadow-sm:0 1px 2px rgba(60,50,30,.04);
+      --header-height:52px;
+      --font-sans:-apple-system,BlinkMacSystemFont,'Inter','SF Pro Display','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+      --font-mono:'SF Mono','JetBrains Mono','Fira Code','Cascadia Code',Consolas,monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:#0f0e0c; --surface:#1a1916; --surface2:#232220; --surface3:#2d2c29;
+        --text:#f5f2eb; --text-2:#d6d2c8; --text-dim:#8a857c; --text-faint:#5d5a52;
+        --border:#2d2c29; --border-strong:#3d3b37;
+        --accent:#4ea876; --accent-hover:#6dbf8e; --accent-soft:rgba(78,168,118,.14); --accent-glow:rgba(78,168,118,.22);
+        --amber:#f59e0b;
+        --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+      }
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { margin:0; min-height:100%; }
+    body {
+      font-family:var(--font-sans); background:var(--bg); color:var(--text);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      text-rendering:optimizeLegibility; font-feature-settings:'kern','liga','tnum';
+    }
+    .share-shell { min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
+    .chat-header {
+      position:sticky; top:0; z-index:10;
+      min-height:var(--header-height); display:flex; align-items:center; gap:16px;
+      padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--border);
+      flex-shrink:0; box-shadow:var(--shadow-sm);
+    }
+    .brand-mark {
+      width:34px; height:34px; border-radius:11px; flex:0 0 auto;
+      background:linear-gradient(135deg,var(--accent),var(--accent-hover));
+      color:#fff; display:flex; align-items:center; justify-content:center;
+      font-weight:800; font-size:15px; box-shadow:0 1px 3px var(--accent-glow);
+    }
+    .header-copy { min-width:0; flex:1; }
+    .continue-btn {
+      border:0; border-radius:999px; padding:10px 16px; background:var(--accent); color:#fff;
+      font-weight:700; font-size:13px; cursor:pointer; text-decoration:none; white-space:nowrap;
+      transition:transform .15s ease, opacity .15s ease;
+    }
+    .continue-btn:hover { opacity:.92; transform:translateY(-1px); }
+    .title { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; line-clamp:1; font-size:15px; font-weight:700; line-height:1.25; color:var(--text); }
+    .meta { margin-top:3px; color:var(--text-dim); font-size:12px; }
+    .messages-area {
+      flex:1; overflow-y:auto; padding:16px 0 40px; display:flex; flex-direction:column; gap:2px;
+      -webkit-overflow-scrolling:touch; max-width:860px; width:100%; margin:0 auto;
+    }
+    .status { color:var(--text-dim); padding:48px 20px; text-align:center; font-size:14px; }
+    .status.error { color:#c44545; }
+    .time-separator { text-align:center; padding:14px 0 8px; }
+    .time-separator span { font-size:11px; color:var(--text-dim); background:var(--surface2); padding:4px 12px; border-radius:999px; font-weight:500; }
+    .msg-group { display:flex; flex-direction:column; gap:2px; padding:2px 16px; animation:msgSlideIn .22s cubic-bezier(.2,.8,.2,1); }
+    .msg-group + .msg-group { margin-top:6px; }
+    @keyframes msgSlideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .msg {
+      max-width:78%; padding:10px 14px; border-radius:var(--radius-lg);
+      font-size:14.5px; line-height:1.55; word-break:break-word; overflow-wrap:anywhere; position:relative;
+    }
+    .msg-group .msg:not(:first-child) { padding-top:6px; }
+    .msg-group .msg:not(:first-child) .sender-name { display:none; }
+    .msg-group:not(.self) .msg {
+      align-self:flex-start; background:var(--surface); border:1px solid var(--border);
+      color:var(--text); box-shadow:var(--shadow-sm);
+    }
+    .msg-group.self .msg {
+      align-self:flex-end; background:var(--accent); border:1px solid transparent;
+      color:#fff; box-shadow:0 1px 2px var(--accent-glow);
+    }
+    .msg-group .msg:not(:first-child) { border-radius:8px var(--radius-lg) var(--radius-lg) 8px; }
+    .msg-group.self .msg:not(:first-child) { border-radius:var(--radius-lg) 8px 8px var(--radius-lg); }
+    .msg.event {
+      align-self:center; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+      max-width:78%; background:rgba(217,119,6,.08); color:var(--text-dim);
+      border:1px solid rgba(217,119,6,.18); box-shadow:none; border-radius:999px;
+      padding:6px 12px; font-size:12.5px; line-height:1.45; text-align:center;
+    }
+    .msg.event::before { content:'\2726'; color:var(--amber); flex:0 0 auto; font-size:11px; }
+    .sender-name { font-size:12px; color:var(--accent); font-weight:600; margin-bottom:4px; letter-spacing:-.01em; }
+    .msg-group.self .sender-name { color:rgba(255,255,255,.85); }
+    .msg-text { white-space:normal; word-wrap:break-word; overflow-wrap:break-word; line-height:1.6; overflow:hidden; }
+    .msg-text p { margin:0 0 8px; } .msg-text p:last-child { margin-bottom:0; }
+    .msg-text h1,.msg-text h2,.msg-text h3 { font-size:15px; font-weight:700; margin:10px 0 4px; letter-spacing:-.01em; }
+    .msg-text code {
+      background:var(--surface2); padding:2px 6px; border-radius:5px; font-size:13px;
+      font-family:var(--font-mono); color:var(--accent-hover); border:1px solid var(--border);
+    }
+    .msg-group.self .msg-text code { background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.2); }
+    .msg-text pre {
+      background:#1a1916; color:#e8e4dc; padding:14px 16px; border-radius:var(--radius);
+      overflow-x:auto; max-width:100%; margin:10px 0; font-size:13px; line-height:1.65;
+      font-family:var(--font-mono); border:1px solid #2d2c29;
+    }
+    .msg-text pre code { background:transparent; padding:0; color:inherit; font-size:inherit; border:none; }
+    .msg-text ul,.msg-text ol { padding-left:1.5em; margin:6px 0; }
+    .msg-text li { margin:3px 0; line-height:1.6; }
+    .msg-text blockquote {
+      border-left:3px solid var(--accent); padding:6px 12px; margin:8px 0;
+      color:var(--text-2); background:var(--accent-soft); border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+    }
+    .msg-text strong { font-weight:700; }
+    .msg-text a { color:#60a5fa; text-decoration:underline; text-decoration-thickness:1px; text-decoration-color:rgba(59,130,246,.45); text-underline-offset:3px; word-break:break-all; }
+    .msg-text a:hover { color:#93c5fd; }
+    .msg-group.self .msg-text a { color:#dbeafe; text-decoration-color:rgba(219,234,254,.65); }
+    .msg-group.self .msg-text a:hover { color:#fff; }
+    .msg-text table { border-collapse:collapse; width:100%; margin:8px 0; font-size:13px; }
+    .msg-text th,.msg-text td { border:1px solid var(--border); padding:5px 8px; text-align:left; }
+    .msg-text th { background:var(--surface2); font-weight:600; }
+    .msg-text img { max-width:100%; max-height:320px; border-radius:var(--radius); display:block; margin:4px 0; cursor:zoom-in; }
+    .katex-display { margin:10px 0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+    .msg-meta-row { display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; margin-top:4px; min-width:0; }
+    .msg-time { font-size:11px; color:var(--text-faint); font-weight:500; }
+    .msg-group.self .msg-time { color:rgba(255,255,255,.7); }
+    .share-footer { text-align:center; padding:18px 16px 28px; color:var(--text-faint); font-size:12px; }
+    .lightbox { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; cursor:zoom-out; }
+    .lightbox.active { display:flex; }
+    .lightbox img { max-width:94vw; max-height:94vh; border-radius:var(--radius); box-shadow:0 8px 40px rgba(0,0,0,.5); }
+    @media (max-width:640px) {
+      .chat-header { padding:9px 14px; gap:10px; }
+      .continue-btn { padding:9px 12px; font-size:12px; }
+      .messages-area { padding:12px 0 24px; }
+      .msg-group { padding:2px 10px; }
+      .msg { max-width:88%; padding:9px 12px; font-size:14px; }
+      .msg.event { max-width:88%; }
+      .title { font-size:14px; }
+    }
   </style>
 </head>
 <body>
   <main class="share-shell">
-    <header class="chat-header"><div id="title" class="title">Myna 房间分享</div><div id="meta" class="meta">只读聊天记录</div></header>
-    <section id="content" class="messages-area"><div class="status">正在加载聊天记录...</div></section>
+    <header class="chat-header">
+      <div class="brand-mark">M</div>
+      <div class="header-copy">
+        <div id="title" class="title">加载中…</div>
+        <div id="meta" class="meta">只读聊天记录</div>
+      </div>
+      <a id="continueBtn" class="continue-btn" href="#">在我的马哥中继续</a>
+    </header>
+    <section id="content" class="messages-area"><div class="status">正在加载聊天记录…</div></section>
+    <footer class="share-footer">由 Myna 多智能体协作平台生成 · 只读分享</footer>
   </main>
+  <div id="lightbox" class="lightbox"><img id="lightboxImg" alt=""></div>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script>
-    const roomId = {room_json};
-    const escapeHtml = (s) => String(s ?? '').replace(/[&<>\"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]));
-    const linkifyHiddenUrls = (s) => escapeHtml(s).replace(/https?:\/\/[^\s<]+/g, url => `<a href="${{url}}" target="_blank" rel="noopener noreferrer">查看链接</a>`).replace(/\\n/g, '<br>');
-    const formatTime = (v) => {{ try {{ return v ? new Date(v).toLocaleString() : ''; }} catch {{ return v || ''; }} }};
-    const isSelf = (m) => m.sender_id === 'user';
-    const isEvent = (m) => m.sender_id === 'system' || m.event;
-    fetch(`/share/${{encodeURIComponent(roomId)}}/data`).then(r => r.json()).then(data => {{
+    const shareToken = __TOKEN__;
+
+    const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function extractMath(text) {
+      const blocks = [];
+      let t = String(text ?? '');
+      t = t.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => { blocks.push({ d: true, tex }); return '__MATH_' + (blocks.length - 1) + '_'; });
+      t = t.replace(/\$([^$\n]+?)\$/g, (_, tex) => { blocks.push({ d: false, tex }); return '__MATH_' + (blocks.length - 1) + '_'; });
+      return { t, blocks };
+    }
+
+    function restoreMath(html, blocks) {
+      return html.replace(/__MATH_([0-9]+)_/g, (m, i) => {
+        const b = blocks[+i];
+        if (!b) return m;
+        const raw = (b.d ? '$$' + b.tex + '$$' : '$' + b.tex + '$');
+        if (!window.katex) return '<code>' + escapeHtml(raw) + '</code>';
+        try { return katex.renderToString(b.tex, { displayMode: b.d, throwOnError: false }); }
+        catch (e) { return '<code>' + escapeHtml(raw) + '</code>'; }
+      });
+    }
+
+    function plainRender(text) {
+      return '<p>' + escapeHtml(text).split('\n').join('<br>') + '</p>';
+    }
+
+    function renderMd(text) {
+      const { t, blocks } = extractMath(text);
+      let html;
+      try {
+        if (window.marked && window.DOMPurify) {
+          marked.setOptions({ breaks: true, gfm: true });
+          html = DOMPurify.sanitize(marked.parse(t), { USE_PROFILES: { html: true } });
+        } else {
+          html = plainRender(t);
+        }
+      } catch (e) { html = plainRender(t); }
+      return restoreMath(html, blocks);
+    }
+
+    function parseDate(v) {
+      try {
+        if (!v) return null;
+        const s = String(v);
+        const d = new Date(s.includes('T') || s.endsWith('Z') ? s : s.replace(' ', 'T') + 'Z');
+        return isNaN(d.getTime()) ? null : d;
+      } catch { return null; }
+    }
+
+    function formatHM(d) {
+      return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+
+    function dayLabel(d) {
+      const now = new Date();
+      const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      const diff = (startOf(now) - startOf(d)) / 86400000;
+      if (diff === 0) return '今天';
+      if (diff === 1) return '昨天';
+      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+    }
+
+    document.getElementById('continueBtn').href = '/?continue_share=' + encodeURIComponent(shareToken);
+
+    fetch('/share/' + encodeURIComponent(shareToken) + '/data').then(r => r.json()).then(data => {
       if (!data.ok) throw new Error(data.error || '加载失败');
-      document.title = `${{data.result.room.name}} - Myna 房间分享`;
-      document.getElementById('title').textContent = data.result.room.name || 'Myna 房间分享';
-      document.getElementById('meta').textContent = `${{data.result.messages.length}} 条消息 · 只读分享`;
-      const html = data.result.messages.map(m => {{
-        const cls = isEvent(m) ? 'msg event' : 'msg';
-        const groupCls = `msg-group${{isSelf(m) ? ' self' : ''}}${{isEvent(m) ? ' event' : ''}}`;
-        const sender = escapeHtml(m.sender_name || m.sender_id || '未知');
-        return `<article class="${{groupCls}}"><div class="${{cls}}">${{!isEvent(m) ? `<div class="sender-name">${{sender}}</div>` : ''}}<div class="msg-text"><p>${{linkifyHiddenUrls(m.text || '')}}</p></div>${{!isEvent(m) ? `<div class="msg-meta-row"><span class="msg-speaker">${{sender}}</span><span class="msg-time">${{escapeHtml(formatTime(m.created_at))}}</span></div>` : ''}}</div></article>`;
-      }}).join('');
-      document.getElementById('content').innerHTML = html || '<div class="status">暂无聊天记录</div>';
-    }}).catch(err => {{
-      document.getElementById('content').innerHTML = `<div class="status error">${{escapeHtml(err.message || '加载失败')}}</div>`;
-    }});
+      const room = data.result.room;
+      const msgs = data.result.messages || [];
+      document.title = (room.name || 'Myna') + ' · 聊天记录';
+      document.getElementById('title').textContent = room.name || 'Myna 聊天记录';
+      const firstDay = msgs.length ? parseDate(msgs[0].created_at) : null;
+      document.getElementById('meta').textContent =
+        msgs.length + ' 条消息 · 只读分享' + (firstDay ? ' · ' + dayLabel(firstDay) : '');
+
+      const content = document.getElementById('content');
+      let html = '';
+      let lastDay = null;
+      let lastKey = null;
+
+      msgs.forEach(m => {
+        const d = parseDate(m.created_at);
+        const day = d ? dayLabel(d) : '';
+        if (day && day !== lastDay) {
+          html += `<div class="time-separator"><span>${escapeHtml(day)}</span></div>`;
+          lastDay = day;
+          lastKey = null;
+        }
+        const self = m.sender_id === 'user';
+        const event = m.sender_id === 'system';
+        const key = event ? 'system' : (m.sender_id + '|' + (m.sender_name || ''));
+        if (key !== lastKey) {
+          if (lastKey !== null) html += '</article>';
+          const cls = 'msg-group' + (self ? ' self' : '') + (event ? ' event' : '');
+          html += `<article class="${cls}">`;
+          lastKey = key;
+        }
+        const timeHtml = (!event && d) ? `<div class="msg-meta-row"><span class="msg-time">${formatHM(d)}</span></div>` : '';
+        const nameHtml = (!event && !self) ? `<div class="sender-name">${escapeHtml(m.sender_name || '助手')}</div>` : '';
+        const bodyHtml = event ? escapeHtml(m.text || '') : renderMd(m.text || '');
+        html += `<div class="${event ? 'msg event' : 'msg'}">${nameHtml}<div class="msg-text">${bodyHtml}</div>${timeHtml}</div>`;
+      });
+      if (lastKey !== null) html += '</article>';
+
+      content.innerHTML = html || '<div class="status">暂无聊天记录</div>';
+
+      content.querySelectorAll('.msg-text img').forEach(img => {
+        img.loading = 'lazy';
+        img.addEventListener('click', () => {
+          document.getElementById('lightboxImg').src = img.src;
+          document.getElementById('lightbox').classList.add('active');
+        });
+      });
+      document.getElementById('lightbox').addEventListener('click', () => {
+        document.getElementById('lightbox').classList.remove('active');
+      });
+    }).catch(err => {
+      document.getElementById('content').innerHTML =
+        `<div class="status error">${escapeHtml(err.message || '加载失败')}</div>`;
+    });
   </script>
 </body>
 </html>"""
+    import json as _json
+    return template.replace("__TOKEN__", _json.dumps(str(token)))
+
+@app.get("/share/{token}", response_class=HTMLResponse)
+async def share_room_page(token: str):
+    return HTMLResponse(_share_page_html(token))
 
 
-@app.get("/share/{room_id}", response_class=HTMLResponse)
-async def share_room_page(room_id: str):
-    return HTMLResponse(_share_page_html(room_id))
-
-
-@app.get("/share/{room_id}/data")
-async def share_room_data(room_id: str):
-    room = app.state.db.get_room(room_id)
-    if not room:
-        return JSONResponse({"ok": False, "error": "Room not found"}, status_code=404)
-    messages = app.state.db.get_all_room_messages(room_id)
-    safe_room = {"id": room.get("id"), "name": room.get("name"), "description": room.get("description"), "type": room.get("type")}
-    return {"ok": True, "result": {"room": safe_room, "messages": messages}}
+@app.get("/share/{token}/data")
+async def share_room_data(token: str):
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,80}", token or ""):
+        return JSONResponse({"ok": False, "error": "分享不存在或已失效"}, status_code=404)
+    path = APP_ROOT / "data" / "shares" / f"{token}.json"
+    try:
+        snapshot = json.loads(path.read_text("utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return JSONResponse({"ok": False, "error": "分享不存在或已失效"}, status_code=404)
+    safe_room = {"id": token, "name": snapshot.get("title"), "description": snapshot.get("description"), "type": "shared_snapshot"}
+    return {"ok": True, "result": {"room": safe_room, "messages": snapshot.get("messages", [])}}
 
 
 # Serve uploaded files

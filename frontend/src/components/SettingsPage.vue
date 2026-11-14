@@ -1,8 +1,18 @@
 <template>
   <div class="page active settings-shell">
-    <div class="header"><h1>设置</h1></div>
+    <div class="header"><h1>{{ tr('设置') }}</h1><div class="settings-language-switcher language-switcher notranslate" translate="no" :aria-label="tr('语言')">
+      <button class="settings-language-trigger language-trigger notranslate" translate="no" :title="`${tr('语言')}：${currentLanguage.name}`" @click.stop="languageMenuOpen = !languageMenuOpen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"/></svg>
+        <span>{{ currentLanguage.short }}</span>
+      </button>
+      <div v-if="languageMenuOpen" class="language-menu notranslate" translate="no">
+        <button v-for="language in languages" :key="language.code" class="language-option notranslate" translate="no" :class="{ active: languageState.current === language.code }" @click="chooseLanguage(language.code)">
+          <span class="language-short">{{ language.short }}</span><span>{{ language.name }}</span>
+        </button>
+      </div>
+    </div></div>
     <div class="settings-page">
-      <aside class="desktop-settings-nav" aria-label="设置分类">
+      <aside class="desktop-settings-nav" :aria-label="tr('设置分类')">
         <button
           v-for="item in navItems"
           :key="item.id"
@@ -12,8 +22,8 @@
           @pointerdown.prevent="selectSection(item.id)"
           @click="selectSection(item.id)"
         >
-          <span class="nav-title">{{ item.label }}</span>
-          <span class="nav-desc">{{ item.desc }}</span>
+          <span class="nav-title">{{ tr(item.label) }}</span>
+          <span class="nav-desc">{{ tr(item.desc) }}</span>
         </button>
       </aside>
 
@@ -21,33 +31,26 @@
         <section v-if="activeSection === 'models'" class="detail-panel models-detail-panel">
           <div class="detail-heading">
             <p class="eyebrow">Models</p>
-            <h2>模型配置</h2>
-            <p>管理模型供应商和可用配置。当前已有 {{ models.length }} 个配置，桌面端可在这里直接新增、编辑或删除。</p>
+            <h2>{{ tr('模型配置') }}</h2>
+            <p>{{ tr('管理模型供应商和可用配置。当前已有 {count} 个配置，桌面端可在这里直接新增、编辑或删除。', { count: models.length }) }}</p>
           </div>
           <ModelsModal embedded @changed="onModelsChanged" />
-          <div class="action-card quickstart-summary-card">
-            <div>
-              <h3>快速开始已移到主导航</h3>
-              <p>样例模板现在在左侧主导航和移动底部导航中，可直接创建产品落地、内容创作或代码修复小队。</p>
-            </div>
-            <button type="button" class="secondary-action" @click="openQuickStart">前往快速开始</button>
-          </div>
         </section>
 
         <section v-else-if="activeSection === 'performance'" class="detail-panel performance-panel">
           <div class="detail-heading">
             <p class="eyebrow">Performance</p>
-            <h2>系统性能</h2>
-            <p>这些参数影响 Agent 调度、单次任务轮数和上下文窗口。输入框在桌面尺寸下完整可见，可直接编辑后保存。</p>
+            <h2>{{ tr('系统性能') }}</h2>
+            <p>{{ tr('这些参数影响 Agent 调度、单次任务轮数和上下文窗口。输入框在桌面尺寸下完整可见，可直接编辑后保存。') }}</p>
           </div>
           <div class="perf-grid">
             <article v-for="item in perfItems" :key="item.key" class="perf-card">
               <div>
-                <h3>{{ item.label }}</h3>
-                <p>{{ item.desc }}</p>
+                <h3>{{ tr(item.label) }}</h3>
+                <p>{{ tr(item.desc) }}</p>
               </div>
               <label class="number-field">
-                <span>{{ item.unit }}</span>
+                <span>{{ tr(item.unit) }}</span>
                 <input
                   type="number"
                   v-model.number="perfSettings[item.key]"
@@ -61,7 +64,7 @@
           <div class="perf-actions">
             <p class="save-status" :class="perfStatusClass">{{ perfStatusText }}</p>
             <button type="button" class="primary-action narrow" :disabled="perfSaving" @click="savePerfSettings">
-              {{ perfSaving ? '保存中...' : '保存系统性能' }}
+              {{ perfSaving ? tr('保存中...') : tr('保存系统性能') }}
             </button>
           </div>
         </section>
@@ -69,50 +72,50 @@
         <section v-else-if="activeSection === 'logging'" class="detail-panel logging-panel">
           <div class="detail-heading">
             <p class="eyebrow">Logs</p>
-            <h2>日志</h2>
-            <p>手动开启或关闭调试日志设置，查看最近 Myna 运行日志。服务运行日志可能仍会保留，调试日志开关用于后续更详细记录。</p>
+            <h2>{{ tr('日志') }}</h2>
+            <p>{{ tr('手动开启或关闭调试日志设置，查看最近 Myna 运行日志。服务运行日志可能仍会保留，调试日志开关用于后续更详细记录。') }}</p>
           </div>
           <div class="logging-controls">
             <button type="button" class="detail-row logging-switch" @click="toggleLogging" :disabled="logSaving">
               <span>
-                <strong>记录调试日志</strong>
-                <small>{{ logSettings.enabled ? '已开启，后续调试信息可按设置记录。' : '已关闭，仅保留服务自身运行日志。' }}</small>
+                <strong>{{ tr('记录调试日志') }}</strong>
+                <small>{{ logSettings.enabled ? tr('已开启，后续调试信息可按设置记录。') : tr('已关闭，仅保留服务自身运行日志。') }}</small>
               </span>
               <span class="toggle" :class="{ on: logSettings.enabled }"></span>
             </button>
             <div class="log-actions">
-              <button type="button" class="secondary-action" :disabled="logLoading" @click="loadRecentLogs">{{ logLoading ? '刷新中...' : '刷新最近日志' }}</button>
-              <button type="button" class="danger-action" :disabled="logLoading" @click="clearRecentLogs">清空日志</button>
+              <button type="button" class="secondary-action" :disabled="logLoading" @click="loadRecentLogs">{{ logLoading ? tr('刷新中...') : tr('刷新最近日志') }}</button>
+              <button type="button" class="danger-action" :disabled="logLoading" @click="clearRecentLogs">{{ tr('清空日志') }}</button>
             </div>
           </div>
           <p class="save-status" :class="logError ? 'error' : 'success'">{{ logStatusText }}</p>
-          <pre class="log-preview"><code>{{ recentLogText || '暂无可显示日志。' }}</code></pre>
+          <pre class="log-preview"><code>{{ recentLogText || tr('暂无可显示日志。') }}</code></pre>
         </section>
 
         <section v-else-if="activeSection === 'security'" class="detail-panel security-panel">
           <div class="detail-heading">
             <p class="eyebrow">Security</p>
-            <h2>安全</h2>
-            <p>修改登录密码或退出当前会话。</p>
+            <h2>{{ tr('安全') }}</h2>
+            <p>{{ tr('修改登录密码或退出当前会话。') }}</p>
           </div>
           <form class="desktop-pwd-form" @submit.prevent="doChangePassword">
             <label>
-              <span>当前密码</span>
+              <span>{{ tr('当前密码') }}</span>
               <input type="password" v-model="currentPwd" autocomplete="current-password">
             </label>
             <label>
-              <span>新密码</span>
-              <input type="password" v-model="newPwd" autocomplete="new-password" placeholder="至少 4 位">
+              <span>{{ tr('新密码') }}</span>
+              <input type="password" v-model="newPwd" autocomplete="new-password" :placeholder="tr('至少 4 位')">
             </label>
             <label>
-              <span>确认新密码</span>
+              <span>{{ tr('确认新密码') }}</span>
               <input type="password" v-model="confirmPwd" autocomplete="new-password">
             </label>
             <p v-if="pwdError" class="error-text">{{ pwdError }}</p>
             <p v-if="pwdSuccess" class="success-text">{{ pwdSuccess }}</p>
             <div class="security-actions">
-              <button type="submit" class="primary-action narrow">确认修改</button>
-              <button type="button" class="danger-action" @click="doLogout">退出登录</button>
+              <button type="submit" class="primary-action narrow">{{ tr('确认修改') }}</button>
+              <button type="button" class="danger-action" @click="doLogout">{{ tr('退出登录') }}</button>
             </div>
           </form>
         </section>
@@ -120,28 +123,28 @@
         <section v-else-if="activeSection === 'data-storage'" class="detail-panel data-storage-panel">
           <div class="detail-heading">
             <p class="eyebrow">Data Storage</p>
-            <h2>数据存储</h2>
-            <p>查看和管理数据存储位置。Windows 用户可将数据迁移到非系统盘以节省 C 盘空间。</p>
+            <h2>{{ tr('数据存储') }}</h2>
+            <p>{{ tr('查看和管理数据存储位置。Windows 用户可将数据迁移到非系统盘以节省 C 盘空间。') }}</p>
           </div>
           <div class="storage-info">
             <div class="storage-row">
-              <span>当前数据目录</span>
+              <span>{{ tr('当前数据目录') }}</span>
               <code>{{ dataDirInfo.current_dir || '加载中...' }}</code>
             </div>
             <div class="storage-row">
-              <span>数据库大小</span>
+              <span>{{ tr('数据库大小') }}</span>
               <strong>{{ dataDirInfo.db_size || '-' }}</strong>
             </div>
             <div class="storage-row">
-              <span>上传文件</span>
+              <span>{{ tr('上传文件') }}</span>
               <strong>{{ dataDirInfo.uploads_size || '-' }}</strong>
             </div>
             <div class="storage-row">
-              <span>工作空间</span>
+              <span>{{ tr('工作空间') }}</span>
               <strong>{{ dataDirInfo.workspaces_size || '-' }}</strong>
             </div>
             <div class="storage-row">
-              <span>配置文件</span>
+              <span>{{ tr('配置文件') }}</span>
               <strong>{{ dataDirInfo.profiles_size || '-' }}</strong>
             </div>
           </div>
@@ -175,13 +178,13 @@
         <section v-else-if="activeSection === 'appearance'" class="detail-panel compact-panel">
           <div class="detail-heading">
             <p class="eyebrow">Appearance</p>
-            <h2>外观</h2>
-            <p>调整当前设备上的界面显示偏好。</p>
+            <h2>{{ tr('外观') }}</h2>
+            <p>{{ tr('调整当前设备上的界面显示偏好。') }}</p>
           </div>
           <button type="button" class="detail-row" @click="toggleTheme">
             <span>
-              <strong>深色模式</strong>
-              <small>切换暖白与深色显示，设置会保存在本机。</small>
+              <strong>{{ tr('深色模式') }}</strong>
+              <small>{{ tr('切换暖白与深色显示，设置会保存在本机。') }}</small>
             </span>
             <span class="toggle" :class="{ on: isDark }"></span>
           </button>
@@ -190,8 +193,8 @@
         <section v-else class="detail-panel about-panel">
           <div class="detail-heading">
             <p class="eyebrow">About</p>
-            <h2>关于 Myna</h2>
-            <p>查看版本、检查更新和打开项目链接。</p>
+            <h2>{{ tr('关于 Myna') }}</h2>
+            <p>{{ tr('查看版本、检查更新和打开项目链接。') }}</p>
           </div>
           <div class="about-list">
             <div class="about-row">
@@ -200,33 +203,33 @@
               <span v-if="updateInfo.available" class="update-dot"></span>
             </div>
             <button v-if="updateInfo.available && updateInfo.isDocker" type="button" class="about-row clickable" @click="handleUpdate">
-              <span>{{ updateInfo.updating ? '更新中...' : '一键更新' }}</span>
+              <span>{{ updateInfo.updating ? tr('更新中...') : tr('一键更新') }}</span>
               <strong class="amber-text">{{ updateInfo.latestVersion }}</strong>
             </button>
             <a v-else-if="updateInfo.available" class="about-row clickable" href="https://github.com/uskyu/myna/releases" target="_blank">
-              <span>发现新版本</span>
+              <span>{{ tr('发现新版本') }}</span>
               <strong class="amber-text">{{ updateInfo.latestVersion }}</strong>
             </a>
             <button v-else type="button" class="about-row clickable" @click="doCheckUpdate">
-              <span>检查更新</span>
-              <strong v-if="updateInfo.checking">检查中...</strong>
+              <span>{{ tr('检查更新') }}</span>
+              <strong v-if="updateInfo.checking">{{ tr('检查中...') }}</strong>
               <strong v-else-if="updateInfo.error" class="danger-text">{{ updateInfo.error }}</strong>
-              <strong v-else-if="updateInfo.checked" class="green-text">已是最新</strong>
-              <strong v-else>立即检查</strong>
+              <strong v-else-if="updateInfo.checked" class="green-text">{{ tr('已是最新') }}</strong>
+              <strong v-else>{{ tr('立即检查') }}</strong>
             </button>
             <div v-if="updateInfo.updating" class="update-progress detail-progress">
               <div class="progress-bar">
                 <div class="progress-fill" :style="{ width: updateInfo.percent + '%' }"></div>
               </div>
-              <div class="progress-text">{{ updateInfo.message || '准备中...' }}</div>
+              <div class="progress-text">{{ updateInfo.message || tr('准备中...') }}</div>
             </div>
             <a class="about-row clickable" href="https://github.com/uskyu/myna" target="_blank">
-              <span>GitHub 仓库</span>
+              <span>{{ tr('GitHub 仓库') }}</span>
               <strong>uskyu/myna</strong>
             </a>
             <a class="about-row clickable" href="https://github.com/uskyu/myna/releases" target="_blank">
-              <span>更新日志</span>
-              <strong>打开</strong>
+              <span>{{ tr('更新日志') }}</span>
+              <strong>{{ tr('打开') }}</strong>
             </a>
           </div>
         </section>
@@ -234,48 +237,42 @@
 
       <div class="mobile-settings-stack">
         <div class="settings-section">
-          <div class="section-title">模型配置</div>
+          <div class="section-title">{{ tr('模型配置') }}</div>
           <div class="setting-item" @click="showModels = true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-            <span class="setting-label">供应商管理</span>
+            <span class="setting-label">{{ tr('供应商管理') }}</span>
             <span class="setting-value">{{ models.length }} 个配置</span>
-            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>
-          </div>
-          <div class="setting-item" @click="openQuickStart">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 10-13h-7l1-7z"/></svg>
-            <span class="setting-label">快速开始</span>
-            <span class="setting-value">主导航入口</span>
             <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>
           </div>
         </div>
         <div class="settings-section">
-          <div class="section-title">系统性能</div>
+          <div class="section-title">{{ tr('系统性能') }}</div>
           <div v-for="item in perfItems" :key="item.key" class="setting-item" style="cursor:default">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            <span class="setting-label">{{ item.label }}</span>
+            <span class="setting-label">{{ tr(item.label) }}</span>
             <div class="inline-input">
               <input type="number" v-model.number="perfSettings[item.key]" :min="item.min" :max="item.max" @input="markPerfDirty" class="mini-input">
             </div>
           </div>
           <div class="mobile-perf-save">
             <p class="setting-hint">并发数影响同时运行的 Agent；轮数限制单次对话 API 调用；上下文消息数影响智能体能看到的最近消息条数。</p>
-            <button type="button" class="mini-action save" :disabled="perfSaving" @click="savePerfSettings">{{ perfSaving ? '保存中' : '保存' }}</button>
+            <button type="button" class="mini-action save" :disabled="perfSaving" @click="savePerfSettings">{{ perfSaving ? tr('保存中') : tr('保存') }}</button>
           </div>
           <p class="setting-hint" :class="perfStatusClass">{{ perfStatusText }}</p>
         </div>
         <div class="settings-section">
-          <div class="section-title">日志</div>
+          <div class="section-title">{{ tr('日志') }}</div>
           <div class="setting-item" @click="toggleLogging">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
-            <span class="setting-label">记录调试日志</span>
+            <span class="setting-label">{{ tr('记录调试日志') }}</span>
             <div class="toggle" :class="{ on: logSettings.enabled }"></div>
           </div>
           <div class="mobile-log-actions">
-            <button type="button" class="mini-action" :disabled="logLoading" @click="loadRecentLogs">刷新</button>
-            <button type="button" class="mini-action danger" :disabled="logLoading" @click="clearRecentLogs">清空</button>
+            <button type="button" class="mini-action" :disabled="logLoading" @click="loadRecentLogs">{{ tr('刷新') }}</button>
+            <button type="button" class="mini-action danger" :disabled="logLoading" @click="clearRecentLogs">{{ tr('清空') }}</button>
           </div>
           <p class="setting-hint" :class="logError ? 'error' : 'success'">{{ logStatusText }}</p>
-          <pre class="mobile-log-preview"><code>{{ recentLogText || '暂无可显示日志。' }}</code></pre>
+          <pre class="mobile-log-preview"><code>{{ recentLogText || tr('暂无可显示日志。') }}</code></pre>
         </div>
         <div class="settings-section">
           <div class="section-title">安全</div>
@@ -326,37 +323,37 @@
           </div>
           <div v-if="updateInfo.available && updateInfo.isDocker" class="setting-item update-item" @click="handleUpdate" style="cursor:pointer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            <span class="setting-label">{{ updateInfo.updating ? '更新中...' : '一键更新' }}</span>
+            <span class="setting-label">{{ updateInfo.updating ? tr('更新中...') : tr('一键更新') }}</span>
             <span class="setting-value amber-text">{{ updateInfo.latestVersion }}</span>
           </div>
           <div v-if="updateInfo.updating" class="update-progress">
             <div class="progress-bar">
               <div class="progress-fill" :style="{ width: updateInfo.percent + '%' }"></div>
             </div>
-            <div class="progress-text">{{ updateInfo.message || '准备中...' }}</div>
+            <div class="progress-text">{{ updateInfo.message || tr('准备中...') }}</div>
           </div>
           <a v-else-if="updateInfo.available" class="setting-item update-item" href="https://github.com/uskyu/myna/releases" target="_blank" style="text-decoration:none;color:inherit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            <span class="setting-label">发现新版本</span>
+            <span class="setting-label">{{ tr('发现新版本') }}</span>
             <span class="setting-value amber-text">{{ updateInfo.latestVersion }}</span>
             <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
           </a>
           <div v-else class="setting-item" @click="doCheckUpdate" style="cursor:pointer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            <span class="setting-label">检查更新</span>
-            <span v-if="updateInfo.checking" class="setting-value">检查中...</span>
+            <span class="setting-label">{{ tr('检查更新') }}</span>
+            <span v-if="updateInfo.checking" class="setting-value">{{ tr('检查中...') }}</span>
             <span v-else-if="updateInfo.error" class="setting-value danger-text">{{ updateInfo.error }}</span>
-            <span v-else-if="updateInfo.checked" class="setting-value green-text">已是最新</span>
+            <span v-else-if="updateInfo.checked" class="setting-value green-text">{{ tr('已是最新') }}</span>
           </div>
           <a class="setting-item" href="https://github.com/uskyu/myna" target="_blank" style="text-decoration:none;color:inherit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-            <span class="setting-label">GitHub 仓库</span>
+            <span class="setting-label">{{ tr('GitHub 仓库') }}</span>
             <span class="setting-value">uskyu/myna</span>
             <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
           </a>
           <a class="setting-item" href="https://github.com/uskyu/myna/releases" target="_blank" style="text-decoration:none;color:inherit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            <span class="setting-label">更新日志</span>
+            <span class="setting-label">{{ tr('更新日志') }}</span>
             <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
           </a>
         </div>
@@ -376,7 +373,7 @@
           <p v-if="pwdSuccess" class="success-text">{{ pwdSuccess }}</p>
           <div class="modal-actions">
             <button type="button" class="btn-cancel" @click="showChangePwd = false">取消</button>
-            <button type="submit" class="btn-confirm">确认修改</button>
+            <button type="submit" class="btn-confirm">{{ tr('确认修改') }}</button>
           </div>
         </form>
       </div>
@@ -384,7 +381,7 @@
 
     <div v-if="showUpdateConfirm" class="modal-overlay" @click.self="showUpdateConfirm = false">
       <div class="modal-card">
-        <h3>发现新版本</h3>
+        <h3>{{ tr('发现新版本') }}</h3>
         <div class="update-confirm-content">
           <p>检测到新版本 <strong class="green-text">{{ updateInfo.latestVersion }}</strong></p>
           <p class="confirm-hint">更新过程中容器将重启，正在进行的对话会中断。建议在空闲时更新。</p>
@@ -402,9 +399,17 @@
 import { computed, inject, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { api, clearAuth, setAuthToken, updateInfo, checkForUpdate, doUpdate, ws } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
+import { currentLanguage, languages, languageState, setLanguage, translatePageNow, tr } from '../i18n.js'
 
 const emit = defineEmits(['open-room'])
 const page = inject('page', null)
+const languageMenuOpen = ref(false)
+
+function chooseLanguage(code) {
+  setLanguage(code)
+  languageMenuOpen.value = false
+  requestAnimationFrame(translatePageNow)
+}
 
 const isDark = ref(false)
 const showModels = ref(false)
@@ -477,10 +482,6 @@ const logStatusText = computed(() => {
 
 function selectSection(id) {
   activeSection.value = id
-}
-
-function openQuickStart() {
-  if (page) page.value = 'quickstart'
 }
 
 function toggleTheme() {
@@ -714,6 +715,43 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.settings-language-switcher {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  inset: auto;
+  z-index: 20;
+  margin-left: auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.settings-language-switcher .settings-language-trigger {
+  height: 32px;
+  min-width: 54px;
+  padding: 0 10px;
+  border: 1px solid rgba(45, 106, 79, 0.16);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: none;
+  backdrop-filter: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-language-switcher .settings-language-trigger:hover {
+  border-color: var(--accent);
+  background: var(--surface2);
+}
+.settings-language-switcher .language-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(210px, calc(100vw - 28px));
+}
 .desktop-settings-nav,
 .desktop-settings-detail {
   display: none;
@@ -721,40 +759,6 @@ onUnmounted(() => {
 
 .mobile-settings-stack {
   display: block;
-}
-
-.quickstart-section {
-  background: #faf9f7;
-}
-
-[data-theme="dark"] .quickstart-section {
-  background: var(--surface);
-}
-
-.mobile-template-list {
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px 16px;
-  border-top: 1px solid var(--border);
-}
-
-.mobile-template-card {
-  border: 1px solid rgba(45, 106, 79, 0.18);
-  border-radius: 12px;
-  padding: 12px;
-  background: var(--surface);
-}
-
-.mobile-template-card strong {
-  color: var(--text);
-  font-size: 14px;
-}
-
-.mobile-template-card p {
-  margin: 5px 0 10px;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .modal-overlay {
@@ -1257,9 +1261,6 @@ onUnmounted(() => {
     gap: 16px;
   }
 
-  .quickstart-summary-card {
-    margin-top: 2px;
-  }
 
   .logging-controls {
     display: grid;

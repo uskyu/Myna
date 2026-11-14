@@ -38,9 +38,11 @@ export async function api(method, path, body) {
       return { ok: false, error: '服务器返回空响应，请重试' }
     }
     try {
-      return JSON.parse(text)
+      const data = JSON.parse(text)
+      if (data && typeof data === 'object' && data.status === undefined) data.status = r.status
+      return data
     } catch (e) {
-      return { ok: false, error: '响应解析失败，请重试' }
+      return { ok: false, error: '响应解析失败，请重试', status: r.status }
     }
   } catch (e) {
     return { ok: false, error: e.message }
@@ -49,6 +51,16 @@ export async function api(method, path, body) {
 
 // Track which room is currently open
 export const currentRoomId = ref(null)
+
+export const artifact = reactive({ open: false, name: '', url: '', path: '' })
+export function openArtifact(payload) {
+  if (artifact.saving || (artifact.dirty && !window.confirm('放弃当前文件未保存的修改？'))) return
+  Object.assign(artifact, { open: false, name: '', url: '', path: '' }, payload || {})
+  artifact.open = true
+}
+export function closeArtifact() {
+  artifact.open = false
+}
 
 // Chat settings (persisted in localStorage)
 export const chatSettings = reactive({
@@ -66,7 +78,7 @@ export const store = reactive({
   activeStreams: {},
   cancelledStreamIds: {},
   unreadCounts: {},
-  pinnedConversations: [],
+  pinnedConversations: {},
   handoffEvents: [],
   initialized: false,
 })
@@ -207,35 +219,51 @@ export function clearUnread(roomId) {
   _persistUnread()
 }
 
+export function togglePinnedConversation(roomId) {
+  if (!roomId) return false
+  const nextValue = !store.pinnedConversations[roomId]
+  if (nextValue) store.pinnedConversations[roomId] = Date.now()
+  else delete store.pinnedConversations[roomId]
+  store.pinnedConversations = { ...store.pinnedConversations }
+  _persistPinnedConversations()
+  savePinnedConversations()
+  return nextValue
+}
+
+export async function loadPinnedConversations() {
+  const data = await api('GET', '/admin/pinned-conversations')
+  if (data.ok && data.result && typeof data.result === 'object') {
+    store.pinnedConversations = data.result
+    _persistPinnedConversations()
+  }
+}
+
+export async function savePinnedConversations() {
+  const data = await api('PUT', '/admin/pinned-conversations', { pins: store.pinnedConversations })
+  if (!data.ok) console.warn('Failed to sync pinned conversations:', data.error || data.status)
+}
+
 function _persistUnread() {
   try { localStorage.setItem('myna_unread', JSON.stringify(store.unreadCounts)) } catch {}
 }
 function _loadUnread() {
   try {
     const raw = localStorage.getItem('myna_unread')
-    if (raw) store.unreadCounts = JSON.parse(raw)
+    const value = raw ? JSON.parse(raw) : null
+    if (value && typeof value === 'object' && !Array.isArray(value)) store.unreadCounts = value
   } catch {}
 }
-_loadUnread()
-
-export function togglePinnedConversation(roomId) {
-  const id = String(roomId)
-  const next = store.pinnedConversations.includes(id)
-    ? store.pinnedConversations.filter(item => item !== id)
-    : [...store.pinnedConversations, id]
-  store.pinnedConversations = next
-  _persistPinnedConversations()
-}
-
 function _persistPinnedConversations() {
   try { localStorage.setItem('myna_pinned_conversations', JSON.stringify(store.pinnedConversations)) } catch {}
 }
 function _loadPinnedConversations() {
   try {
     const raw = localStorage.getItem('myna_pinned_conversations')
-    if (raw) store.pinnedConversations = JSON.parse(raw).map(String)
+    const value = raw ? JSON.parse(raw) : null
+    if (value && typeof value === 'object' && !Array.isArray(value)) store.pinnedConversations = value
   } catch {}
 }
+_loadUnread()
 _loadPinnedConversations()
 
 export async function loadAgents() {
@@ -243,14 +271,44 @@ export async function loadAgents() {
   store.agents = (data.result || []).filter(isRealAgent)
 }
 
-export async function loadConversations() {
-  const [roomData, dmData] = await Promise.all([
-    api('GET', '/admin/rooms'),
-    api('GET', '/admin/dms'),
+let conversationLoadSeq = 0
+let conversationLoadInFlight = null
+let lastConversationLoadAt = 0
+export async function loadConversations(options = {}) {
+  const includeGroups = options.includeGroups !== false
+  const includeDms = options.includeDms !== false
+  const now = Date.now()
+  const fullRefresh = includeGroups && includeDms
+  if (!options.force && fullRefresh && conversationLoadInFlight) return conversationLoadInFlight
+  if (!options.force && fullRefresh && store.initialized && now - lastConversationLoadAt < 2000) return
+  const seq = ++conversationLoadSeq
+  const run = Promise.all([
+    includeGroups ? api('GET', '/admin/rooms?type=group') : Promise.resolve({ result: store.rooms }),
+    includeDms ? api('GET', '/admin/dms') : Promise.resolve({ result: store.dms }),
+    fullRefresh ? api('GET', '/admin/pinned-conversations') : Promise.resolve({ result: store.pinnedConversations }),
   ])
+  if (fullRefresh) conversationLoadInFlight = run
+  const [roomData, dmData, pinData] = await run
+  if (fullRefresh) {
+    conversationLoadInFlight = null
+    lastConversationLoadAt = Date.now()
+  }
+  if (seq !== conversationLoadSeq) return
+  if (pinData?.ok && pinData.result && typeof pinData.result === 'object') {
+    const serverPins = pinData.result
+    const hasServerPins = Object.keys(serverPins).length > 0
+    const hasLocalPins = Object.keys(store.pinnedConversations || {}).length > 0
+    if (hasServerPins || !hasLocalPins) {
+      store.pinnedConversations = serverPins
+      _persistPinnedConversations()
+    } else {
+      // First run after upgrading from local-only pins: migrate this device's pins to the server.
+      savePinnedConversations()
+    }
+  }
   const sortConversations = (items) => [...items].sort((a, b) => {
-    const pinnedA = store.pinnedConversations.includes(String(a.id))
-    const pinnedB = store.pinnedConversations.includes(String(b.id))
+    const pinnedA = Boolean(store.pinnedConversations[a.id])
+    const pinnedB = Boolean(store.pinnedConversations[b.id])
     if (pinnedA !== pinnedB) return pinnedA ? -1 : 1
     const prominentA = (store.unreadCounts[a.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === a.id)
     const prominentB = (store.unreadCounts[b.id] || 0) > 0 || Object.values(store.activeStreams).some(s => s.roomId === b.id)
@@ -261,8 +319,12 @@ export async function loadConversations() {
     return String(a.name || a.agent?.name || '').localeCompare(String(b.name || b.agent?.name || ''))
   })
 
-  store.rooms = sortConversations((roomData.result || []).filter(r => r.type !== 'dm'))
-  store.dms = sortConversations(dmData.result || [])
+  if (includeGroups && roomData?.ok && Array.isArray(roomData.result)) {
+    store.rooms = sortConversations(roomData.result.filter(r => r.type !== 'dm'))
+  }
+  if (includeDms && dmData?.ok && Array.isArray(dmData.result)) {
+    store.dms = sortConversations(dmData.result)
+  }
   store.initialized = true
 }
 
@@ -375,7 +437,8 @@ function _globalWSHandler(msg) {
     // Handle tool_call at store level so reconnecting clients get them regardless of which ChatView is mounted
     const stream = store.activeStreams[msg.stream_id]
     if (stream) {
-      const toolPart = { type: 'tool', name: msg.tool, summary: msg.args_summary, status: 'running', result: null, ts: msg.timestamp }
+      const toolName = cleanStreamText(msg.tool) || 'tool'
+      const toolPart = { type: 'tool', name: toolName, summary: cleanStreamText(msg.args_summary), status: 'running', result: null, ts: msg.timestamp }
       stream.toolCalls.push(toolPart)
       stream.parts = stream.parts || []
       stream.parts.push(toolPart)
@@ -385,30 +448,33 @@ function _globalWSHandler(msg) {
     // Handle tool_result at store level for same reason
     const stream = store.activeStreams[msg.stream_id]
     if (stream) {
-      const last = stream.toolCalls.findLast(t => t.name === msg.tool && t.status === 'running')
+      const resultToolName = cleanStreamText(msg.tool) || 'tool'
+      const last = stream.toolCalls.findLast(t => t.name === resultToolName && t.status === 'running')
       if (last) {
         last.status = msg.ok ? 'done' : 'error'
-        last.result = msg.output_preview || msg.output || ''
+        last.result = cleanStreamText(msg.output_preview) || cleanStreamText(msg.output)
       }
-      const lastPart = stream.parts?.findLast?.(t => t.type === 'tool' && t.name === msg.tool && t.status === 'running')
+      const lastPart = stream.parts?.findLast?.(t => t.type === 'tool' && t.name === resultToolName && t.status === 'running')
       if (lastPart && lastPart !== last) {
         lastPart.status = msg.ok ? 'done' : 'error'
-        lastPart.result = msg.output_preview || msg.output || ''
+        lastPart.result = cleanStreamText(msg.output_preview) || cleanStreamText(msg.output)
       }
       store.activeStreams = { ...store.activeStreams }
     }
   } else if (msg.type === 'stream_token') {
     const stream = store.activeStreams[msg.stream_id]
     if (stream) {
+      const chunk = cleanStreamText(msg.chunk)
+      if (!chunk) return
       // Don't set working=false here — tools may still be running
       // working is only cleared on stream_end
-      stream.text += msg.chunk
+      stream.text += chunk
       stream.parts = stream.parts || []
       const lastPart = stream.parts[stream.parts.length - 1]
       if (lastPart && lastPart.type === 'text') {
-        lastPart.text += msg.chunk
+        lastPart.text += chunk
       } else {
-        stream.parts.push({ type: 'text', text: msg.chunk })
+        stream.parts.push({ type: 'text', text: chunk })
       }
       store.activeStreams = { ...store.activeStreams }
     }
@@ -484,6 +550,14 @@ function _globalWSHandler(msg) {
       }, 1000)
     }
   }
+}
+
+function cleanStreamText(value) {
+  if (value === undefined || value === null) return ''
+  const text = String(value)
+  const trimmed = text.trim()
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return ''
+  return text
 }
 
 // Avatar palette — forest greens, ambers, warm earth tones (NO blue/purple)

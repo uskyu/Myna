@@ -293,6 +293,8 @@ def _compress_history(history: list, keep_recent: int = 5, model_context_limit: 
 
 def _room_collaboration_mode(room_settings: dict | None) -> str:
     mode = str((room_settings or {}).get("collaboration_mode") or "guided").strip().lower()
+    if mode == "planning":
+        mode = "guided" if (room_settings or {}).get("execution_mode") == "work" else "manual"
     return mode if mode in {"manual", "free", "guided", "strict"} else "guided"
 
 
@@ -357,22 +359,94 @@ def _collaboration_keep_recent(room_settings: dict, context_limit: int) -> int:
     return 5
 
 
+_MENTION_RE_HV = re.compile(r"@[^\s@,，.。;；:：!！?？]+")
+_FENCE_RE_HV = re.compile(r"```[\s\S]*?```")
+_BQ_RE_HV = re.compile(r"^>\s?", flags=re.M)
+_DECOR_RE_HV = re.compile(r"[*_`#>]+")
+_PUNCT_RE_HV = re.compile(r"[,，.。;；:：!！?？、]+")
+_CONTINUE_RE_HV = re.compile(r"(收到|好的|可以|没问题|同意|谢谢|感谢)*(请)?继续(跟进)?")
+_ACTION_MARKERS_HV = [
+    "请", "需要", "修复", "复测", "评审", "验收",
+    "确认", "实现", "检查", "执行", "运行", "报错", "失败",
+    "bug", "issue", "review", "test", "fix", "implement", "verify",
+]
+
+
+def _re_sub_spaces(t: str) -> str:
+    return re.sub(r"\s+", "", _DECOR_RE_HV.sub("", t)).lower()
+
+
+def _re_punct(t: str) -> str:
+    return _PUNCT_RE_HV.sub("", t)
+
+
+def _re_finditer(marker: str, text: str):
+    return re.finditer(re.escape(marker), text)
+
+
+def _re_fullmatch_continue(compact_text: str) -> bool:
+    return bool(_CONTINUE_RE_HV.fullmatch(compact_text))
+
+
+def _is_status_restatement(reply: str) -> bool:
+    """Detect pure state-restatement acknowledgements with no new substance."""
+    t = _re_sub_spaces(_strip_md_noise(reply))
+    if not t:
+        return False
+    restate = any(k in t for k in (
+        "项目状态", "状态保持", "状态不变", "状态确认", "分工已确认", "启动条件",
+        "当前阶段", "继续保持", "保持为", "保持不变", "状态与分工",
+    ))
+    waiting = any(k in t for k in (
+        "待上传", "待数据", "等待数据", "等待用户", "数据到位", "上传后", "到位后",
+        "暂不", "不重复", "无需重复", "保持沉默", "暂无新",
+    ))
+    ack = t.startswith(("收到", "好的", "明白", "了解", "已确认", "确认"))
+    return bool((restate and waiting) or (ack and waiting and len(t) < 220))
+
+
+def _strip_md_noise(text: str) -> str:
+    body = _MENTION_RE_HV.sub("", str(text or ""))
+    body = _FENCE_RE_HV.sub("", body)
+    body = _BQ_RE_HV.sub("", body)
+    body = _DECOR_RE_HV.sub("", body)
+    return body
+
+
+def _has_live_action(text: str) -> bool:
+    """Action keyword that is neither negated nor deferred."""
+    negations = ("不", "无", "没", "勿", "暂", "避免", "禁止", "无需", "不再")
+    deferred = ("到位后", "上传后", "随后", "之后", "将", "再", "待", "等")
+    for marker in _ACTION_MARKERS_HV:
+        for m in _re_finditer(marker, text):
+            before = text[max(0, m.start() - 6):m.start()]
+            after = text[m.end():m.end() + 4]
+            if any(n in before for n in negations):
+                continue
+            if any(d in after for d in deferred):
+                continue
+            return True
+    return False
+
+
 def _is_low_value_handoff_reply(reply: str, has_tool_calls: bool = False) -> bool:
     if has_tool_calls:
         return False
-    body = re.sub(r"@[^\s@,，.。;；:：!！?？]+", "", reply or "")
-    text = re.sub(r"\s+", "", body).lower()
+    text = _re_sub_spaces(str(reply or "")).lower()
     if not text:
         return True
 
-    compact_text = re.sub(r"[,，.。;；:：!！?？、]+", "", text)
+    compact_text = _PUNCT_RE_HV.sub("", text)
     continuation_only_markers = [
         "请继续", "继续", "好的请继续", "收到请继续", "可以请继续", "没问题请继续",
         "请继续跟进", "继续跟进", "请接着", "接着来",
     ]
     if compact_text in continuation_only_markers:
         return True
-    if re.fullmatch(r"(收到|好的|可以|没问题|同意|谢谢|感谢)*(请)?继续(跟进)?", compact_text):
+    if _CONTINUE_RE_HV.fullmatch(compact_text):
+        return True
+
+    if _is_status_restatement(reply):
         return True
 
     low_value_markers = [
@@ -380,17 +454,12 @@ def _is_low_value_handoff_reply(reply: str, has_tool_calls: bool = False) -> boo
         "谢谢", "感谢", "辛苦", "好的", "可以", "没问题", "等待用户",
         "流程已明确", "随时可以", "先这样", "以上", "完毕",
     ]
-    action_markers = [
-        "请", "需要", "修复", "复测", "评审", "验收",
-        "确认", "实现", "检查", "执行", "运行", "报错", "失败",
-        "bug", "issue", "review", "test", "fix", "implement", "verify",
-    ]
 
-    if any(marker in text for marker in action_markers):
+    if _has_live_action(text):
         return False
     matched_chars = sum(len(marker) for marker in low_value_markers if marker in text)
     low_value_ratio = matched_chars / max(len(text), 1)
-    if matched_chars and len(text) <= 120 and low_value_ratio >= 0.45:
+    if matched_chars and len(text) <= 160 and low_value_ratio >= 0.35:
         return True
     return False
 
@@ -487,7 +556,8 @@ def _handoff_progress_signals(reply, collected_tool_calls, candidate, handoff_st
     tool_calls = collected_tool_calls or []
     has_tool_calls = bool(tool_calls)
     low_value = _is_low_value_handoff_reply(reply, has_tool_calls)
-    tasklike = _is_tasklike_handoff_reply(reply, has_tool_calls) and not low_value
+    status_rest = _is_status_restatement(reply) and not has_tool_calls
+    tasklike = _is_tasklike_handoff_reply(reply, has_tool_calls) and not low_value and not status_rest
     text = _normalize_handoff_text(reply).lower()
     fingerprint = _handoff_reply_fingerprint(reply)
     failure = _failure_signature(reply)
@@ -502,6 +572,8 @@ def _handoff_progress_signals(reply, collected_tool_calls, candidate, handoff_st
     ])
     new_failure = bool(failure and failure_count == 0)
     new_fingerprint = bool(fingerprint and fingerprint not in recent_fingerprints)
+    if status_rest:
+        explicit_progress = False
     meaningful_progress = bool(has_tool_calls or new_failure or explicit_fix_or_retest or (explicit_progress and new_fingerprint))
     return {
         "tool_calls": has_tool_calls,
@@ -580,6 +652,10 @@ def _evaluate_handoff_candidate(candidate, reply, collected_tool_calls, handoff_
         return finish("suppressed", "max_chain_depth")
     if mode == "manual":
         return finish("suppressed", "manual_mode")
+    orch_star = str(room_settings.get("planning_orchestrator_id") or "")
+    speaker_star = str(candidate.get("source_agent_id") or "")
+    if mode == "guided" and orch_star and speaker_star and speaker_star != orch_star:
+        return finish("suppressed", "specialist_no_auto_handoff", stalled=True)
     if mode == "strict" and candidate.get("source") == "text_mention":
         return finish("suppressed", "strict_mode")
     if progress_signals.get("low_value"):
@@ -748,6 +824,9 @@ def get_model_config_for_agent(db, agent: dict) -> dict | None:
         config = db.get_model_config(agent["model_config_id"])
     if not config:
         config = db.get_default_model_config()
+    if not config:
+        configs = db.list_model_configs()
+        config = configs[0] if configs else None
     return config
 
 
@@ -794,10 +873,18 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
         prompt = f"你是 {name}，一个全能智能助手。\n\n{tools_desc}"
 
     prompt += "\n\n回复使用 Markdown 格式，保持简洁专业。直接执行用户的指令。"
+    prompt += """
+
+[网页来源与引用]
+- 使用网页搜索、浏览器或 HTTP 工具获取事实时，结论后必须附上实际访问过的 http/https 来源 URL。
+- 重要事实尽量提供两个相互独立的来源，并说明来源日期；不得编造链接、标题、作者或发布日期。
+- 如果没有可核验 URL，明确写“未找到可核验来源”，不要声称已经核实。
+- 前端会从回复中的真实 URL 自动生成可点击引用角标，因此 URL 必须保留在最终回复中。"""
 
     room_settings = room_settings or {}
     is_planning_orchestrator = (
         room_settings.get("collaboration_mode") == "planning"
+        and not room_settings.get("is_chat")
         and agent.get("id") == room_settings.get("planning_orchestrator_id")
     )
     if is_planning_orchestrator:
@@ -805,17 +892,30 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 
 [任务规划与确认]
 你是当前任务的规划协调者。先提炼任务目标、交付物和约束，并建议完成任务所需的专业智能体；不要直接执行任务。
-提出建议时不得自行创建群聊或智能体，必须等待用户在界面确认。先用简洁文字解释方案，然后在回复末尾原样输出一个合法 JSON 代码块：
+提出建议时不得自行创建群聊或智能体，必须等待用户明确回复“确认”或同意后才能创建。先用简洁文字解释方案，然后在回复末尾原样输出一个合法 JSON 代码块：
 ```myna-project-proposal
 {"project_name":"3到5字任务名称","summary":"项目目标与交付物","roles":[{"name":"开发","responsibility":"实现功能并完成基础自测"},{"name":"测试","responsibility":"制定测试方案并独立验收"}]}
 ```
-规则：JSON 仅包含 project_name、summary、roles；roles 为 1-8 个角色，每项只含 name 和 responsibility；不要声称项目已经创建。"""
+规则：JSON 仅包含 project_name、summary、roles；roles 为 1-8 个角色，每项只含 name 和 responsibility；不要声称项目已经创建。
+
+[主助手权限]
+你直接统筹任务并使用已有工具完成工作，不再交接给 System Agent。
+只有系统明确注入“主账号授权的只读凭据目录”时，你才能说明凭据名称和类型；禁止输出、猜测或索取凭据明文。
+不得通过聊天任务修改 Myna 实例级代码、全局配置、容器或认证策略。项目工作只能在当前群聊工作空间内进行。"""
     collaboration_mode = _room_collaboration_mode(room_settings)
+    interaction_mode = room_settings.get('execution_mode')
+    if interaction_mode == 'chat':
+        prompt += "\n[对话模式] 以回答和讨论为主；仅在必要时使用工具，不主动分派其他智能体。"
+    elif interaction_mode == 'work':
+        prompt += "\n[工作模式] 以完成用户目标为主，按需规划、执行工具并验证结果；用户要求独立完成时不得分派其他智能体。"
     room_description = (room or {}).get("description") or room_settings.get("room_description") or ""
     guide_text = room_settings.get("collaboration_guide", "")
     unified_guide = room_settings.get("room_guide") or ""
     if not unified_guide:
         unified_guide = "\n\n".join([s.strip() for s in [room_description, guide_text] if isinstance(s, str) and s.strip()])
+    if room_settings.get("planning_orchestrator_id"):
+        unified_guide = (unified_guide + "\n\n[协同纪律] 编排者先自行分析与整合，仅在确需专项技能时@对应专家并给出具体任务与验收标准；"
+                         "各成员禁止回复纯确认或状态复述——无实质产出时保持沉默；避免多人重复核验同一事实。").strip()
     if unified_guide:
         prompt += f"""
 
@@ -823,6 +923,14 @@ def build_system_prompt(agent: dict, room_type: str, other_agents: list = None, 
 以下是用户为本群配置的目标、背景、角色分工和协作流程，所有智能体必须遵守：
 
 {unified_guide.strip()}"""
+    shared_context = room_settings.get("shared_context") or ""
+    if shared_context:
+        prompt += f"""
+
+[用户主动载入的分享上下文]
+以下是只读分享快照，仅作为当前账号这次续聊的背景；不要推断原房间权限或访问原账号数据：
+
+{str(shared_context)[:60000]}"""
 
     workspace_path = room_settings.get("__workspace_path") if isinstance(room_settings, dict) else None
     workspace_mode = room_settings.get("__workspace_mode") if isinstance(room_settings, dict) else None
@@ -1123,6 +1231,13 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                 # memory, skills, sessions directory
                 profile_dir = get_agent_profile_dir(agent.get("id", "default"))
                 token = set_hermes_home_override(str(profile_dir))
+                # Project conversations share one MEMORY.md; other projects never see it.
+                memory_token = None
+                _project_id = (room_settings or {}).get("project_id") or ((room_settings or {}).get("is_project") and room_id)
+                if _project_id:
+                    from tools.memory_tool import PROJECT_MEMORY_DIR
+                    _safe = "".join(ch for ch in str(_project_id) if ch.isalnum() or ch == "-")[:64]
+                    memory_token = PROJECT_MEMORY_DIR.set(str(DATA_ROOT / "project_memory" / _safe))
 
                 # Set room/project workspace as default cwd (shared by all agents in this room).
                 # Agent profile remains isolated for memory/skills/config; project files do not
@@ -1249,9 +1364,18 @@ async def run_hermes_agent(agent: dict, history: list, system_prompt: str,
                         system_message=system_prompt,
                         conversation_history=history[:-1] if len(history) > 1 else None,
                     )
+                    if callbacks.get('on_token_usage') and getattr(agent_instance, 'session_api_calls', 0):
+                        asyncio.run_coroutine_threadsafe(callbacks['on_token_usage'](
+                            agent_instance.session_input_tokens,
+                            agent_instance.session_output_tokens,
+                            getattr(agent_instance, 'session_cache_read_tokens', None),
+                        ), loop).result(timeout=10)
                     return result.get("final_response", "") if isinstance(result, dict) else str(result)
                 finally:
                     reset_hermes_home_override(token)
+                    if memory_token is not None:
+                        from tools.memory_tool import PROJECT_MEMORY_DIR
+                        PROJECT_MEMORY_DIR.reset(memory_token)
                     if old_yolo is None:
                         os.environ.pop("HERMES_YOLO_MODE", None)
                     else:
@@ -1528,17 +1652,17 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
     collaboration_mode = _room_collaboration_mode(room_settings)
 
     for agent in responding_agents:
-        # Special handling for System Agent
-        if agent["id"] == "__system__":
-            await _handle_system_agent_request(db, ws_manager, room_id, text, sender_id, thread_id)
-            continue
-
         full_agent = db.get_agent_by_id(agent["id"])
         if not full_agent:
             continue
         visited_agents.add(agent["id"])
 
         model_config = get_model_config_for_agent(db, full_agent)
+        if not model_config:
+            text = f"⚠️ 智能体「{full_agent.get('name') or '助手'}」没有可用模型配置，请先在设置中配置模型。"
+            msg = db.create_message(room_id, 'system', text, 'markdown', None, [], None, thread_id)
+            await ws_manager.notify_ui({'type': 'new_message', 'room_id': room_id, 'thread_id': thread_id, 'message': msg})
+            continue
         context_limit = _resolve_context_limit(db, room_settings, model_config)
         recent_messages = db.get_thread_messages(thread_id, context_limit) if thread_id else db.get_room_messages(room_id, context_limit)
 
@@ -1613,8 +1737,14 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         collected_tool_calls = []
         stream_parts = []
+        _stream_stats = {"first_token_ms": None, "input_tokens": None, "output_tokens": None, "cache_hit_tokens": None, "usage_recorded": False}
 
         async def on_token(chunk):
+            if _stream_stats.get("first_token_ms") is None:
+                try:
+                    _stream_stats["first_token_ms"] = int((time.perf_counter() - execution_started) * 1000)
+                except Exception:
+                    pass
             if stream_parts and stream_parts[-1].get("type") == "text":
                 stream_parts[-1]["text"] += chunk
             else:
@@ -1623,6 +1753,10 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
 
         async def on_tool_call(info):
             tool_part = {"type": "tool", "name": info["name"], "summary": info["summary"], "status": "running", "result": None}
+            args = info.get("args") if isinstance(info.get("args"), dict) else {}
+            tool_url = str(args.get("url") or args.get("href") or "").strip()
+            if re.match(r"^https?://", tool_url, re.I):
+                tool_part["source_url"] = tool_url[:2048]
             collected_tool_calls.append(tool_part)
             stream_parts.append(tool_part)
             await ws_manager.notify_ui({"type": "tool_call", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "tool": info["name"], "args_summary": info["summary"], "timestamp": int(datetime.now().timestamp() * 1000)})
@@ -1687,7 +1821,14 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         }
 
         # Token usage tracking callback
-        async def on_token_usage(input_tokens, output_tokens):
+        async def on_token_usage(input_tokens, output_tokens, cache_hit_tokens=None):
+            try:
+                _stream_stats["input_tokens"] = int(input_tokens or 0)
+                _stream_stats["output_tokens"] = int(output_tokens or 0)
+                _stream_stats['usage_recorded'] = True
+                _stream_stats['cache_hit_tokens'] = cache_hit_tokens
+            except Exception:
+                pass
             try:
                 db.record_token_daily(
                     agent_id=agent["id"],
@@ -1884,8 +2025,29 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                     "chain_depth": chain_depth,
                 }
             })
+        verified_sources = []
+        seen_sources = set()
+        for tool_call in collected_tool_calls:
+            source_url = str(tool_call.get("source_url") or "")
+            if source_url and source_url not in seen_sources:
+                seen_sources.add(source_url)
+                verified_sources.append(source_url)
+        if verified_sources:
+            metadata = _merge_metadata(metadata, {"verified_sources": verified_sources[:12]})
 
         message = db.create_message(room_id, agent["id"], reply, "markdown", None, reply_mentions, metadata, thread_id)
+        try:
+            import json as _json
+            _st = dict(_stream_stats)
+            _st["total_ms"] = int((time.perf_counter() - execution_started) * 1000)
+            _meta = message.get("metadata") or {}
+            _meta["stats"] = _st
+            message["metadata"] = _meta
+            db.execute(f"UPDATE messages SET metadata = {db._placeholder()} WHERE id = {db._placeholder()}",
+                       (_json.dumps(_meta, ensure_ascii=False), message["id"]))
+            db.commit()
+        except Exception as _se:
+            print(f"[AI] stats persist error: {_se}")
 
         for member in members:
             if member["id"] != agent["id"]:
@@ -1893,7 +2055,7 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
                 db.push_update(member["id"], "message", payload)
                 await ws_manager.notify_agent(member["id"], {"type": "message", **payload})
 
-        await ws_manager.notify_ui({"type": "new_message", "room_id": room_id, "thread_id": thread_id, "message": {"id": message["id"], "room_id": room_id, "sender_id": agent["id"], "sender_name": agent.get("name") or full_agent.get("name", ""), "text": reply, "thread_id": thread_id, "created_at": datetime.now().isoformat()}})
+        await ws_manager.notify_ui({"type": "new_message", "room_id": room_id, "thread_id": thread_id, "message": {"id": message["id"], "room_id": room_id, "sender_id": agent["id"], "sender_name": agent.get("name") or full_agent.get("name", ""), "text": reply, "metadata": message.get("metadata"), "thread_id": thread_id, "created_at": datetime.now().isoformat()}})
 
         # Send stream_end AFTER message is saved
         await ws_manager.notify_ui({"type": "stream_end", "stream_id": stream_id, "room_id": room_id, "agent_id": agent["id"], "interrupted": is_interrupted})
@@ -1936,17 +2098,47 @@ async def process_message(db, ws_manager, room_id: str, sender_id: str, text: st
         except:
             pass
 
-        # Agent-level: None = follow global switch; explicit 0/1 overrides per agent.
+        # Historical rows use 0 as the schema default, so 0 must follow the
+        # global switch; otherwise enabling global learning never affects them.
         agent_self_improve = full_agent.get("self_improve")
-        effective_self_improve = _global_self_improve if agent_self_improve is None else bool(agent_self_improve)
-        effective_threshold = full_agent.get("self_improve_threshold") or _global_threshold
+        effective_self_improve = _global_self_improve if agent_self_improve in (None, 0, "0") else bool(agent_self_improve)
+        # Existing agents were created with a schema default of 2 even when no
+        # per-agent override was chosen. Only an explicitly enabled agent owns
+        # its custom threshold; all other agents follow the global 3/5/10 value.
+        effective_threshold = (full_agent.get("self_improve_threshold") or _global_threshold) if agent_self_improve not in (None, 0, "0") else _global_threshold
+        learning_scope_allowed = not (
+            room and room.get("tenant_id") is not None and full_agent.get("tenant_id") is None
+        )
 
-        if (collected_tool_calls and len(collected_tool_calls) >= effective_threshold
-            and chain_depth == 0 and effective_self_improve and _global_self_improve):
-            print(f"[AI] Self-improvement trigger for {full_agent.get('name')}: {len(collected_tool_calls)} tool calls >= threshold {effective_threshold}")
-            asyncio.create_task(_self_improvement(db, ws_manager, room_id, thread_id, full_agent, collected_tool_calls, reply, model_config))
+        repeated_count = 0
+        evidence_calls = collected_tool_calls
+        if collected_tool_calls and chain_depth == 0 and effective_self_improve and _global_self_improve and learning_scope_allowed:
+            signature = ">".join(str(call.get("name") or "tool") for call in collected_tool_calls)
+            evidence_key = f"self_improve_evidence:{full_agent['id']}"
+            try:
+                evidence = json.loads(db.get_hub_setting(evidence_key) or "{}")
+            except Exception:
+                evidence = {}
+            item = evidence.get(signature) if isinstance(evidence, dict) else None
+            if not isinstance(item, dict):
+                item = {"count": 0, "tool_calls": []}
+            item["count"] = int(item.get("count") or 0) + 1
+            item["tool_calls"] = (item.get("tool_calls") or [])[-20:] + collected_tool_calls
+            item["updated_at"] = datetime.now().isoformat()
+            evidence[signature] = item
+            # Bound persisted evidence so stale one-off workflows do not grow forever.
+            ordered = sorted(evidence.items(), key=lambda pair: pair[1].get("updated_at", ""), reverse=True)[:20]
+            db.set_hub_setting(evidence_key, json.dumps(dict(ordered), ensure_ascii=False))
+            repeated_count = item["count"]
+            evidence_calls = item["tool_calls"]
+
+        if (repeated_count >= effective_threshold
+            and chain_depth == 0 and effective_self_improve and _global_self_improve and learning_scope_allowed):
+            print(f"[AI] Self-improvement trigger for {full_agent.get('name')}: workflow repeated {repeated_count} times >= threshold {effective_threshold}")
+            db.set_hub_setting(f"self_improve_evidence:{full_agent['id']}", "{}")
+            asyncio.create_task(_self_improvement(db, ws_manager, room_id, thread_id, full_agent, evidence_calls, reply, model_config))
         elif collected_tool_calls:
-            print(f"[AI] Self-improvement skipped for {full_agent.get('name')}: {len(collected_tool_calls)} tool calls, threshold={effective_threshold}, enabled={effective_self_improve}, global={_global_self_improve}, chain={chain_depth}")
+            print(f"[AI] Self-improvement pending for {full_agent.get('name')}: repeated={repeated_count}, threshold={effective_threshold}, enabled={effective_self_improve}, global={_global_self_improve}, chain={chain_depth}")
         else:
             print(f"[AI] No tool calls collected for {full_agent.get('name')} (self_improve={effective_self_improve})")
 
@@ -1959,7 +2151,7 @@ async def _self_improvement(db, ws_manager, room_id, thread_id, agent, tool_call
         existing_names = [s["name"] for s in existing_skills]
         existing_summary = "\n".join([f"- {s['name']}: {s.get('description', '')}" for s in existing_skills[:20]]) if existing_skills else "（暂无已有技能）"
 
-        tool_summary = "\n".join([f"- {t['name']}: {t.get('summary', '')} (结果: {t['status']}, {(t.get('result') or '')[:100]})" for t in tool_calls])
+        tool_summary = "\n".join([f"- {t.get('name', 'tool')}: {t.get('summary', '')} (结果: {t.get('status', 'unknown')}, {(t.get('result') or '')[:100]})" for t in tool_calls[-30:]])
 
         review_msgs = [
             {"role": "system", "content": f"""你是技能提取器。根据智能体的工具使用记录，判断是否值得提取/更新技能。
@@ -1970,7 +2162,7 @@ async def _self_improvement(db, ws_manager, room_id, thread_id, agent, tool_call
 判断规则：
 1. 如果这次操作只是简单的一问一答、查询信息、闲聊，输出 {{"action": "skip", "reason": "简单查询不需要保存"}}
 2. 如果这次操作和已有技能高度重复（同类任务、同样步骤），输出 {{"action": "update", "target_skill": "已有技能名", "skill_content": "更新后的完整内容"}}
-3. 只有当这次操作涉及多步骤、有复用价值、且和已有技能不重复时，才输出 {{"action": "create", "skill_name": "名称", "skill_description": "一句话描述", "skill_content": "详细步骤和要点"}}
+3. 只有当多次操作形成稳定、验证成功、可复用的流程，且和已有技能不重复时，才输出 {{"action": "create", "skill_name": "名称", "skill_description": "一句话描述", "skill_content": "包含前置条件、步骤、验证和失败恢复的完整流程"}}
 
 不值得保存的例子：查看文件内容、简单问答、单步命令、日常对话
 值得保存的例子：多步部署流程、复杂调试过程、数据处理管道、配置多个服务的协作

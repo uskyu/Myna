@@ -1,26 +1,22 @@
 <template>
   <div class="page admin-center">
     <div class="page-header">
-      <h2>管理中心</h2>
+      <h2>{{ tr('管理中心') }}</h2>
     </div>
 
     <!-- Tab bar -->
     <div class="tab-bar" :class="{ 'desktop-nav': isDesktop }">
       <div class="tab-item" :class="{ active: activeTab === 'config' }" @pointerdown.prevent="setActiveTab('config')" @click="setActiveTab('config')">
-        <span class="tab-label">配置</span>
-        <span class="tab-helper">执行策略与自主进化</span>
+        <span class="tab-label">{{ tr('配置') }}</span>
+        <span class="tab-helper">{{ tr('执行策略与自主进化') }}</span>
       </div>
       <div class="tab-item" :class="{ active: activeTab === 'skills' }" @pointerdown.prevent="setActiveTab('skills')" @click="setActiveTab('skills')">
-        <span class="tab-label">技能库</span>
-        <span class="tab-helper">全局技能资产</span>
-      </div>
-      <div class="tab-item" :class="{ active: activeTab === 'system' }" @pointerdown.prevent="setActiveTab('system')" @click="setActiveTab('system')">
-        <span class="tab-label">系统智能体</span>
-        <span class="tab-helper">系统代理与行为</span>
+        <span class="tab-label">{{ tr('技能库') }}</span>
+        <span class="tab-helper">{{ tr('全局技能资产') }}</span>
       </div>
       <div class="tab-item" :class="{ active: activeTab === 'usage' }" @pointerdown.prevent="setActiveTab('usage')" @click="setActiveTab('usage')">
-        <span class="tab-label">Token 用量</span>
-        <span class="tab-helper">Room Token 消耗</span>
+        <span class="tab-label">{{ tr('用量统计') }}</span>
+        <span class="tab-helper">{{ tr('Room Token 消耗') }}</span>
       </div>
       <div class="tab-indicator" :style="tabIndicatorStyle"></div>
     </div>
@@ -32,25 +28,25 @@
       <div v-show="activeTab === 'config'" class="tab-panel">
         <div class="admin-section config-panel">
           <div class="section-title-row">
-            <h3>⚙ 智能体执行</h3>
+            <h3>{{ tr('⚙ 智能体执行') }}</h3>
           </div>
           <div class="config-items">
             <div class="config-item">
-              <span class="config-label">工具调用显示</span>
+              <span class="config-label">{{ tr('工具调用显示') }}</span>
               <div class="config-options">
                 <label v-for="opt in toolDisplayOptions" :key="opt.value" class="radio-option" :class="{ active: chatSettings.toolCallDisplay === opt.value }">
                   <input type="radio" name="tool-display" :value="opt.value" :checked="chatSettings.toolCallDisplay === opt.value" @change="onToolDisplayChange(opt.value)">
-                  <span>{{ opt.label }}</span>
+                  <span>{{ tr(opt.label) }}</span>
                 </label>
               </div>
             </div>
             <div class="config-item">
-              <span class="config-label">最大执行轮数</span>
-              <span class="config-desc">单次响应的最大 API 调用轮数，到达后自动停止</span>
+              <span class="config-label">{{ tr('最大执行轮数') }}</span>
+              <span class="config-desc">{{ tr('单次响应的最大 API 调用轮数，到达后自动停止') }}</span>
               <div class="config-options">
                 <label v-for="opt in roundOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.agent_max_rounds === opt.value }">
                   <input type="radio" name="rounds" :value="opt.value" :checked="hubSettings.agent_max_rounds === opt.value" @change="onRoundsChange(opt.value)">
-                  <span>{{ opt.label }}</span>
+                  <span>{{ tr(opt.label) }}</span>
                 </label>
               </div>
             </div>
@@ -59,22 +55,22 @@
 
         <div class="admin-section config-panel">
           <div class="section-title-row">
-            <h3>🧠 自主进化</h3>
+            <h3>{{ tr('🧠 自主进化') }}</h3>
             <div class="toggle" :class="{ on: hubSettings.self_improve_enabled === '1' }" @click="toggleSelfImprove"></div>
           </div>
           <div class="config-items" v-if="hubSettings.self_improve_enabled === '1'">
             <div class="config-item">
-              <span class="config-label">触发阈值</span>
-              <span class="config-desc">工具调用次数达到此值后触发学习分析</span>
+              <span class="config-label">{{ tr('触发阈值') }}</span>
+              <span class="config-desc">{{ tr('工具调用次数达到此值后触发学习分析') }}</span>
               <div class="config-options">
                 <label v-for="opt in thresholdOptions" :key="opt.value" class="radio-option" :class="{ active: hubSettings.self_improve_threshold === opt.value }">
                   <input type="radio" name="threshold" :value="opt.value" :checked="hubSettings.self_improve_threshold === opt.value" @change="onThresholdChange(opt.value)">
-                  <span>{{ opt.label }}</span>
+                  <span>{{ tr(opt.label) }}</span>
                 </label>
                 <label class="radio-option custom-threshold" :class="{ active: isCustomThreshold }">
                   <input type="radio" name="threshold" value="custom" :checked="isCustomThreshold" @change="showCustomThreshold = true">
-                  <span>自定义</span>
-                  <input v-if="isCustomThreshold || showCustomThreshold" type="number" min="1" max="50" class="threshold-input" v-model.number="customThresholdVal" @blur="onCustomThresholdBlur" @keyup.enter="onCustomThresholdBlur" placeholder="次数">
+                  <span>{{ tr('自定义') }}</span>
+                  <input v-if="isCustomThreshold || showCustomThreshold" type="number" min="1" max="50" class="threshold-input" v-model.number="customThresholdVal" @blur="onCustomThresholdBlur" @keyup.enter="onCustomThresholdBlur" :placeholder="tr('次数')">
                 </label>
               </div>
             </div>
@@ -86,17 +82,17 @@
       <div v-show="activeTab === 'skills'" class="tab-panel">
         <div class="admin-section skills-section">
           <div class="section-title-row">
-            <h3>🛠 全局技能库</h3>
+            <h3>{{ tr('🛠 全局技能库') }}</h3>
             <span class="badge">{{ allSkills.length }}</span>
             <div class="section-actions">
-              <button class="link-btn" @click="showCreateSkill = true">+ 创建</button>
-              <button class="link-btn" @click="triggerUpload">📁 上传</button>
+              <button class="link-btn" @click="showCreateSkill = true">{{ tr('+ 创建') }}</button>
+              <button class="link-btn" @click="triggerUpload">{{ tr('📁 上传') }}</button>
               <input ref="skillFileInput" type="file" accept=".md,.txt,.json,.yaml,.yml" style="display:none" @change="onSkillFileUpload" multiple />
             </div>
           </div>
 
           <div v-if="allSkills.length === 0" class="empty-state">
-            <p>暂无技能，点击上方按钮创建或上传</p>
+            <p>{{ tr('暂无技能，点击上方按钮创建或上传') }}</p>
           </div>
 
           <div class="skills-workspace">
@@ -104,7 +100,7 @@
               <div v-for="group in skillGroups" :key="group.agentId" class="skill-group">
                 <div class="skill-group-header">
                   <span class="skill-group-name">{{ group.agentName }}</span>
-                  <span class="skill-group-count">{{ group.skills.length }} 个技能</span>
+                  <span class="skill-group-count">{{ tr('{count} 个技能', { count: group.skills.length }) }}</span>
                 </div>
                 <div class="skill-grid">
                   <div v-for="skill in group.skills" :key="skill.id" class="skill-card" :class="{ selected: selectedSkill?.id === skill.id }" @click="selectSkill(skill)">
@@ -112,21 +108,21 @@
                       <span class="skill-card-name">{{ skill.name }}</span>
                       <span class="skill-card-type">{{ skill.file_type || 'text' }}</span>
                     </div>
-                    <p class="skill-card-desc">{{ skill.description || '无描述' }}</p>
+                    <p class="skill-card-desc">{{ skill.description || tr('无描述') }}</p>
                     <div class="skill-card-actions">
-                      <button class="skill-card-btn" @click.stop="viewSkill(skill)" title="查看">
+                      <button class="skill-card-btn" @click.stop="viewSkill(skill)" :title="tr('查看')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
-                      <button class="skill-card-btn" @click.stop="startEditSkill(skill)" title="编辑">
+                      <button class="skill-card-btn" @click.stop="startEditSkill(skill)" :title="tr('编辑')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
-                      <button class="skill-card-btn" @click.stop="copySkill(skill)" title="复制到其他智能体">
+                      <button class="skill-card-btn" @click.stop="copySkill(skill)" :title="tr('复制到其他智能体')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>
-                      <button class="skill-card-btn" @click.stop="downloadSkill(skill)" title="下载">
+                      <button class="skill-card-btn" @click.stop="downloadSkill(skill)" :title="tr('下载')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       </button>
-                      <button class="skill-card-btn danger" @click.stop="deleteSkill(skill)" title="删除">
+                      <button class="skill-card-btn danger" @click.stop="deleteSkill(skill)" :title="tr('删除')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       </button>
                     </div>
@@ -145,7 +141,7 @@
                     <label class="file-type-field">类型<input v-model="editForm.file_type" /></label>
                   </div>
                   <div class="inspector-meta">
-                    <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
+                    <span>{{ tr('所属') }}: {{ selectedSkill.agent_name || tr('未知') }}</span>
                   </div>
                   <textarea class="inspector-editor" v-model="editForm.content" spellcheck="false"></textarea>
                   <div class="inspector-actions">
@@ -157,31 +153,26 @@
                   <div class="inspector-header">
                     <div>
                       <h4>{{ selectedSkill.name }}</h4>
-                      <p>{{ selectedSkill.description || '无描述' }}</p>
+                      <p>{{ selectedSkill.description || tr('无描述') }}</p>
                     </div>
                     <span class="skill-card-type">{{ selectedSkill.file_type || 'text' }}</span>
                   </div>
                   <div class="inspector-meta">
-                    <span>所属: {{ selectedSkill.agent_name || '未知' }}</span>
+                    <span>{{ tr('所属') }}: {{ selectedSkill.agent_name || tr('未知') }}</span>
                   </div>
-                  <pre class="inspector-content">{{ selectedSkill.content || '(空)' }}</pre>
+                  <pre class="inspector-content">{{ selectedSkill.content || tr('(空)') }}</pre>
                   <div class="inspector-actions">
-                    <button class="link-btn" @click="startEditSkill(selectedSkill)">编辑</button>
-                    <button class="link-btn" @click="viewSkill(selectedSkill)">弹窗查看</button>
-                    <button class="link-btn" @click="copySkill(selectedSkill)">复制</button>
-                    <button class="link-btn" @click="downloadSkill(selectedSkill)">下载</button>
+                    <button class="link-btn" @click="startEditSkill(selectedSkill)">{{ tr('编辑') }}</button>
+                    <button class="link-btn" @click="viewSkill(selectedSkill)">{{ tr('弹窗查看') }}</button>
+                    <button class="link-btn" @click="copySkill(selectedSkill)">{{ tr('复制') }}</button>
+                    <button class="link-btn" @click="downloadSkill(selectedSkill)">{{ tr('下载') }}</button>
                   </div>
                 </template>
               </template>
-              <div v-else class="inspector-empty">选择一个技能查看内容</div>
+              <div v-else class="inspector-empty">{{ tr('选择一个技能查看内容') }}</div>
             </aside>
           </div>
         </div>
-      </div>
-
-      <!-- System Agent tab -->
-      <div v-show="activeTab === 'system'" class="tab-panel">
-        <SystemAgentPanel />
       </div>
 
       <!-- Usage tab -->
@@ -193,45 +184,52 @@
               <p class="section-subtitle">统计所有 room 在指定时间范围内的 token 消耗</p>
             </div>
             <div class="usage-range-tabs">
-              <button v-for="option in usageRangeOptions" :key="option.value" class="range-btn" :class="{ active: usageDays === option.value }" @click="setUsageDays(option.value)">
-                {{ option.label }}
-              </button>
+              <button v-for="option in usageRangeOptions" :key="option.value" class="range-btn" :class="{ active: usageDays === option.value }" @click="setUsageDays(option.value)">{{ option.label }}</button>
             </div>
           </div>
+
           <div class="usage-cards">
-            <div class="usage-card"><span class="usage-card-label">总 Token</span><strong>{{ formatNumber(usageTotals.total_tokens) }}</strong></div>
-            <div class="usage-card"><span class="usage-card-label">输入 Token</span><strong>{{ formatNumber(usageTotals.input_tokens) }}</strong></div>
-            <div class="usage-card"><span class="usage-card-label">输出 Token</span><strong>{{ formatNumber(usageTotals.output_tokens) }}</strong></div>
-            <div class="usage-card"><span class="usage-card-label">调用次数</span><strong>{{ formatNumber(usageTotals.call_count) }}</strong></div>
+            <div class="usage-card">
+              <span class="usage-card-label">总 Token</span>
+              <strong>{{ formatNumber(usageTotals.total_tokens) }}</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">输入 Token</span>
+              <strong>{{ formatNumber(usageTotals.input_tokens) }}</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">输出 Token</span>
+              <strong>{{ formatNumber(usageTotals.output_tokens) }}</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">调用次数</span>
+              <strong>{{ formatNumber(usageTotals.call_count) }}</strong>
+            </div>
           </div>
+
           <div v-if="usageLoading" class="empty-state">正在加载用量统计...</div>
           <div v-else-if="usageError" class="empty-state">{{ usageError }}</div>
           <template v-else>
             <div class="usage-chart">
               <div class="usage-chart-head">
-                <div><span>每日趋势</span><small>{{ usageDaily.length ? `近 ${usageDaily.length} 天连续趋势` : '暂无记录' }}</small></div>
-                <div v-if="maxDailyTokens" class="usage-chart-peak">峰值 {{ formatCompactNumber(maxDailyTokens) }}</div>
+                <div>
+                  <span>每日趋势</span>
+                  <small>{{ usageDaily.length ? `近 ${usageDaily.length} 天连续趋势` : '暂无记录' }}</small>
+                </div>
+                <div v-if="maxDailyTokens" class="usage-chart-peak">
+                  峰值 {{ formatCompactNumber(maxDailyTokens) }}
+                </div>
               </div>
               <div v-if="usageDaily.length" class="usage-line-chart">
-                <div ref="usageTrendChartRef" class="usage-echarts-trend" :aria-label="`每日 token 曲线图，峰值 ${formatNumber(maxDailyTokens)} tokens`"></div>
+                <div
+                  ref="usageTrendChartRef"
+                  class="usage-echarts-trend"
+                  :aria-label="`每日 token 曲线图，峰值 ${formatNumber(maxDailyTokens)} tokens`"
+                ></div>
               </div>
               <div v-else class="empty-state compact">暂无 token 记录</div>
             </div>
-            <div class="usage-table-wrap">
-              <table class="usage-table">
-                <thead><tr><th>Room</th><th>总 Token</th><th>输入</th><th>输出</th><th>调用次数</th></tr></thead>
-                <tbody>
-                  <tr v-for="room in usageRooms" :key="room.room_id || room.room_name">
-                    <td>{{ room.room_name || '未知 Room' }}</td>
-                    <td>{{ formatNumber(room.total_tokens) }}</td>
-                    <td>{{ formatNumber(room.input_tokens) }}</td>
-                    <td>{{ formatNumber(room.output_tokens) }}</td>
-                    <td>{{ formatNumber(room.call_count) }}</td>
-                  </tr>
-                  <tr v-if="!usageRooms.length"><td colspan="5" class="empty-cell">暂无 room token 记录</td></tr>
-                </tbody>
-              </table>
-            </div>
+
           </template>
         </div>
       </div>
@@ -245,7 +243,7 @@
           <div class="skill-view-header">
             <h4>{{ viewingSkill.name }}</h4>
             <div class="modal-head-actions">
-              <button class="link-btn" @click="startEditSkill(viewingSkill); viewingSkill = null">编辑</button>
+              <button class="link-btn" @click="startEditSkill(viewingSkill); viewingSkill = null">{{ tr('编辑') }}</button>
               <button class="close-btn" @click="viewingSkill = null">×</button>
             </div>
           </div>
@@ -312,6 +310,22 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Delete Skill Confirm Modal -->
+    <Teleport to="body">
+      <div v-if="deletingSkill" class="delete-confirm-overlay" @click.self="closeDeleteSkillConfirm">
+        <div class="delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-skill-title">
+          <div class="delete-confirm-icon" aria-hidden="true">!</div>
+          <h4 id="delete-skill-title">确认删除技能？</h4>
+          <p>即将删除「{{ deletingSkill.name }}」。此操作不可撤销，请确认是否继续。</p>
+          <div class="delete-confirm-actions">
+            <button class="btn-cancel" @click="closeDeleteSkillConfirm">取消</button>
+            <button class="btn btn-danger" @click="confirmDeleteSkill">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Create Skill Modal -->
     <Teleport to="body">
       <div v-if="showCreateSkill" class="skill-view-overlay" @click.self="showCreateSkill = false">
@@ -357,14 +371,16 @@ import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { graphic } from 'echarts/core'
 import { api, store, chatSettings, saveChatSettings } from '../store.js'
-import SystemAgentPanel from './SystemAgentPanel.vue'
+import { tr } from '../i18n.js'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const allSkills = ref([])
 const viewingSkill = ref(null)
 const copyingSkill = ref(null)
+const deletingSkill = ref(null)
 const showCreateSkill = ref(false)
 const skillFileInput = ref(null)
 const activeTab = ref('config')
@@ -383,7 +399,7 @@ const savingSkill = ref(false)
 const editForm = reactive({ name: '', description: '', content: '', file_type: '' })
 
 const tabIndicatorStyle = computed(() => {
-  const tabs = ['config', 'skills', 'system', 'usage']
+  const tabs = ['config', 'skills', 'usage']
   const idx = tabs.indexOf(activeTab.value)
   return {
     width: `${100 / tabs.length}%`,
@@ -394,9 +410,8 @@ const createForm = reactive({ name: '', description: '', content: '', agent_id: 
 const hubSettings = reactive({
   agent_max_rounds: '50',
   self_improve_enabled: '0',
-  self_improve_threshold: '2',
+  self_improve_threshold: '3',
 })
-
 const toolDisplayOptions = [
   { label: '展开', value: 'expanded' },
   { label: '折叠', value: 'collapsed' },
@@ -419,7 +434,6 @@ const thresholdOptions = [
   { label: '8 次', value: '8' },
 ]
 
-
 const usageRangeOptions = [
   { label: '7 天', value: 7 },
   { label: '30 天', value: 30 },
@@ -436,6 +450,7 @@ const usageTrendChartRef = ref(null)
 let usageTrendChart = null
 let usageResizeObserver = null
 const usageTotals = reactive({ input_tokens: 0, output_tokens: 0, total_tokens: 0, call_count: 0, room_count: 0 })
+
 const maxDailyTokens = computed(() => Math.max(0, ...usageDaily.value.map(day => toInt(day.total_tokens))))
 const usageTrendSeries = computed(() => (usageDaily.value || []).map(day => ({
   date: day.date,
@@ -444,80 +459,6 @@ const usageTrendSeries = computed(() => (usageDaily.value || []).map(day => ({
   output: toInt(day.output_tokens),
   calls: toInt(day.call_count),
 })))
-
-watch([usageTrendSeries, activeTab], () => {
-  if (activeTab.value === 'usage') refreshUsageTrendChart()
-}, { deep: true })
-
-watch(usageTrendChartRef, () => {
-  if (activeTab.value === 'usage') {
-    observeUsageTrendChart()
-    refreshUsageTrendChart()
-  }
-})
-
-function toInt(value) {
-  const num = Number(value || 0)
-  return Number.isFinite(num) ? Math.trunc(num) : 0
-}
-function formatNumber(value) { return toInt(value).toLocaleString('zh-CN') }
-function formatCompactNumber(value) {
-  const num = toInt(value)
-  if (num >= 100000000) return `${(num / 100000000).toFixed(num >= 1000000000 ? 1 : 2)}亿`
-  if (num >= 10000) return `${(num / 10000).toFixed(num >= 100000 ? 1 : 2)}万`
-  return num.toLocaleString('zh-CN')
-}
-function shortDate(date) { return String(date || '').slice(5) || '-' }
-function getCssVar(name, fallback) {
-  if (typeof window === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
-}
-function buildUsageTrendOption() {
-  const points = usageTrendSeries.value
-  const textColor = getCssVar('--text-secondary', '#64748b')
-  const borderColor = getCssVar('--border-color', '#e2e8f0')
-  const primaryColor = getCssVar('--primary-color', '#6366f1')
-  return {
-    grid: { left: 46, right: 18, top: 18, bottom: 34, containLabel: false },
-    tooltip: {
-      trigger: 'axis', confine: true, backgroundColor: 'rgba(15, 23, 42, 0.92)', borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 12 },
-      formatter(params) {
-        const item = params?.[0]?.data || {}
-        return [`<strong>${item.date || ''}</strong>`, `总 Token：${formatNumber(item.total)}`, `输入：${formatNumber(item.input)}`, `输出：${formatNumber(item.output)}`, `调用次数：${formatNumber(item.calls)}`].join('<br/>')
-      }
-    },
-    xAxis: { type: 'category', boundaryGap: false, data: points.map(p => p.date), axisTick: { show: false }, axisLine: { lineStyle: { color: borderColor } }, axisLabel: { color: textColor, fontSize: 11, formatter: shortDate, hideOverlap: true } },
-    yAxis: { type: 'value', min: 0, splitNumber: 4, axisLabel: { color: textColor, fontSize: 11, formatter: formatCompactNumber }, splitLine: { lineStyle: { color: borderColor, type: 'dashed', opacity: 0.7 } } },
-    series: [{ name: 'Token', type: 'line', smooth: true, showSymbol: false, symbolSize: 5, connectNulls: true, data: points, encode: { x: 'date', y: 'total' }, lineStyle: { width: 3, color: primaryColor, cap: 'round' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(99, 102, 241, 0.28)' }, { offset: 1, color: 'rgba(99, 102, 241, 0.02)' }]) } }]
-  }
-}
-function renderUsageTrendChart() {
-  if (!usageTrendChartRef.value || !usageDaily.value.length) return
-  if (!usageTrendChart) usageTrendChart = echarts.init(usageTrendChartRef.value)
-  usageTrendChart.setOption(buildUsageTrendOption(), true)
-}
-async function refreshUsageTrendChart() { await nextTick(); renderUsageTrendChart(); usageTrendChart?.resize() }
-function observeUsageTrendChart() {
-  if (!usageTrendChartRef.value || usageResizeObserver) return
-  usageResizeObserver = new ResizeObserver(() => usageTrendChart?.resize())
-  usageResizeObserver.observe(usageTrendChartRef.value)
-}
-function disposeUsageTrendChart() { usageResizeObserver?.disconnect(); usageResizeObserver = null; usageTrendChart?.dispose(); usageTrendChart = null }
-async function loadUsageStats() {
-  usageLoading.value = true; usageError.value = ''
-  try {
-    const data = await api('GET', `/admin/token-usage/by-room?days=${usageDays.value}`)
-    const result = data.result || {}
-    usageRooms.value = result.rooms || []
-    usageDaily.value = result.daily || []
-    Object.assign(usageTotals, { input_tokens: toInt(result.totals?.input_tokens), output_tokens: toInt(result.totals?.output_tokens), total_tokens: toInt(result.totals?.total_tokens), call_count: toInt(result.totals?.call_count), room_count: toInt(result.totals?.room_count) })
-    usageLoaded.value = true
-    refreshUsageTrendChart()
-  } catch (e) { usageError.value = e?.message || '加载 token 用量失败' } finally { usageLoading.value = false }
-}
-function setUsageDays(days) { if (usageDays.value === days) return; usageDays.value = days; loadUsageStats() }
-
 const showCustomThreshold = ref(false)
 const customThresholdVal = ref(10)
 const isCustomThreshold = computed(() => {
@@ -546,6 +487,17 @@ watch(allSkills, (skills) => {
     selectedSkill.value = skills[0] || null
   } else if (selectedSkill.value) {
     selectedSkill.value = skills.find(s => s.id === selectedSkill.value.id) || selectedSkill.value
+  }
+})
+
+watch([usageTrendSeries, activeTab], () => {
+  if (activeTab.value === 'usage') refreshUsageTrendChart()
+}, { deep: true })
+
+watch(usageTrendChartRef, () => {
+  if (activeTab.value === 'usage') {
+    observeUsageTrendChart()
+    refreshUsageTrendChart()
   }
 })
 
@@ -593,6 +545,171 @@ async function loadHubSettings() {
     const data = await api('GET', '/admin/settings')
     if (data.result) Object.assign(hubSettings, data.result)
   } catch {}
+}
+
+function toInt(value) {
+  const num = Number(value || 0)
+  return Number.isFinite(num) ? Math.trunc(num) : 0
+}
+
+function formatNumber(value) {
+  return toInt(value).toLocaleString('zh-CN')
+}
+
+function formatCompactNumber(value) {
+  const num = toInt(value)
+  if (num >= 100000000) return `${(num / 100000000).toFixed(num >= 1000000000 ? 1 : 2)}亿`
+  if (num >= 10000) return `${(num / 10000).toFixed(num >= 100000 ? 1 : 2)}万`
+  return num.toLocaleString('zh-CN')
+}
+
+function shortDate(date) {
+  return String(date || '').slice(5) || '-'
+}
+
+function getCssVar(name, fallback) {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
+function buildUsageTrendOption() {
+  const points = usageTrendSeries.value
+  const textColor = getCssVar('--text-dim', '#64748b')
+  const borderColor = getCssVar('--border', '#e2e8f0')
+  const surfaceColor = getCssVar('--surface', '#ffffff')
+  const accentColor = getCssVar('--accent', '#5b6ee1')
+  const zeroColor = 'rgba(148, 163, 184, 0.42)'
+  return {
+    animationDuration: 420,
+    color: [accentColor],
+    grid: { left: 48, right: 18, top: 28, bottom: 38, containLabel: false },
+    tooltip: {
+      trigger: 'axis',
+      appendToBody: true,
+      backgroundColor: surfaceColor,
+      borderColor,
+      borderWidth: 1,
+      padding: [10, 12],
+      textStyle: { color: getCssVar('--text', '#0f172a'), fontSize: 12 },
+      axisPointer: { type: 'line', lineStyle: { color: 'rgba(91, 110, 225, 0.28)', width: 1 } },
+      formatter(params) {
+        const item = params?.[0]?.data || {}
+        return [
+          `<strong>${item.date || '-'}</strong>`,
+          `总 Token：${formatNumber(item.total)}`,
+          `输入：${formatNumber(item.input)}　输出：${formatNumber(item.output)}`,
+          `调用次数：${formatNumber(item.calls)}`,
+        ].join('<br/>')
+      },
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: points.map(point => point.date),
+      axisLine: { lineStyle: { color: borderColor } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: (value, index) => points[index]?.total > 0 ? textColor : zeroColor,
+        fontSize: 11,
+        formatter: value => shortDate(value),
+        hideOverlap: true,
+        margin: 12,
+      },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      splitNumber: 3,
+      axisLabel: { color: textColor, fontSize: 11, formatter: value => formatCompactNumber(value) },
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.16)', type: 'dashed' } },
+    },
+    series: [{
+      name: 'Token',
+      type: 'line',
+      data: points.map(point => ({
+        ...point,
+        value: point.total,
+        symbol: point.total > 0 ? 'circle' : 'emptyCircle',
+        symbolSize: point.total > 0 ? 7 : 4,
+        itemStyle: { color: point.total > 0 ? accentColor : zeroColor, borderColor: point.total > 0 ? surfaceColor : zeroColor, borderWidth: point.total > 0 ? 2 : 1 },
+      })),
+      smooth: 0.28,
+      showSymbol: points.length <= 45,
+      showAllSymbol: false,
+      connectNulls: true,
+      lineStyle: { width: 3, color: accentColor, shadowColor: 'rgba(91, 110, 225, 0.18)', shadowBlur: 10 },
+      areaStyle: {
+        opacity: 0.9,
+        color: new graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(91, 110, 225, 0.22)' },
+          { offset: 1, color: 'rgba(91, 110, 225, 0.015)' },
+        ]),
+      },
+      emphasis: { focus: 'series', scale: true },
+    }],
+  }
+}
+
+function renderUsageTrendChart() {
+  if (!usageTrendChartRef.value || !usageDaily.value.length) return
+  if (!usageTrendChart) usageTrendChart = echarts.init(usageTrendChartRef.value)
+  usageTrendChart.setOption(buildUsageTrendOption(), true)
+}
+
+async function refreshUsageTrendChart() {
+  await nextTick()
+  requestAnimationFrame(() => {
+    renderUsageTrendChart()
+    usageTrendChart?.resize()
+  })
+}
+
+function observeUsageTrendChart() {
+  if (!usageTrendChartRef.value || usageResizeObserver) return
+  usageResizeObserver = new ResizeObserver(() => usageTrendChart?.resize())
+  usageResizeObserver.observe(usageTrendChartRef.value)
+}
+
+function disposeUsageTrendChart() {
+  usageResizeObserver?.disconnect()
+  usageResizeObserver = null
+  usageTrendChart?.dispose()
+  usageTrendChart = null
+}
+
+function dailyPercent(value) {
+  if (!maxDailyTokens.value) return 0
+  return Math.max(toInt(value) ? 4 : 0, Math.round((toInt(value) / maxDailyTokens.value) * 100))
+}
+
+
+async function loadUsageStats() {
+  usageLoading.value = true
+  usageError.value = ''
+  try {
+    const data = await api('GET', `/admin/token-usage/by-room?days=${usageDays.value}`)
+    const result = data.result || {}
+    usageRooms.value = result.rooms || []
+    usageDaily.value = result.daily || []
+    Object.assign(usageTotals, {
+      input_tokens: toInt(result.totals?.input_tokens),
+      output_tokens: toInt(result.totals?.output_tokens),
+      total_tokens: toInt(result.totals?.total_tokens),
+      call_count: toInt(result.totals?.call_count),
+      room_count: toInt(result.totals?.room_count),
+    })
+    usageLoaded.value = true
+  } catch (e) {
+    usageError.value = e?.message || '加载用量统计失败'
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+function setUsageDays(days) {
+  if (usageDays.value === days) return
+  usageDays.value = days
+  loadUsageStats()
 }
 
 function viewSkill(skill) {
@@ -660,9 +777,19 @@ function downloadSkill(skill) {
   URL.revokeObjectURL(url)
 }
 
-async function deleteSkill(skill) {
-  if (!confirm(`确定删除技能「${skill.name}」？`)) return
-  await api('DELETE', `/admin/skills/${skill.id}`)
+function deleteSkill(skill) {
+  deletingSkill.value = skill
+}
+
+function closeDeleteSkillConfirm() {
+  deletingSkill.value = null
+}
+
+async function confirmDeleteSkill() {
+  if (!deletingSkill.value) return
+  const skillId = deletingSkill.value.id
+  deletingSkill.value = null
+  await api('DELETE', `/admin/skills/${skillId}`)
   await refreshSkillsKeeping(selectedSkill.value?.id)
 }
 
@@ -704,11 +831,20 @@ async function onSkillFileUpload(e) {
   e.target.value = ''
 }
 
+
+function loadCcSwitchSettings() {
+  // Legacy hook retained to avoid errors from older settings UI paths.
+}
+
 onMounted(() => {
   loadAllSkills()
   loadHubSettings()
+  loadCcSwitchSettings()
 })
-onBeforeUnmount(disposeUsageTrendChart)
+
+onBeforeUnmount(() => {
+  disposeUsageTrendChart()
+})
 </script>
 
 <style scoped>
@@ -721,22 +857,30 @@ onBeforeUnmount(disposeUsageTrendChart)
 }
 .page-header {
   padding: 16px 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .page-header h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
 }
-
 /* Tab bar */
 .tab-bar {
   display: flex;
   position: relative;
   margin: 12px 20px 0;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.tab-bar::-webkit-scrollbar { display: none; }
 .tab-item {
-  flex: 1;
+  flex: 1 0 82px;
   text-align: center;
   padding: 10px 0;
   font-size: 14px;
@@ -756,7 +900,7 @@ onBeforeUnmount(disposeUsageTrendChart)
   position: absolute;
   bottom: -1px;
   left: 0;
-  width: 33.33%;
+  width: 25%;
   height: 2px;
   background: var(--accent, #2d6a4f);
   border-radius: 1px;
@@ -803,6 +947,13 @@ onBeforeUnmount(disposeUsageTrendChart)
 .config-desc {
   font-size: 12px;
   color: var(--text-dim);
+}
+.config-desc code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 .config-options {
   display: flex;
@@ -898,7 +1049,114 @@ onBeforeUnmount(disposeUsageTrendChart)
   color: var(--text-dim);
   font-size: 14px;
 }
+.empty-state.compact {
+  padding: 18px;
+}
 
+.usage-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.usage-title-row {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.section-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.usage-range-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.range-btn {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.range-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.usage-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.usage-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  padding: 12px;
+}
+.usage-card-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.usage-card strong {
+  font-size: 20px;
+  color: var(--text);
+}
+.usage-chart {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 12px;
+  background: var(--surface);
+}
+.usage-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.usage-chart-head small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+.usage-chart-peak {
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.usage-line-chart {
+  min-width: 0;
+}
+.usage-echarts-trend {
+  height: 280px;
+  min-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(91, 110, 225, 0.08), transparent 28%),
+    var(--surface);
+  overflow: hidden;
+}
 .skill-group {
   margin-bottom: 20px;
 }
@@ -1135,12 +1393,12 @@ onBeforeUnmount(disposeUsageTrendChart)
   border-top: 1px solid var(--border);
 }
 .btn-cancel {
-  padding: 8px 16px;
+  padding: 8px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius, 8px);
   background: var(--surface);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .btn-cancel:hover { background: var(--surface2); }
@@ -1170,6 +1428,60 @@ onBeforeUnmount(disposeUsageTrendChart)
 }
 .link-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .skill-card-btn.danger:hover { border-color: var(--danger, #e53e3e); color: var(--danger, #e53e3e); }
+.delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.52);
+}
+.delete-confirm-modal {
+  width: min(100%, 420px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
+  padding: 24px;
+  text-align: center;
+}
+.delete-confirm-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 22px;
+  font-weight: 800;
+}
+.delete-confirm-modal h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 18px;
+}
+.delete-confirm-modal p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.delete-confirm-actions .btn,
+.delete-confirm-actions .btn-cancel {
+  min-width: 96px;
+}
 .edit-skill-modal {
   max-height: 88vh;
 }
@@ -1193,6 +1505,38 @@ onBeforeUnmount(disposeUsageTrendChart)
   }
   .tab-panel {
     padding: 12px 14px;
+  }
+  .usage-title-row {
+    align-items: flex-start;
+  }
+  .usage-range-tabs {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .usage-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-chart-head {
+    flex-direction: column;
+  }
+  .usage-chart-peak {
+    align-self: flex-start;
+  }
+  .usage-echarts-trend {
+    height: 220px;
+    min-height: 220px;
+  }
+  .delete-confirm-modal {
+    padding: 22px 18px;
+  }
+  .delete-confirm-actions {
+    flex-direction: column-reverse;
+  }
+  .delete-confirm-actions .btn,
+  .delete-confirm-actions .btn-cancel {
+    width: 100%;
+    min-height: 40px;
   }
 }
 
@@ -1457,36 +1801,19 @@ onBeforeUnmount(disposeUsageTrendChart)
   }
 }
 
-.usage-section { display: flex; flex-direction: column; gap: 18px; }
-.usage-title-row { align-items: flex-start; gap: 12px; }
-.section-subtitle { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
-.usage-range-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-.range-btn { border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-secondary); border-radius: 999px; padding: 7px 12px; cursor: pointer; font-size: 13px; }
-.range-btn.active { color: #fff; border-color: var(--primary-color); background: var(--primary-color); }
-.usage-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.usage-card { border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
-.usage-card-label { color: var(--text-secondary); font-size: 12px; }
-.usage-card strong { font-size: 22px; color: var(--text-primary); }
-.usage-chart { border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-secondary); padding: 16px; }
-.usage-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.usage-chart-head span { font-weight: 700; color: var(--text-primary); }
-.usage-chart-head small { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
-.usage-chart-peak { color: var(--primary-color); font-size: 13px; font-weight: 600; }
-.usage-line-chart { width: 100%; min-height: 260px; }
-.usage-echarts-trend { width: 100%; height: 260px; }
-.usage-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 14px; }
-.usage-table { width: 100%; border-collapse: collapse; min-width: 560px; background: var(--bg-secondary); }
-.usage-table th, .usage-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border-color); }
-.usage-table th { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
-.usage-table td { color: var(--text-primary); font-size: 13px; }
-.empty-cell { text-align: center !important; color: var(--text-secondary) !important; }
-
-@media (max-width: 768px) {
-  .usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .usage-title-row { flex-direction: column; }
-  .usage-line-chart, .usage-echarts-trend { min-height: 220px; height: 220px; }
-  .usage-table th:nth-child(3), .usage-table td:nth-child(3), .usage-table th:nth-child(4), .usage-table td:nth-child(4) { display: none; }
-  .usage-table { min-width: 360px; }
+@media (max-width: 720px) {
+  .usage-title-row {
+    flex-direction: column;
+  }
+  .usage-range-tabs {
+    justify-content: flex-start;
+  }
+  .usage-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-echarts-trend {
+    height: 240px;
+    min-height: 240px;
+  }
 }
-
 </style>

@@ -5,20 +5,20 @@
       <div class="status-header">
         <span class="status-icon">🔐</span>
         <span class="status-title">System Agent</span>
-        <span class="status-badge" :class="status.status">{{ status.status === 'online' ? '运行中' : '离线' }}</span>
+        <span class="status-badge" :class="status.status">{{ status.status === 'online' ? tr('运行中') : tr('离线') }}</span>
       </div>
       <div class="status-stats">
         <div class="stat-item">
           <span class="stat-value">{{ status.credentials_count }}</span>
-          <span class="stat-label">凭据</span>
+          <span class="stat-label">{{ tr('凭据') }}</span>
         </div>
         <div class="stat-item">
           <span class="stat-value">{{ status.repos_count }}</span>
-          <span class="stat-label">仓库</span>
+          <span class="stat-label">{{ tr('仓库') }}</span>
         </div>
         <div class="stat-item">
           <span class="stat-value">{{ status.recent_requests }}</span>
-          <span class="stat-label">请求</span>
+          <span class="stat-label">{{ tr('请求') }}</span>
         </div>
       </div>
     </div>
@@ -26,44 +26,44 @@
     <!-- Credentials Section -->
     <div class="section">
       <div class="section-header">
-        <h3>🔑 凭据管理</h3>
-        <button class="btn-add" @click="showAddForm = true">+ 添加</button>
+        <h3>{{ tr('🔑 凭据管理') }}</h3>
+        <button class="btn-add" @click="showAddForm = true">{{ tr('+ 添加') }}</button>
       </div>
-      <p class="section-desc">存储 GitHub PAT、SSH Key、API Key 等凭据，系统智能体按需分发给其他智能体使用。凭据加密存储，其他智能体无法直接获取明文。</p>
+      <p class="section-desc">{{ tr('存储 GitHub PAT、SSH Key、API Key 等凭据，系统智能体按需分发给其他智能体使用。凭据加密存储，其他智能体无法直接获取明文。') }}</p>
 
       <!-- Add Form -->
       <div v-if="showAddForm" class="add-form">
         <div class="form-row">
-          <label>名称</label>
-          <input v-model="newCred.name" placeholder="如：GitHub PAT (uskyu)" />
+          <label>{{ tr('名称') }}</label>
+          <input v-model="newCred.name" :placeholder="tr('如：GitHub PAT (uskyu)')" />
         </div>
         <div class="form-row">
-          <label>类型</label>
+          <label>{{ tr('类型') }}</label>
           <select v-model="newCred.type">
             <option value="github_pat">GitHub PAT</option>
             <option value="ssh_key">SSH Key</option>
             <option value="api_key">API Key</option>
-            <option value="custom">自定义</option>
+            <option value="custom">{{ tr('自定义') }}</option>
           </select>
         </div>
         <div class="form-row">
-          <label>值</label>
+          <label>{{ tr('值') }}</label>
           <textarea v-model="newCred.value" :placeholder="valuePlaceholder" rows="3"></textarea>
         </div>
         <div class="form-row">
-          <label>备注（可选）</label>
-          <input v-model="newCred.note" placeholder="如：scope=repo, 过期时间等" />
+          <label>{{ tr('备注（可选）') }}</label>
+          <input v-model="newCred.note" :placeholder="tr('如：scope=repo, 过期时间等')" />
         </div>
         <div class="form-actions">
-          <button class="btn-cancel" @click="showAddForm = false; resetForm()">取消</button>
-          <button class="btn-save" @click="addCredential" :disabled="!newCred.name || !newCred.value">保存</button>
+          <button class="btn-cancel" @click="showAddForm = false; resetForm()">{{ tr('取消') }}</button>
+          <button class="btn-save" @click="addCredential" :disabled="!newCred.name || !newCred.value">{{ tr('保存') }}</button>
         </div>
       </div>
 
       <!-- Credential List -->
       <div class="cred-list">
         <div v-if="credentials.length === 0 && !showAddForm" class="empty-state">
-          暂无凭据，点击「添加」配置第一个
+          {{ tr('暂无凭据，点击「添加」配置第一个') }}
         </div>
         <div v-for="cred in credentials" :key="cred.id" class="cred-item">
           <div class="cred-info">
@@ -72,7 +72,7 @@
             <span class="cred-preview">{{ cred.value_preview }}</span>
           </div>
           <div class="cred-actions">
-            <button class="btn-icon" title="删除" @click="deleteCredential(cred)">🗑</button>
+            <button class="btn-icon" :title="tr('删除')" @click="deleteCredential(cred)">🗑</button>
           </div>
         </div>
       </div>
@@ -81,19 +81,19 @@
     <!-- Workspace Section -->
     <div class="section">
       <div class="section-header">
-        <h3>📂 工作区仓库</h3>
+        <h3>{{ tr('📂 工作区仓库') }}</h3>
         <button class="btn-add" @click="showCloneForm = true">+ Clone</button>
       </div>
-      <p class="section-desc">系统智能体管理的 Git 仓库。其他智能体可通过 @system 请求 clone、pull、push 操作。</p>
+      <p class="section-desc">{{ tr('系统智能体管理的 Git 仓库。其他智能体可通过 @system 请求 clone、pull、push 操作。') }}</p>
 
       <!-- Clone Form -->
       <div v-if="showCloneForm" class="add-form">
         <div class="form-row">
-          <label>仓库 URL</label>
+          <label>{{ tr('仓库 URL') }}</label>
           <input v-model="cloneUrl" placeholder="https://github.com/user/repo.git" />
         </div>
         <div class="form-actions">
-          <button class="btn-cancel" @click="showCloneForm = false; cloneUrl = ''">取消</button>
+          <button class="btn-cancel" @click="showCloneForm = false; cloneUrl = ''">{{ tr('取消') }}</button>
           <button class="btn-save" @click="cloneRepo" :disabled="!cloneUrl">Clone</button>
         </div>
       </div>
@@ -101,7 +101,7 @@
       <!-- Repo List -->
       <div class="repo-list">
         <div v-if="repos.length === 0 && !showCloneForm" class="empty-state">
-          暂无仓库
+          {{ tr('暂无仓库') }}
         </div>
         <div v-for="repo in repos" :key="repo.name" class="repo-item">
           <div class="repo-info">
@@ -116,11 +116,11 @@
     <!-- Access Log Section -->
     <div class="section">
       <div class="section-header">
-        <h3>📋 访问日志</h3>
-        <button class="btn-refresh" @click="loadAccessLog">刷新</button>
+        <h3>{{ tr('📋 访问日志') }}</h3>
+        <button class="btn-refresh" @click="loadAccessLog">{{ tr('刷新') }}</button>
       </div>
       <div class="log-list">
-        <div v-if="accessLog.length === 0" class="empty-state">暂无访问记录</div>
+        <div v-if="accessLog.length === 0" class="empty-state">{{ tr('暂无访问记录') }}</div>
         <div v-for="(entry, i) in accessLog" :key="i" class="log-item">
           <span class="log-time">{{ formatTime(entry.time) }}</span>
           <span class="log-requester">{{ entry.requester }}</span>
@@ -134,6 +134,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../store.js'
+import { tr } from '../i18n.js'
 
 const status = reactive({
   status: 'offline',
@@ -161,7 +162,7 @@ const valuePlaceholder = computed(() => {
     case 'github_pat': return 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
     case 'ssh_key': return '-----BEGIN OPENSSH PRIVATE KEY-----\n...'
     case 'api_key': return 'sk-xxxxxxxxxxxxxxxxxxxxxxxx'
-    default: return '凭据值'
+    default: return tr('凭据值')
   }
 })
 
@@ -170,7 +171,7 @@ function typeLabel(type) {
     github_pat: 'GitHub',
     ssh_key: 'SSH',
     api_key: 'API Key',
-    custom: '自定义',
+    custom: tr('自定义'),
   }
   return labels[type] || type
 }
@@ -185,7 +186,7 @@ function resetForm() {
 function formatTime(ts) {
   if (!ts) return ''
   const d = new Date(ts * 1000)
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 async function loadStatus() {
@@ -242,18 +243,18 @@ async function addCredential() {
     await loadCredentials()
     await loadStatus()
   } catch (e) {
-    alert('添加失败: ' + (e.message || e))
+    alert(tr('添加失败') + ': ' + (e.message || e))
   }
 }
 
 async function deleteCredential(cred) {
-  if (!confirm(`确定删除凭据「${cred.name}」？`)) return
+  if (!confirm(tr('确定删除凭据「{name}」？', { name: cred.name }))) return
   try {
     await api(`/admin/system-agent/credentials/${cred.id}`, { method: 'DELETE' })
     await loadCredentials()
     await loadStatus()
   } catch (e) {
-    alert('删除失败: ' + (e.message || e))
+    alert(tr('删除失败') + ': ' + (e.message || e))
   }
 }
 
@@ -272,7 +273,7 @@ async function cloneRepo() {
     await loadRepos()
     await loadStatus()
   } catch (e) {
-    alert('Clone 失败: ' + (e.message || e))
+    alert(tr('Clone 失败') + ': ' + (e.message || e))
   }
 }
 

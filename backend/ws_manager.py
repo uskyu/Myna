@@ -12,18 +12,31 @@ STREAM_TIMEOUT_SECONDS = 300
 
 
 class WSManager:
-    def __init__(self):
+    def __init__(self, db=None):
+        self.db = db
         self.ui_connections: set[WebSocket] = set()
+        self.ui_tenants: dict[WebSocket, str | None] = {}
         self.agent_connections: dict[str, set[WebSocket]] = {}  # agent_id -> set of ws
         self.active_streams: dict[str, dict] = {}  # stream_id -> info
         self._stream_last_activity: dict[str, float] = {}  # stream_id -> timestamp
         self._cancelled_streams: dict[str, threading.Event] = {}  # stream_id -> cancel event
 
-    def add_ui(self, ws: WebSocket):
+    def add_ui(self, ws: WebSocket, tenant_id: str | None = None):
         self.ui_connections.add(ws)
+        self.ui_tenants[ws] = tenant_id
 
     def remove_ui(self, ws: WebSocket):
         self.ui_connections.discard(ws)
+        self.ui_tenants.pop(ws, None)
+
+    def can_receive_room(self, ws: WebSocket, room_id: str | None) -> bool:
+        tenant_id = self.ui_tenants.get(ws)
+        if tenant_id is None:
+            return True
+        if not room_id or not self.db:
+            return False
+        room = self.db.get_room(room_id)
+        return bool(room and room.get("tenant_id") == tenant_id)
 
     def add_agent(self, agent_id: str, ws: WebSocket):
         if agent_id not in self.agent_connections:
@@ -104,7 +117,9 @@ class WSManager:
 
         data = json.dumps(payload)
         dead = set()
-        for ws in self.ui_connections:
+        for ws in list(self.ui_connections):
+            if not self.can_receive_room(ws, payload.get("room_id")):
+                continue
             try:
                 await ws.send_text(data)
             except Exception:

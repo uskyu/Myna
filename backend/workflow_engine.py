@@ -1,19 +1,23 @@
-"""
-Workflow Runner and Scheduler - Python port.
-"""
+
+# Workflow Runner and Scheduler - Python port.
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 
 class WorkflowRunner:
     def __init__(self, db, ws_manager):
         self.db = db
         self.ws_manager = ws_manager
-        self.active_runs: dict[str, dict] = {}  # run_id -> {"cancelled": bool}
+        self.active_runs: dict[str, dict] = {}
 
     def _send_system_message(self, room_id: str, thread_id: str, text: str):
         self.db.ensure_system_agents()
@@ -38,6 +42,10 @@ class WorkflowRunner:
         workflow = self.db.get_workflow(workflow_id)
         if not workflow:
             raise ValueError("Workflow not found")
+        if workflow.get("trigger_type") == "schedule":
+            running_runs = [r for r in self.db.get_workflow_runs(workflow_id) if r.get("status") == "running"]
+            if running_runs:
+                raise RuntimeError(f"Workflow already running ({len(running_runs)} run(s))")
 
         run_count = self.db.get_workflow_run_count(workflow_id) + 1
         thread_title = f"流程: {workflow['name']} #{run_count}"
@@ -91,10 +99,10 @@ class WorkflowRunner:
         self._send_system_message(room_id, thread_id, f"[系统] 步骤 {step_num}/{total} → @{agent_name}：{step['prompt']}")
         await asyncio.sleep(0.3)
 
-        # Send prompt as user message
         self.db.ensure_system_agents()
         prompt_msg = self.db.create_message(room_id, "user", step["prompt"], "markdown", None,
                                             [step["agent_id"]], None, thread_id)
+        prompt_msg_id = prompt_msg.get("id")
         await self.ws_manager.notify_ui({
             "type": "new_message",
             "room_id": room_id,
@@ -110,28 +118,21 @@ class WorkflowRunner:
             }
         })
 
-        # Trigger AI
         from ai_engine import process_message
         await process_message(self.db, self.ws_manager, room_id, "user", step["prompt"],
                               [step["agent_id"]], "group", 0, thread_id)
 
-        # Wait for reply
         if step.get("wait_for_reply", True):
             start = asyncio.get_event_loop().time()
-            # Dynamic timeout: base 300s + extra for complex tasks
             timeout = max(300, step.get("timeout", 600))
-            initial_msg_count = len(self.db.get_thread_messages(thread_id, 100))
             while asyncio.get_event_loop().time() - start < timeout:
                 state = self.active_runs.get(run_id)
                 if state and state["cancelled"]:
                     return
-                # Check if the target agent has replied (any new message from them)
-                msgs = self.db.get_thread_messages(thread_id, 100)
-                if len(msgs) > initial_msg_count:
-                    # Find any message from the target agent after our prompt
-                    for msg in msgs[initial_msg_count:]:
-                        if msg["sender_id"] == step["agent_id"]:
-                            return
+                msgs = self.db.get_thread_messages(thread_id, 200)
+                for msg in msgs:
+                    if msg["sender_id"] == step["agent_id"] and (prompt_msg_id is None or msg.get("id", 0) > prompt_msg_id):
+                        return
                 await asyncio.sleep(2)
             raise TimeoutError(f"等待 @{agent_name} 回复超时（{timeout}秒）")
 
@@ -149,67 +150,114 @@ class WorkflowScheduler:
     def __init__(self, db, workflow_runner: WorkflowRunner):
         self.db = db
         self.runner = workflow_runner
-        self.scheduler = AsyncIOScheduler()
+        self.timezone = ZoneInfo("Asia/Shanghai") if ZoneInfo else timezone(timedelta(hours=8))
+        self.scheduler = AsyncIOScheduler(timezone=self.timezone)
 
     def start(self):
-        self.reload()
         self.scheduler.start()
+        self.reload()
         print("[Scheduler] Started")
 
     def stop(self):
         self.scheduler.shutdown(wait=False)
 
     def reload(self):
-        # Remove all existing jobs
         self.scheduler.remove_all_jobs()
-
-        # Find all scheduled workflows
+        scheduled_count = 0
         rooms = self.db.list_rooms()
         for room in rooms:
             workflows = self.db.get_workflows(room["id"])
             for wf in workflows:
                 if wf["trigger_type"] == "schedule":
-                    self._schedule_workflow(wf)
+                    if self._schedule_workflow(wf):
+                        scheduled_count += 1
+        print(f"[Scheduler] Reloaded {scheduled_count} scheduled workflow(s)")
 
     def _schedule_workflow(self, wf: dict):
         try:
             config = json.loads(wf.get("trigger_config") or "{}")
-        except:
+        except Exception as e:
+            print(f"[Scheduler] Invalid trigger_config for workflow {wf.get('id')}: {e}")
             config = {}
 
         trigger = None
+        tz = self.timezone
 
         if config.get("cron"):
             try:
-                parts = config["cron"].split()
+                parts = str(config["cron"]).split()
                 trigger = CronTrigger(
                     minute=parts[0] if len(parts) > 0 else "*",
                     hour=parts[1] if len(parts) > 1 else "*",
                     day=parts[2] if len(parts) > 2 else "*",
                     month=parts[3] if len(parts) > 3 else "*",
                     day_of_week=parts[4] if len(parts) > 4 else "*",
+                    timezone=tz,
                 )
-            except:
-                return
+            except Exception as e:
+                print(f"[Scheduler] Invalid cron for workflow {wf.get('id')}: {e}")
+                return False
         elif config.get("interval_minutes"):
-            trigger = IntervalTrigger(minutes=max(1, config["interval_minutes"]))
+            trigger = IntervalTrigger(minutes=max(1, int(config["interval_minutes"])), timezone=tz)
         elif config.get("interval_hours"):
-            trigger = IntervalTrigger(hours=max(1, config["interval_hours"]))
+            trigger = IntervalTrigger(hours=max(1, int(config["interval_hours"])), timezone=tz)
         elif config.get("daily_time"):
-            parts = config["daily_time"].split(":")
-            trigger = CronTrigger(hour=int(parts[0]), minute=int(parts[1]) if len(parts) > 1 else 0)
+            try:
+                parts = str(config["daily_time"]).split(":")
+                trigger = CronTrigger(hour=int(parts[0]), minute=int(parts[1]) if len(parts) > 1 else 0, timezone=tz)
+            except Exception as e:
+                print(f"[Scheduler] Invalid daily_time for workflow {wf.get('id')}: {e}")
+                return False
+        elif config.get("weekly_day") is not None:
+            try:
+                parts = str(config.get("weekly_time") or "09:00").split(":")
+                day = int(config["weekly_day"])
+                day_names = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+                trigger = CronTrigger(
+                    day_of_week=day_names[day % 7],
+                    hour=int(parts[0]),
+                    minute=int(parts[1]) if len(parts) > 1 else 0,
+                    timezone=tz,
+                )
+            except Exception as e:
+                print(f"[Scheduler] Invalid weekly schedule for workflow {wf.get('id')}: {e}")
+                return False
 
-        if trigger:
-            self.scheduler.add_job(
-                self._trigger_workflow,
-                trigger=trigger,
-                args=[wf["id"], wf["room_id"]],
-                id=f"workflow_{wf['id']}",
-                replace_existing=True,
-            )
+        if not trigger:
+            print(f"[Scheduler] No trigger for workflow {wf.get('id')} config={config}")
+            return False
+
+        self.scheduler.add_job(
+            self._trigger_workflow,
+            trigger=trigger,
+            args=[wf["id"], wf["room_id"]],
+            id=f"workflow_{wf['id']}",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=60,
+        )
+        job = self.scheduler.get_job(f"workflow_{wf['id']}")
+        print(f"[Scheduler] Scheduled workflow {wf.get('id')} next_run={getattr(job, 'next_run_time', None)}")
+        return True
 
     async def _trigger_workflow(self, workflow_id: str, room_id: str):
         try:
+            workflow = self.db.get_workflow(workflow_id)
+            if not workflow:
+                print(f"[Scheduler] Workflow {workflow_id} no longer exists; removing stale job")
+                try:
+                    self.scheduler.remove_job(f"workflow_{workflow_id}")
+                except Exception:
+                    pass
+                return
+            if workflow.get("trigger_type") != "schedule":
+                print(f"[Scheduler] Workflow {workflow_id} trigger_type={workflow.get('trigger_type')} is not schedule; removing stale job")
+                try:
+                    self.scheduler.remove_job(f"workflow_{workflow_id}")
+                except Exception:
+                    pass
+                return
             await self.runner.start(workflow_id, room_id)
         except Exception as e:
             print(f"[Scheduler] Failed to run workflow {workflow_id}: {e}")

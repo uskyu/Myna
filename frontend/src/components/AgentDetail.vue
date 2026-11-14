@@ -1,13 +1,10 @@
 <template>
   <div class="agent-detail active">
     <div class="chat-header">
-      <button class="back-btn" @click="$emit('close')" aria-label="返回">
+      <button class="back-btn" @click="$emit('close')"  :aria-label="tr('返回')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <span class="title">{{ form.name || agent.name }}</span>
-      <button class="back-btn" style="margin-left:auto" @click="startDM" title="发消息">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      </button>
     </div>
     <div class="agent-detail-content">
       <!-- Header card -->
@@ -16,70 +13,74 @@
           <span v-html="getAgentIcon(idx)"></span>
         </div>
         <div class="head-meta">
-          <input class="head-name-input" v-model="form.name" @blur="saveField('name')" placeholder="智能体名称">
+          <input class="head-name-input" v-model="form.name" @blur="saveField('name')"  :placeholder="tr('智能体名称')">
           <div class="status-row">
-            <button type="button" class="toggle small" :class="{ on: form.status === 'online' }" @click="toggleStatus" aria-label="状态切换"></button>
-            <span class="status-text">{{ form.status === 'online' ? '在线' : '离线' }}</span>
-            <span v-if="saving" class="saving-tag">保存中...</span>
+            <button type="button" class="toggle small" :class="{ on: form.status === 'online' }" @click="toggleStatus"  :aria-label="tr('状态切换')"></button>
+            <span class="status-text">{{ tr(form.status === 'online' ? '在线' : '离线') }}</span>
+            <span v-if="saving" class="saving-tag">{{ tr('保存中...') }}</span>
             <span v-else-if="lastSavedTag" class="saved-tag">{{ lastSavedTag }}</span>
           </div>
-        </div>
+          </div>
       </div>
 
       <div class="agent-detail-grid">
         <div class="agent-detail-main">
           <!-- Description / system prompt -->
           <div class="field-block description-block">
-            <label>描述 / 系统提示词</label>
+            <label>{{ tr('描述 / 系统提示词') }}</label>
             <textarea
               v-model="form.description"
               @blur="saveField('description')"
-              placeholder="定义智能体的角色和行为..."
+               :placeholder="tr('定义智能体的角色和行为...')"
               rows="4"
             ></textarea>
           </div>
 
           <!-- Execution & Self-improvement settings -->
           <div class="profile-section">
-            <h4>🔐 权限与自我迭代</h4>
+            <h4>🔐 {{ tr('权限与自我迭代') }}</h4>
             <div class="field-block">
-              <label>执行模式</label>
+              <label>{{ tr('执行模式') }}</label>
               <select v-model="form.execution_mode" @change="saveField('execution_mode')" class="model-select">
-                <option value="auto">全自动 — 无安全限制，可接收密码直接操作</option>
-                <option value="confirm">需确认 — 危险命令被阻止</option>
-                <option value="readonly">只读 — 不能执行命令/写文件</option>
+                <option value="auto">{{ tr('全自动 — 无安全限制，可接收密码直接操作') }}</option>
+                <option value="confirm">{{ tr('需确认 — 危险命令被阻止') }}</option>
+                <option value="readonly">{{ tr('只读 — 不能执行命令/写文件') }}</option>
               </select>
               <div class="hint" style="margin-top:4px">
-                {{ form.execution_mode === 'auto' ? '⚡ 完全信任，可执行任何操作' : form.execution_mode === 'confirm' ? '🛡️ 危险命令（rm -rf、reboot等）被拦截' : '👁️ 只能读取信息，不能修改' }}
+                {{ tr(form.execution_mode === 'auto' ? '⚡ 完全信任，可执行任何操作' : form.execution_mode === 'confirm' ? '🛡️ 危险命令（rm -rf、reboot等）被拦截' : '👁️ 只能读取信息，不能修改') }}
               </div>
             </div>
             <div class="field-block" style="margin-top:12px">
               <div class="toggle-row">
-                <label>自我迭代学习</label>
-                <button type="button" class="toggle" :class="{ on: form.self_improve }" @click="form.self_improve = !form.self_improve; saveField('self_improve')" aria-label="自我迭代开关"></button>
+                <label>{{ tr('自我迭代学习') }}</label>
+                <button type="button" class="toggle" :class="{ on: form.self_improve }" @click="form.self_improve = !form.self_improve; saveField('self_improve')"  :aria-label="tr('自我迭代开关')"></button>
               </div>
-              <div class="hint">开启后，智能体在工具调用后自动复盘并提取经验保存为技能</div>
+              <div class="hint">{{ tr('开启后，智能体在工具调用后自动复盘并提取经验保存为技能') }}</div>
             </div>
             <div class="field-block" style="margin-top:12px">
-              <label>工具策略</label>
+              <label>{{ tr('工具策略') }}</label>
               <div class="tool-policy-grid">
                 <label v-for="tool in toolOptions" :key="tool.id" class="tool-policy-item">
                   <input type="checkbox" :checked="isToolEnabled(tool.id)" @change="toggleTool(tool.id)">
-                  <span>{{ tool.label }}</span>
+                  <span>{{ tr(tool.label) }}</span>
                 </label>
               </div>
               <textarea
                 v-model="form.tool_preference"
                 @blur="saveField('tool_preference')"
-                placeholder="工具偏好，例如：账号池管理优先使用 terminal + Selenium；不要使用 browser 工具。"
+                 :placeholder="tr('工具偏好，例如：账号池管理优先使用 terminal + Selenium；不要使用 browser 工具。')"
                 rows="3"
               ></textarea>
-              <div class="hint">禁用的工具不会暴露给 Hermes；偏好会注入系统提示。</div>
+              <div class="hint">{{ tr('禁用的工具不会暴露给 Hermes；偏好会注入系统提示。') }}</div>
             </div>
             <div v-if="form.self_improve" class="field-block" style="margin-top:8px">
-              <label>触发阈值（工具调用次数 ≥）</label>
-              <input type="number" v-model.number="form.self_improve_threshold" @blur="saveField('self_improve_threshold')" min="1" max="20" class="threshold-input">
-              <div class="hint">工具调用达到此次数后触发自动复盘（默认 2）</div>
+              <label>{{ tr('自主进化阈值') }}</label>
+              <select v-model="thresholdMode" @change="onThresholdModeChange" class="model-select">
+                <option value="global">{{ tr('跟随全局默认') }}</option>
+                <option value="custom">{{ tr('自定义工具调用次数') }}</option>
+              </select>
+              <input v-if="thresholdMode === 'custom'" type="number" v-model.number="form.self_improve_threshold" @blur="saveField('self_improve_threshold')" min="1" max="20" class="threshold-input">
+              <div class="hint">{{ tr('跟随全局时不会覆盖管理中心设置；自定义时仅此智能体覆盖全局。') }}</div>
             </div>
           </div>
         </div>
@@ -88,14 +89,14 @@
           <!-- Model picker -->
           <div class="field-block model-block">
             <div class="field-head">
-              <label>关联模型</label>
+              <label>{{ tr('关联模型') }}</label>
               <button class="link-btn" @click="showModels = true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                管理供应商
+                {{ tr('管理供应商') }}
               </button>
             </div>
             <select v-model="form.model_config_id" @change="saveField('model_config_id')" class="model-select">
-              <option value="">使用默认配置</option>
+              <option value="">{{ tr('使用默认配置') }}</option>
               <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }} — {{ m.model }}</option>
             </select>
             <div v-if="selectedModel" class="model-preview">
@@ -108,21 +109,21 @@
           <!-- Skills section -->
           <div class="profile-section">
             <div class="section-head">
-              <h4>🛠 技能</h4>
-              <button class="link-btn" @click="showSkillPicker = true">+ 装载技能</button>
+              <h4>🛠 {{ tr('技能') }}</h4>
+              <button class="link-btn" @click="showSkillPicker = true">+ {{ tr('装载技能') }}</button>
             </div>
-            <div v-if="skills.length === 0" class="hint">暂无技能，从技能库中选择装载</div>
+            <div v-if="skills.length === 0" class="hint">{{ tr('暂无技能，从技能库中选择装载') }}</div>
             <div v-else class="skills-list">
               <div v-for="skill in skills" :key="skill.id" class="skill-item">
                 <div class="skill-info">
                   <span class="skill-name">{{ skill.name }}</span>
-                  <span class="skill-desc">{{ skill.description || '无描述' }}</span>
+                  <span class="skill-desc">{{ skill.description || tr('无描述') }}</span>
                 </div>
                 <div class="skill-actions">
-                  <button class="skill-action-btn" @click="editSkill(skill)" title="查看">
+                  <button class="skill-action-btn" @click="editSkill(skill)"  :title="tr('查看')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   </button>
-                  <button class="skill-action-btn danger" @click="removeSkill(skill)" title="卸载">
+                  <button class="skill-action-btn danger" @click="removeSkill(skill)"  :title="tr('卸载')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
@@ -132,78 +133,64 @@
 
           <!-- Knowledge base -->
           <div class="profile-section">
-            <h4>📚 知识库</h4>
-            <div class="hint">暂无知识库文件</div>
+            <h4>📚 {{ tr('知识库') }}</h4>
+            <div class="hint">{{ tr('暂无知识库文件') }}</div>
           </div>
 
           <!-- Hermes Engine Capabilities -->
           <div class="profile-section">
-            <h4>🚀 Hermes 引擎能力</h4>
+            <h4>🚀 Hermes {{ tr('引擎能力') }}</h4>
             <div class="hermes-caps-list">
               <div class="hermes-cap-row active">
                 <span class="cap-icon">🔧</span>
-                <span class="cap-name">工具调用</span>
-                <span class="cap-desc">函数调用、结构化输出</span>
+                <span class="cap-name">{{ tr('工具调用') }}</span>
+                <span class="cap-desc">{{ tr('函数调用、结构化输出') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">💾</span>
-                <span class="cap-name">持久记忆</span>
-                <span class="cap-desc">跨会话记忆存储</span>
+                <span class="cap-name">{{ tr('持久记忆') }}</span>
+                <span class="cap-desc">{{ tr('跨会话记忆存储') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">📚</span>
-                <span class="cap-name">技能学习</span>
-                <span class="cap-desc">自动提取可复用流程</span>
+                <span class="cap-name">{{ tr('技能学习') }}</span>
+                <span class="cap-desc">{{ tr('自动提取可复用流程') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">🌐</span>
-                <span class="cap-name">网页浏览</span>
-                <span class="cap-desc">搜索、抓取、交互</span>
+                <span class="cap-name">{{ tr('网页浏览') }}</span>
+                <span class="cap-desc">{{ tr('搜索、抓取、交互') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">💻</span>
-                <span class="cap-name">终端命令</span>
-                <span class="cap-desc">Shell 执行、脚本运行</span>
+                <span class="cap-name">{{ tr('终端命令') }}</span>
+                <span class="cap-desc">{{ tr('Shell 执行、脚本运行') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">📡</span>
-                <span class="cap-name">HTTP 请求</span>
-                <span class="cap-desc">API 调用、Webhook</span>
+                <span class="cap-name">{{ tr('HTTP 请求') }}</span>
+                <span class="cap-desc">{{ tr('API 调用、Webhook') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">🤝</span>
-                <span class="cap-name">多智能体协作</span>
-                <span class="cap-desc">任务委派、并行执行</span>
+                <span class="cap-name">{{ tr('多智能体协作') }}</span>
+                <span class="cap-desc">{{ tr('任务委派、并行执行') }}</span>
               </div>
               <div class="hermes-cap-row active">
                 <span class="cap-icon">⏰</span>
-                <span class="cap-name">工作流调度</span>
-                <span class="cap-desc">定时任务、事件触发</span>
+                <span class="cap-name">{{ tr('工作流调度') }}</span>
+                <span class="cap-desc">{{ tr('定时任务、事件触发') }}</span>
               </div>
             </div>
-            <div class="hint" style="margin-top:8px">由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间</div>
+            <div class="hint" style="margin-top:8px">{{ tr('由 Hermes Agent 引擎驱动，每个智能体拥有独立的记忆和技能空间') }}</div>
           </div>
         </div>
       </div>
 
       <div v-if="agent.id !== '__system__'" class="danger-zone">
-        <button class="btn btn-danger" @click="openDeleteConfirm" style="width:100%">删除智能体</button>
+        <button class="btn btn-danger" @click="$emit('delete', agent.id)" style="width:100%">{{ tr('删除智能体') }}</button>
       </div>
     </div>
-
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="delete-confirm-overlay" @click.self="closeDeleteConfirm">
-        <div class="delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-agent-title">
-          <div class="delete-confirm-icon" aria-hidden="true">!</div>
-          <h4 id="delete-agent-title">确认删除智能体？</h4>
-          <p>即将删除「{{ agent.name }}」。此操作不可撤销，请确认是否继续。</p>
-          <div class="delete-confirm-actions">
-            <button class="btn-cancel" @click="closeDeleteConfirm">取消</button>
-            <button class="btn btn-danger" @click="confirmDeleteAgent">确认删除</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <ModelsModal v-if="showModels" @close="onModelsClose" @changed="onModelsChanged" />
 
@@ -212,22 +199,22 @@
       <div v-if="showSkillPicker" class="skill-modal-overlay" @click.self="showSkillPicker = false">
         <div class="skill-modal">
           <div class="skill-modal-header">
-            <h4>从技能库装载</h4>
+            <h4>{{ tr('从技能库装载') }}</h4>
             <button class="wf-close" @click="showSkillPicker = false">×</button>
           </div>
           <div class="skill-modal-body">
             <div v-if="globalSkills.length === 0" class="hint" style="padding:20px;text-align:center">
-              技能库为空，请先在管理中心创建技能
+              {{ tr('技能库为空，请先在管理中心创建技能') }}
             </div>
             <div v-else class="picker-list">
               <div v-for="skill in globalSkills" :key="skill.id" class="picker-item" :class="{ loaded: isSkillLoaded(skill.id) }">
                 <div class="skill-info">
                   <span class="skill-name">{{ skill.name }}</span>
-                  <span class="skill-desc">{{ skill.description || '无描述' }}</span>
-                  <span v-if="skill.agent_name" class="skill-origin">来自: {{ skill.agent_name }}</span>
+                  <span class="skill-desc">{{ skill.description || tr('无描述') }}</span>
+                  <span v-if="skill.agent_name" class="skill-origin">{{ tr('来自') }}: {{ skill.agent_name }}</span>
                 </div>
-                <button v-if="!isSkillLoaded(skill.id)" class="link-btn" @click="loadSkillFromLibrary(skill)">装载</button>
-                <span v-else class="loaded-tag">已装载</span>
+                <button v-if="!isSkillLoaded(skill.id)" class="link-btn" @click="loadSkillFromLibrary(skill)">{{ tr('装载') }}</button>
+                <span v-else class="loaded-tag">{{ tr('已装载') }}</span>
               </div>
             </div>
           </div>
@@ -244,7 +231,7 @@
             <button class="wf-close" @click="editingSkill = null">×</button>
           </div>
           <div class="skill-modal-body">
-            <pre class="skill-content-view">{{ editingSkill.content || '(空)' }}</pre>
+            <pre class="skill-content-view">{{ editingSkill.content || tr('(空)') }}</pre>
           </div>
         </div>
       </div>
@@ -256,13 +243,13 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { api, getAgentColor, getAgentIcon, store, loadConversations } from '../store.js'
 import ModelsModal from './ModelsModal.vue'
+import { tr } from '../i18n.js'
 
 const props = defineProps({ agent: Object })
 const emit = defineEmits(['close', 'delete'])
 
 const models = ref([])
 const showModels = ref(false)
-const showDeleteConfirm = ref(false)
 const saving = ref(false)
 const lastSavedTag = ref('')
 
@@ -279,10 +266,12 @@ const form = reactive({
   status: props.agent.status || 'online',
   execution_mode: props.agent.execution_mode || 'auto',
   self_improve: props.agent.self_improve !== undefined ? !!props.agent.self_improve : false,
-  self_improve_threshold: props.agent.self_improve_threshold || 2,
+  self_improve_threshold: props.agent.self_improve_threshold ?? 3,
   disabled_toolsets: parseToolsConfig(props.agent.tools_config).disabled_toolsets || [],
   tool_preference: parseToolsConfig(props.agent.tools_config).preferred_tools || '',
 })
+
+const thresholdMode = ref(props.agent.self_improve_threshold == null ? 'global' : 'custom')
 
 const toolOptions = [
   { id: 'terminal', label: '终端' },
@@ -334,7 +323,7 @@ async function persist() {
       status: form.status,
       execution_mode: form.execution_mode,
       self_improve: form.self_improve,
-      self_improve_threshold: form.self_improve_threshold,
+      self_improve_threshold: thresholdMode.value === 'global' ? null : form.self_improve_threshold,
       tools_config: {
         disabled_toolsets: form.disabled_toolsets,
         preferred_tools: form.tool_preference,
@@ -347,16 +336,16 @@ async function persist() {
       status: form.status,
       execution_mode: form.execution_mode,
       self_improve: form.self_improve,
-      self_improve_threshold: form.self_improve_threshold,
+      self_improve_threshold: thresholdMode.value === 'global' ? null : form.self_improve_threshold,
       tools_config: JSON.stringify({ disabled_toolsets: form.disabled_toolsets, preferred_tools: form.tool_preference }),
     })
     // refresh agents store entry
     const idxStore = store.agents.findIndex(a => a.id === props.agent.id)
     if (idxStore >= 0) Object.assign(store.agents[idxStore], props.agent)
-    lastSavedTag.value = '已保存'
+    lastSavedTag.value = tr('已保存')
     setTimeout(() => { lastSavedTag.value = '' }, 1600)
   } catch(e) {
-    lastSavedTag.value = '保存失败'
+    lastSavedTag.value = tr('保存失败')
   } finally {
     saving.value = false
   }
@@ -366,6 +355,13 @@ let saveTimer = null
 function debouncedPersist() {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(persist, 250)
+}
+
+function onThresholdModeChange() {
+  if (thresholdMode.value === 'custom' && (!form.self_improve_threshold || form.self_improve_threshold < 1)) {
+    form.self_improve_threshold = 3
+  }
+  debouncedPersist()
 }
 
 async function saveField(field) {
@@ -382,27 +378,6 @@ async function toggleStatus() {
   debouncedPersist()
 }
 
-async function startDM() {
-  const data = await api('POST', `/admin/dm/${props.agent.id}`)
-  if (data.ok) {
-    await loadConversations()
-    emit('close')
-    window.dispatchEvent(new CustomEvent('open-dm', { detail: { agentId: props.agent.id, roomId: data.result?.room_id } }))
-  }
-}
-
-function openDeleteConfirm() {
-  showDeleteConfirm.value = true
-}
-
-function closeDeleteConfirm() {
-  showDeleteConfirm.value = false
-}
-
-function confirmDeleteAgent() {
-  showDeleteConfirm.value = false
-  emit('delete', props.agent.id)
-}
 
 // === Skills ===
 async function loadSkills() {
@@ -431,7 +406,7 @@ async function loadSkillFromLibrary(skill) {
 }
 
 async function removeSkill(skill) {
-  if (!confirm(`确定卸载技能「${skill.name}」？`)) return
+  if (!confirm(`${tr('确定卸载技能')}「${skill.name}」？`)) return
   await api('DELETE', `/admin/skills/${skill.id}`)
   loadSkills()
 }
@@ -820,75 +795,6 @@ onMounted(() => {
   cursor: pointer;
 }
 .btn-cancel:hover { background: var(--surface2); }
-.delete-confirm-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.52);
-}
-.delete-confirm-modal {
-  width: min(100%, 420px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 16px);
-  background: var(--bg);
-  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0,0,0,0.3));
-  padding: 24px;
-  text-align: center;
-}
-.delete-confirm-icon {
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 12px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
-  font-size: 22px;
-  font-weight: 800;
-}
-.delete-confirm-modal h4 {
-  margin: 0 0 8px;
-  color: var(--text);
-  font-size: 18px;
-}
-.delete-confirm-modal p {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 14px;
-  line-height: 1.6;
-  word-break: break-word;
-}
-.delete-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 22px;
-}
-.delete-confirm-actions .btn,
-.delete-confirm-actions .btn-cancel {
-  min-width: 96px;
-}
-@media (max-width: 480px) {
-  .delete-confirm-modal {
-    padding: 22px 18px;
-  }
-
-  .delete-confirm-actions {
-    flex-direction: column-reverse;
-  }
-
-  .delete-confirm-actions .btn,
-  .delete-confirm-actions .btn-cancel {
-    width: 100%;
-    min-height: 40px;
-  }
-}
 .btn-save {
   padding: 8px 18px;
   border: none;
@@ -1032,3 +938,4 @@ onMounted(() => {
   }
 }
 </style>
+
